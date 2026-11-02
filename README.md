@@ -11,6 +11,12 @@ English | [中文](README.zh.md)
 
 ![version](https://img.shields.io/badge/version-v0.2_preview-blue) ![DSH](https://img.shields.io/badge/DSH-0.2.1--rc.4-4D6BFE) ![license](https://img.shields.io/badge/license-Apache_2.0-green)
 
+## 致敬与感谢 / Acknowledgements
+
+本项目（DS Bot Company）基于 [DS Bot](https://github.com/Fei2411/DS-Bot)（Apache 2.0）二次开发，运行在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 之上。感谢 DS Bot 原作者与上游贡献者，也感谢 DeepSeek Harness 的贡献者。
+
+This project (DS Bot Company) is a derivative of [DS Bot](https://github.com/Fei2411/DS-Bot) (Apache 2.0) and runs on [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). Thanks to the original author and the upstream contributors, and to the DeepSeek Harness contributors.
+
 DS Bot is a bot plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH). It turns DSH into bots. You create your own bots, then talk and work with them.
 
 ![Say one sentence to Chief, and it sets up the bots and the group chat](docs/images/team.png)
