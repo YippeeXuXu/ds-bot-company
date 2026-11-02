@@ -87,8 +87,13 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.dry_run
         run: npm pack --dry-run
 
+      # This repository is a derivative of DS Bot. The npm package name belongs
+      # to the upstream repository, so publishing only happens there; a Release
+      # created here must not attempt to publish it.
       - name: Publish
-        if: github.event_name == 'release' || (!inputs.dry_run && github.ref == 'refs/heads/main')
+        if: >-
+          github.repository == 'Fei2411/DS-Bot' &&
+          (github.event_name == 'release' || (!inputs.dry_run && github.ref == 'refs/heads/main'))
         run: |
           tag="$(node -p "require('./package.json').version.includes('-') ? 'next' : 'latest'")"
           echo "Publishing $(node -p "require('./package.json').version") with the npm tag $tag"

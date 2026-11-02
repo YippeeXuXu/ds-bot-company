@@ -11,6 +11,12 @@
 
 ![版本](https://img.shields.io/badge/版本-v0.2_预览-blue) ![DSH](https://img.shields.io/badge/DSH-0.2.1--rc.4-4D6BFE) ![许可](https://img.shields.io/badge/许可-Apache_2.0-green)
 
+## 致敬与感谢 / Acknowledgements
+
+本项目（DS Bot Company）基于 [DS Bot](https://github.com/Fei2411/DS-Bot)（Apache 2.0）二次开发，运行在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 之上。感谢 DS Bot 原作者与上游贡献者，也感谢 DeepSeek Harness 的贡献者。
+
+This project (DS Bot Company) is a derivative of [DS Bot](https://github.com/Fei2411/DS-Bot) (Apache 2.0) and runs on [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). Thanks to the original author and the upstream contributors, and to the DeepSeek Harness contributors.
+
 DS Bot 是一个基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（简称 dsh）的 bot 插件，插件将 dsh 改造为 bot 形式。你可以与自己创建的 bot 交流、工作。
 
 ![和 Chief 说一句话，它就把 bot 和群聊建好](docs/images/team.zh.png)
