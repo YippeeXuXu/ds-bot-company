@@ -80,7 +80,7 @@ export function ProjectWizard({ data, roster, preview, loading, error: loadError
   if (loadError) return h('section', { className: 'bc-state bc-error', role: 'alert' }, h('strong', null, t('Organization could not be loaded.')), h('p', null, loadError), h('button', { type: 'button', className: 'bc-button', onClick: onBack }, t('Back to projects')))
   return h('section', { className: 'bc-page', 'aria-label': t('Create a project') },
     h('button', { type: 'button', className: 'bc-back', onClick: onBack }, `← ${t('All projects')}`),
-    h('span', { className: 'bc-kicker' }, t('New project / Step {current} of 4', { current: step + 1 })),
+    h('span', { className: 'bc-kicker', style: { display: 'block' } }, t('New project / Step {current} of 4', { current: step + 1 })),
     h('h1', { className: 'bc-detail-title' }, t('Create a project')),
     h('div', { className: 'bc-steps', role: 'list', 'aria-label': t('Creation stages') }, stages.map((stage, index) => h('span', { key: stage, className: 'bc-step', role: 'listitem', 'aria-current': step === index ? 'step' : undefined }, `${index + 1}. ${t(stage)}`))),
     step === 0 ? h('div', { className: 'bc-section' }, h('h2', null, t('Company')), data.company

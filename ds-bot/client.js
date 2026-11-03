@@ -19344,7 +19344,7 @@ function ProjectWizard({ data, roster, preview, loading, error: loadError, mutat
     "section",
     { className: "bc-page", "aria-label": t("Create a project") },
     (0, import_react51.createElement)("button", { type: "button", className: "bc-back", onClick: onBack }, `← ${t("All projects")}`),
-    (0, import_react51.createElement)("span", { className: "bc-kicker" }, t("New project / Step {current} of 4", { current: step + 1 })),
+    (0, import_react51.createElement)("span", { className: "bc-kicker", style: { display: "block" } }, t("New project / Step {current} of 4", { current: step + 1 })),
     (0, import_react51.createElement)("h1", { className: "bc-detail-title" }, t("Create a project")),
     (0, import_react51.createElement)("div", { className: "bc-steps", role: "list", "aria-label": t("Creation stages") }, stages.map((stage, index) => (0, import_react51.createElement)("span", { key: stage, className: "bc-step", role: "listitem", "aria-current": step === index ? "step" : void 0 }, `${index + 1}. ${t(stage)}`))),
     step === 0 ? (0, import_react51.createElement)(
@@ -19619,7 +19619,7 @@ function CompanySurface({ page, actions, roster }) {
         } }) : (0, import_react52.createElement)(
           "section",
           { className: "bc-page", "aria-label": t("Project list") },
-          (0, import_react52.createElement)("div", { className: "bc-lead" }, (0, import_react52.createElement)("div", null, (0, import_react52.createElement)("span", { className: "bc-kicker" }, t("Workspace / Projects")), (0, import_react52.createElement)("h1", null, t("Projects")), (0, import_react52.createElement)("p", null, t("Browse work across departments and open a project to see its status."))), (0, import_react52.createElement)("button", { type: "button", className: "bc-button bc-primary", onClick: () => actions.openCompanyPage("wizard") }, t("New project"))),
+          (0, import_react52.createElement)("div", { className: "bc-lead" }, (0, import_react52.createElement)("div", null, (0, import_react52.createElement)("span", { className: "bc-kicker" }, t("Workspace / Projects")), (0, import_react52.createElement)("h1", null, t("Projects")), (0, import_react52.createElement)("p", null, t("Browse work across departments and open a project to see its status."))), (0, import_react52.createElement)("button", { type: "button", className: "bc-button bc-primary", style: { flex: "none", whiteSpace: "nowrap" }, onClick: () => actions.openCompanyPage("wizard") }, t("New project"))),
           loading ? (0, import_react52.createElement)("p", { className: "bc-state", role: "status" }, t("Loading projects…")) : error ? (0, import_react52.createElement)("div", { className: "bc-state bc-error", role: "alert" }, (0, import_react52.createElement)("strong", null, t("Projects could not be loaded.")), (0, import_react52.createElement)("p", null, error), (0, import_react52.createElement)("button", { type: "button", className: "bc-button", onClick: () => void load() }, t("Try again")), (0, import_react52.createElement)("button", { type: "button", className: "bc-button", onClick: previewData }, t("Open local sample preview"))) : (0, import_react52.createElement)(
             "div",
             null,
