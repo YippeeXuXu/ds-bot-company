@@ -9,7 +9,7 @@
 // the output is one of the three answers the host understands. §3.5 of the M1b plan is the
 // table this implements: `READ_ONLY` and `WRITE_INSIDE` allow, the high-risk classes ask a
 // human, and credentials or a scope breach are denied outright.
-import { isAbsolute, resolve, sep } from 'node:path'
+import { isAbsolute, resolve } from 'node:path'
 
 /** The three answers the judgement layer may give, in the order the questions ask for them. */
 export const DECISIONS = Object.freeze(['allow', 'deny', 'human-needed'])
@@ -121,7 +121,18 @@ const isSecretPath = value => SECRET_PATH.test(slashed(value))
 const isProductionPath = value => PRODUCTION_PATH.test(slashed(value))
 const unquote = value => value.replace(/^['"]|['"]$/g, '')
 const cleanPath = value => unquote(value.trim())
-const inside = (inner, outer) => outer !== undefined && (inner === outer || inner.startsWith(outer.endsWith(sep) ? outer : `${outer}${sep}`))
+const trimmed = (value) => {
+  const path = slashed(value)
+  return path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path
+}
+// Both sides are compared with `/` and without a trailing separator, so one authorization scope
+// reads the same on every platform and with either separator in it.
+export const insidePath = (inner, outer) => {
+  if (typeof inner !== 'string' || typeof outer !== 'string' || outer === '') return false
+  const a = trimmed(inner)
+  const b = trimmed(outer)
+  return a === b || a.startsWith(`${b}/`)
+}
 const absolute = (value, base) => {
   if (typeof value !== 'string') return undefined
   const raw = cleanPath(value)
@@ -209,6 +220,14 @@ const redirectsOf = (segment) => {
   return targets
 }
 
+// The scope arrives from company state, where the folder is an absolute host path. Resolving it
+// once keeps the comparison honest when the host separator differs from the one in the record.
+const authorizedScope = (scope) => {
+  const resolved = value => (typeof value === 'string' && value.trim() !== '' ? resolve(value) : undefined)
+  const foreign = (scope.foreignWorkspaces ?? []).map(resolved).filter(value => value !== undefined)
+  return { ...scope, workspaceRef: resolved(scope.workspaceRef), foreignWorkspaces: foreign }
+}
+
 const pathWordsOf = words => words.filter(word => !word.startsWith('-') && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word))
 
 // Classify one shell command. `scope.workspaceRef` is the authorized project folder; a word
@@ -223,8 +242,8 @@ const classifyShell = ({ command, base, scope }) => {
     found.target ??= path
     if (isSecretPath(path)) found.secret = true
     if (isProductionPath(path)) found.productions = true
-    if (foreign.some(outer => inside(path, outer))) found.violations = true
-    else if (inside(path, workspace)) found.inside = true
+    if (foreign.some(outer => insidePath(path, outer))) found.violations = true
+    else if (insidePath(path, workspace)) found.inside = true
     else found.outside = true
   }
   if (SHELL_OPAQUE.test(command)) found.unknown = 'The command builds its own command line (substitution, here-document or eval).'
@@ -281,6 +300,7 @@ const classifyShell = ({ command, base, scope }) => {
  */
 export function classify({ tool, args = {}, scope = {}, base, truncated = false }) {
   const target = targetOf({ tool, args, base })
+  const authorized = authorizedScope(scope)
   if (typeof tool !== 'string' || tool === '') return verdict('UNKNOWN_TOOL', HUMAN, { target: 'unknown', reason: 'The call has no tool name.' })
   if (INACTIVE_PROJECT.has(scope.projectStatus)) return verdict('SCOPE_VIOLATION', DENY, { target, reason: `Project ${scope.projectStatus} is not open.` })
   if (scope.member === false) return verdict('SCOPE_VIOLATION', DENY, { target, reason: 'The employee is not a member of the project.' })
@@ -289,15 +309,15 @@ export function classify({ tool, args = {}, scope = {}, base, truncated = false 
     const command = text(args?.command) ?? text(args?.input) ?? ''
     if (command.trim() === '') return verdict('UNKNOWN_EFFECT', HUMAN, { target, reason: 'The shell call has no command text.' })
     if (truncated) return verdict('UNKNOWN_EFFECT', HUMAN, { target, reason: 'The arguments were truncated before classification.' })
-    return classifyShell({ command, base, scope })
+    return classifyShell({ command, base, scope: authorized })
   }
   if (WRITE_TOOLS.has(tool)) {
     const path = absolute(text(args?.[WRITE_TOOLS.get(tool)]), base)
     if (path === undefined) return verdict('UNKNOWN_EFFECT', HUMAN, { target, reason: 'The write has no resolvable target.' })
     if (isSecretPath(path)) return verdict('SECRET_EXFIL', DENY, { target: path, reason: 'The write targets a credential file.' })
     if (isProductionPath(path)) return verdict('PRODUCTION', HUMAN, { target: path })
-    if ((scope.foreignWorkspaces ?? []).some(outer => inside(path, outer))) return verdict('SCOPE_VIOLATION', DENY, { target: path, reason: 'The target belongs to another project.' })
-    if (inside(path, scope.workspaceRef)) return verdict('WRITE_INSIDE', ALLOW, { target: path })
+    if ((authorized.foreignWorkspaces ?? []).some(outer => insidePath(path, outer))) return verdict('SCOPE_VIOLATION', DENY, { target: path, reason: 'The target belongs to another project.' })
+    if (insidePath(path, authorized.workspaceRef)) return verdict('WRITE_INSIDE', ALLOW, { target: path })
     return verdict('WRITE_OUTSIDE', HUMAN, { target: path })
   }
   if (READ_TOOLS.has(tool)) {

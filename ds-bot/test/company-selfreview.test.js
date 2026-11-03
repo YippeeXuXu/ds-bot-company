@@ -16,7 +16,7 @@ import { buildRequest, hostApprovalMode, resolveScope, summarizeArguments } from
 import { projectEvents, projectHostOutcome, groupEvents } from '../src/host/company/selfreview/host-outcome.js'
 import { DEFAULT_CONFIG, createAdaptor, install, mergeVerdict, normalizeConfig, MODES, READ_ONLY_WHITELIST } from '../src/host/company/selfreview/index.js'
 import { createRecorder, makeRecord, RECORD_FIELDS } from '../src/host/company/selfreview/records.js'
-import { classify, HIGH_RISK_RULES } from '../src/host/company/selfreview/rules.js'
+import { classify, HIGH_RISK_RULES, insidePath } from '../src/host/company/selfreview/rules.js'
 
 const WORKSPACE = '/work/ds-bot'
 const OTHER_WORKSPACE = '/work/other'
@@ -604,6 +604,18 @@ const request = {
   effective_authorization_scope: { workspace_ref: WORKSPACE, project_status: 'active' },
   arguments_truncated: false,
 }
+
+test('a project folder compares the same with either separator', () => {
+  // The CI matrix runs Windows too, where resolve() hands back backslashes while the company
+  // record and this test were written with slashes; the comparison must not depend on that.
+  assert.equal(insidePath('C:\\work\\ds-bot\\a.md', 'C:\\work\\ds-bot'), true)
+  assert.equal(insidePath('C:\\work\\ds-bot\\a.md', 'C:\\work\\ds-bot\\'), true)
+  assert.equal(insidePath('C:\\work\\ds-bot-other\\a.md', 'C:\\work\\ds-bot'), false)
+  assert.equal(insidePath('/work/ds-bot/a.md', '/work/ds-bot/'), true)
+  assert.equal(insidePath('/work/ds-bot', '/work/ds-bot'), true)
+  assert.equal(insidePath('/elsewhere/a.md', '/work/ds-bot'), false)
+  assert.equal(insidePath('/work/ds-bot/a.md', undefined), false)
+})
 
 test('the rule table gives every planned class one fixed answer', () => {
   const base = WORKSPACE
