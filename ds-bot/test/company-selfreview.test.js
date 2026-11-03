@@ -68,7 +68,7 @@ function fakeCtx({ preset = 'ask', policy = 'ask', silent = false } = {}) {
 }
 
 function rtOf({ home, ctx = fakeCtx(), state = companyState(), groups = new Map(), secret, onSecret, botOwner = owners } = {}) {
-  const byBot = new Map(Object.values(state.employees).map(employee => [employee.bot_id, employee]))
+  const byBot = new Map(Object.values(state.employees).map(employee => [employee.bot_id, employee.id]))
   return {
     home,
     ctx,
@@ -309,6 +309,31 @@ test('an unreadable host mode allows only the read-only whitelist and asks about
   assert.deepEqual(records.map(record => record.status), ['host-unknown', 'host-unknown'])
   assert.equal(READ_ONLY_WHITELIST.has('read'), true)
   rmSync(home, { recursive: true, force: true })
+})
+
+test('host services are read through get, the way a plugin without inject must', () => {
+  // A plugin that did not `inject` a service cannot read it as a property: the read throws.
+  // Only `ctx.get(name)` answers, so a `??` chain would never reach its second arm.
+  const services = {
+    permissionPresets: { current: () => 'workspace-write' },
+    approval: { effectivePolicy: () => 'ask' },
+  }
+  const ctx = {
+    get: name => services[name],
+    get permissionPresets() { throw new Error('cannot get property "permissionPresets" without inject') },
+    get approval() { throw new Error('cannot get property "approval" without inject') },
+  }
+  const rt = rtOf({ home: '/tmp/unused', ctx, secret: 'token' })
+  assert.deepEqual(hostApprovalMode({ rt, exec: execOf({}) }), { preset: 'workspace-write', policy: 'ask', source: 'read' })
+})
+
+test('the employee comes from the store index, which maps a Bot to an employee id', () => {
+  const state = companyState()
+  const rt = rtOf({ home: '/tmp/unused', state, secret: 'token' })
+  assert.equal(rt.companyStore.byBotId().get('bot_a'), 'emp')
+  const scope = resolveScope({ rt, exec: execOf({ name: 'read', args: { file_path: `${WORKSPACE}/README.md` } }) })
+  assert.equal(scope.employee.id, 'emp')
+  assert.equal(scope.project.id, 'proj')
 })
 
 test('an Auto Session is left to the host: allowed, not sent, counted as uncovered', async () => {

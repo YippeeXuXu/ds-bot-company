@@ -63,8 +63,10 @@ export function resolveScope({ rt, exec }) {
   try {
     botId = selfOf?.(sessionId)
     if (botId === undefined) return undefined
-    employee = store.byBotId().get(botId)
+    // The store indexes Bot → employee *id*; the profile itself is the state row.
+    const employeeId = store.byBotId().get(botId)
     state = store.state
+    employee = typeof employeeId === 'string' ? state.employees?.[employeeId] : undefined
   } catch {
     // A company file that cannot be read leaves the employee unknown: no judging, exactly
     // the plan's "从未映射 → 不判" branch (§2.4). The adaptor records the degradation instead
@@ -113,8 +115,10 @@ export function hostApprovalMode({ rt, exec }) {
   let policy
   // The host exposes its services both as context properties and through `get`; a plugin that
   // only reads one of the two would silently lose the mode on some host versions.
-  const presets = rt.ctx?.permissionPresets ?? rt.ctx?.get?.('permissionPresets')
-  const approval = rt.ctx?.approval ?? rt.ctx?.get?.('approval')
+  // Read through `get`: a plain property read on a service a plugin did not inject throws,
+  // so the previous `??` chain never reached the second arm.
+  const presets = rt.ctx?.get?.('permissionPresets')
+  const approval = rt.ctx?.get?.('approval')
   try {
     preset = presets?.current?.(session)
   } catch {}

@@ -130,6 +130,68 @@ export function projectHostOutcome({ callId, events = [], product, preset = 'unk
   return projection({ ...base, outcome: 'failed-execution', reason: 'error-result' })
 }
 
+/**
+ * Turn the events of a decoded `session.v4.jsonl` log into the flat shape this module groups.
+ *
+ * The log on disk is the only place the host's side of a call exists, and its field names do not
+ * match the projection's: `tool/call` carries `data.name`, `tool/result` carries the call id and
+ * the text inside `data.message`, and an approval is two events joined by `data.id`. A reader
+ * that skips this step sees every result as ungrouped and reports `unobservable` for calls the
+ * host in fact executed, so the mapping is code with tests, not a note.
+ */
+export function normalizeSessionEvents(events) {
+  const askedById = new Map()
+  const flat = []
+  for (const raw of events ?? []) {
+    const type = raw?.type
+    const data = raw?.data ?? {}
+    if (type === 'tool/call') {
+      flat.push({ type, callId: data.callId, toolName: data.name })
+      continue
+    }
+    if (type === 'tool/result') {
+      const message = data.message ?? {}
+      const text = Array.isArray(message.content)
+        ? message.content.filter(block => block?.type === 'text').map(block => block.text).join('\n')
+        : ''
+      flat.push({ type, callId: message.toolCallId ?? data.callId, isError: message.isError === true, text })
+      continue
+    }
+    if (type === 'approval/asked') {
+      const entry = { type, approvalId: data.id, callId: data.callId, toolName: data.toolName }
+      askedById.set(data.id, entry)
+      flat.push(entry)
+      continue
+    }
+    if (type === 'approval/decided') {
+      // The decided event only names the card; the call it belongs to is the asked event's.
+      const origin = askedById.get(data.id)
+      flat.push({ type, approvalId: data.id, outcome: data.outcome, callId: origin?.callId, toolName: origin?.toolName })
+      continue
+    }
+    if (type === 'approval/policy') {
+      flat.push({ type, policy: data.policy })
+      continue
+    }
+    if (type === 'permission/preset') {
+      flat.push({ type, preset: data.preset })
+      continue
+    }
+  }
+  return flat
+}
+
+/**
+ * Project a whole decoded log: the last `approval/policy` and `permission/preset` decide for the
+ * Session, then every call is projected against its own group of events.
+ */
+export function projectSessionEvents({ events = [], products = [], isolated = false } = {}) {
+  const flat = normalizeSessionEvents(events)
+  const policy = flat.filter(event => event.type === 'approval/policy').at(-1)?.policy ?? 'unknown'
+  const preset = flat.filter(event => event.type === 'permission/preset').at(-1)?.preset ?? 'unknown'
+  return projectEvents({ events: flat, products, preset, policy, isolated })
+}
+
 /** Project every call in one session. `products` are SelfReview records of the same session. */
 export function projectEvents({ events = [], products = [], preset = 'unknown', policy = 'unknown', isolated = false } = {}) {
   const productsByCall = new Map()
