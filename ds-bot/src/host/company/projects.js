@@ -98,6 +98,23 @@ const expectedBots = (state, projectId) => activeMembers(state, projectId)
 
 const sameMembers = (left, right) => left.length === right.length && [...left].sort().join('\n') === [...right].sort().join('\n')
 
+// One project as a screen reads it: the record, its active members, and the group chat it
+// lives in with the drift already worked out. Shared by `project.get` and the HTTP read
+// model, so both answer the same shape.
+export const projectDetailOf = (state, project, roomMembers) => {
+  const actual = roomMembers(project)
+  return {
+    project,
+    members: activeMembers(state, project.id),
+    group: {
+      group_chat_ref: project.group_chat_ref,
+      group_binding: project.group_binding ?? null,
+      members: actual ?? null,
+      drifted: actual === undefined ? null : !sameMembers(actual, expectedBots(state, project.id)),
+    },
+  }
+}
+
 export function projectHandlers({ groups = {} } = {}) {
   const rooms = {
     create: undefined,
@@ -232,21 +249,7 @@ export function projectHandlers({ groups = {} } = {}) {
 
     'project.get': ({ state, payload }) => {
       const project = projectOf(state, text(payload.project_id, 'project_id', { max: 120 }))
-      const actual = roomMembers(project)
-      return {
-        aggregate_id: project.id,
-        mutates: false,
-        body: {
-          project,
-          members: activeMembers(state, project.id),
-          group: {
-            group_chat_ref: project.group_chat_ref,
-            group_binding: project.group_binding ?? null,
-            members: actual ?? null,
-            drifted: actual === undefined ? null : !sameMembers(actual, expectedBots(state, project.id)),
-          },
-        },
-      }
+      return { aggregate_id: project.id, mutates: false, body: projectDetailOf(state, project, roomMembers) }
     },
 
     'project.list': ({ state, payload }) => {

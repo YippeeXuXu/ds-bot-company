@@ -7,6 +7,7 @@
 // group is made, read and re-membered. A project group is allowed to hold a single Bot
 // (Q1); no other group is.
 import { join } from 'node:path'
+import { createCompanyApi } from './api.js'
 import { createCommands } from './commands.js'
 import { orgHandlers } from './org.js'
 import { projectHandlers } from './projects.js'
@@ -46,9 +47,17 @@ export function install(rt) {
     },
   })
   const execute = commands.execute
-  // `rt.company` is what the HTTP layer (M1a-5) and the tools (M1a-3) will call.
-  rt.company = { dir, store, execute, commands: commands.commands, close: () => store.close() }
-  Object.assign(rt, { companyExecute: execute, companyStore: store, companyState: () => store.state })
+  // The HTTP layer and the client channel read the same three answers; the groups adapter
+  // is shared so a screen's `group` block comes from the roster, not a copy of it.
+  const api = createCompanyApi({ store, execute, groups: groupAdapter(rt), now })
+  // `rt.company` is what the HTTP layer and the tools call.
+  rt.company = { dir, store, execute, commands: commands.commands, api, close: () => store.close() }
+  Object.assign(rt, { companyExecute: execute, companyStore: store, companyApi: api, companyState: () => store.state })
+  // Routes live exactly as long as the plugin: the channel's own route is disposed the
+  // same way, and a host reload must not leave three stale handlers on the carrier.
+  if (typeof rt.ctx?.connection?.fetch?.register === 'function') {
+    rt.ctx.effect(() => api.register(rt.ctx), 'ds-bot: company api')
+  }
   // Released with the plugin, like the team file's lock in store.js: an unloaded plugin
   // must not leave a beating lock behind, which would hold the next host read-only
   // until the heartbeat went stale.
