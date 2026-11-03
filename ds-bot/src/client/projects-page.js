@@ -68,15 +68,12 @@ export function CompanySurface({ page, actions, roster }) {
   const load = async (signal, quiet = false) => {
     if (!quiet) { setLoading(true); setError('') }
     try {
-      const [company, departments, employees, projects] = await Promise.all([
-        call('company.get', { operation_key: freshKey() }, signal),
-        call('department.list', { operation_key: freshKey() }, signal),
-        call('employee.list', { operation_key: freshKey() }, signal),
-        call('project.list', { operation_key: freshKey() }, signal),
-      ])
+      // One read for the whole company: the host's company-model route answers the same
+      // shape these pages render, so the list does not need one call per area.
+      const model = await call('company-model', null, signal)
       if (signal?.aborted) return
-      const next = { company: company.body?.company ?? null, departments: departments.body?.departments ?? [], employees: employees.body?.employees ?? [], projects: projects.body?.projects ?? [], members: [], group: null, revision: projects.revision }
-      revision.current = projects.revision
+      const next = { company: model.company ?? null, departments: model.departments ?? [], employees: model.employees ?? [], projects: model.projects ?? [], members: [], group: null, revision: model.revision }
+      revision.current = model.revision
       setData(next)
     } catch (failure) { if (!signal?.aborted) { if (quiet) setNotice(message(failure)); else setError(message(failure)) } }
     finally { if (!signal?.aborted && !quiet) setLoading(false) }
@@ -88,13 +85,18 @@ export function CompanySurface({ page, actions, roster }) {
     const controller = new AbortController()
     setDetailLoading(true)
     setDetailError('')
-    void call('project.get', { project_id: selected, operation_key: freshKey() }, controller.signal)
-      .then(result => {
+    void call('company-model', { project_id: selected }, controller.signal)
+      .then(model => {
         if (controller.signal.aborted) return
-        if (Number.isInteger(result.revision)) revision.current = result.revision
+        const detail = model.project
+        if (!detail) { setDetailError(t('The project is no longer available.')); return }
+        if (Number.isInteger(model.revision)) revision.current = model.revision
+        // The detail answer carries the project's members and group next to its own
+        // fields; the list holds projects alone, so keep that object separate.
+        const { members = [], group = null, ...project } = detail
         setData(current => ({ ...current,
-          projects: current.projects.some(item => item.id === selected) ? current.projects.map(item => item.id === selected ? result.body.project : item) : [...current.projects, result.body.project],
-          members: result.body.members ?? [], group: result.body.group ?? null }))
+          projects: current.projects.some(item => item.id === selected) ? current.projects.map(item => item.id === selected ? project : item) : [...current.projects, project],
+          members, group }))
       })
       .catch(failure => { if (!controller.signal.aborted) setDetailError(message(failure)) })
       .finally(() => { if (!controller.signal.aborted) setDetailLoading(false) })
@@ -124,7 +126,7 @@ export function CompanySurface({ page, actions, roster }) {
     // Keep the key after an uncertain network response: a retry must replay the same
     // operation instead of creating a second project or group.
     let result
-    try { result = await call(command, { ...fields, operation_key: attempt.key, expected_revision: attempt.revision }) }
+    try { result = await call('company-command', { command, payload: { ...fields, operation_key: attempt.key, expected_revision: attempt.revision } }) }
     catch (failure) {
       // A 409 is a definite rejection (revision or key conflict). Refresh before a
       // new attempt; network errors keep the original key for safe server replay.

@@ -1186,6 +1186,7 @@ Object.assign(ZH, HOST_ZH, {
   'Preview · Local sample data. Nothing has been saved.': '预览 · 本地示例数据，未保存任何内容。',
   'Dismiss notice': '关闭提示', 'Loading projects…': '正在加载项目组…',
   'Projects could not be loaded.': '无法加载项目组。', 'Open local sample preview': '查看本地示例预览',
+  'The project is no longer available.': '该项目已不存在。',
   'Project list': '项目组列表', 'Workspace / Projects': '工作区 / 项目组',
   'Browse work across departments and open a project to see its status.': '浏览跨部门项目，打开项目可查看其状态。',
   'New project': '新建项目组', Current: '进行中', Archived: '已归档',

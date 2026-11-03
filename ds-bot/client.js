@@ -1235,6 +1235,7 @@ Object.assign(ZH, HOST_ZH, {
   "Loading projects…": "正在加载项目组…",
   "Projects could not be loaded.": "无法加载项目组。",
   "Open local sample preview": "查看本地示例预览",
+  "The project is no longer available.": "该项目已不存在。",
   "Project list": "项目组列表",
   "Workspace / Projects": "工作区 / 项目组",
   "Browse work across departments and open a project to see its status.": "浏览跨部门项目，打开项目可查看其状态。",
@@ -19485,15 +19486,10 @@ function CompanySurface({ page, actions, roster }) {
       setError("");
     }
     try {
-      const [company, departments, employees, projects] = await Promise.all([
-        call("company.get", { operation_key: freshKey() }, signal),
-        call("department.list", { operation_key: freshKey() }, signal),
-        call("employee.list", { operation_key: freshKey() }, signal),
-        call("project.list", { operation_key: freshKey() }, signal)
-      ]);
+      const model = await call("company-model", null, signal);
       if (signal?.aborted) return;
-      const next = { company: company.body?.company ?? null, departments: departments.body?.departments ?? [], employees: employees.body?.employees ?? [], projects: projects.body?.projects ?? [], members: [], group: null, revision: projects.revision };
-      revision.current = projects.revision;
+      const next = { company: model.company ?? null, departments: model.departments ?? [], employees: model.employees ?? [], projects: model.projects ?? [], members: [], group: null, revision: model.revision };
+      revision.current = model.revision;
       setData(next);
     } catch (failure) {
       if (!signal?.aborted) {
@@ -19514,14 +19510,20 @@ function CompanySurface({ page, actions, roster }) {
     const controller = new AbortController();
     setDetailLoading(true);
     setDetailError("");
-    void call("project.get", { project_id: selected, operation_key: freshKey() }, controller.signal).then((result) => {
+    void call("company-model", { project_id: selected }, controller.signal).then((model) => {
       if (controller.signal.aborted) return;
-      if (Number.isInteger(result.revision)) revision.current = result.revision;
+      const detail = model.project;
+      if (!detail) {
+        setDetailError(t("The project is no longer available."));
+        return;
+      }
+      if (Number.isInteger(model.revision)) revision.current = model.revision;
+      const { members = [], group = null, ...project2 } = detail;
       setData((current) => ({
         ...current,
-        projects: current.projects.some((item) => item.id === selected) ? current.projects.map((item) => item.id === selected ? result.body.project : item) : [...current.projects, result.body.project],
-        members: result.body.members ?? [],
-        group: result.body.group ?? null
+        projects: current.projects.some((item) => item.id === selected) ? current.projects.map((item) => item.id === selected ? project2 : item) : [...current.projects, project2],
+        members,
+        group
       }));
     }).catch((failure) => {
       if (!controller.signal.aborted) setDetailError(message(failure));
@@ -19562,7 +19564,7 @@ function CompanySurface({ page, actions, roster }) {
     }
     let result;
     try {
-      result = await call(command, { ...fields, operation_key: attempt.key, expected_revision: attempt.revision });
+      result = await call("company-command", { command, payload: { ...fields, operation_key: attempt.key, expected_revision: attempt.revision } });
     } catch (failure) {
       if (failure?.code === "HTTP_409" || failure?.code === "company/revision-conflict" || failure?.code === "company/idempotency-conflict") {
         writeKeys.current.delete(fingerprint);
