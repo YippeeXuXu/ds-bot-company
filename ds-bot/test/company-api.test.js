@@ -249,6 +249,30 @@ test('the events page follows its cursor and never repeats an event', async () =
   rmSync(home, { recursive: true, force: true })
 })
 
+test('a null query is read as an empty one instead of failing the screen', async () => {
+  const home = tempHome()
+  const { api, rooms } = open(home)
+  const seed_ = await seed(api, rooms)
+  await command(api, 'project.create', draft(seed_))
+
+  // `/api/bot` hands a client's payload straight through, and a client may send null where
+  // it means "no filter"; a default parameter only covers `undefined`, so the entry has to
+  // read null as the empty query rather than crash into a 500 on the first screen.
+  const model = api.model(null)
+  assert.equal(model.status, 200)
+  assert.equal('project' in model.body, false)
+  assert.equal(model.body.projects.length, 1)
+  assert.equal(model.body.company.id, seed_.company)
+
+  const events = await api.events(null)
+  assert.equal(events.status, 200)
+  assert.equal(events.body.events[0].type, 'company.created')
+  assert.deepEqual(events.body.events.map(event => event.cursor), [1, 2, 3, 4, 5, 6, 6])
+  assert.equal(events.body.cursor, '6')
+  assert.equal(events.body.has_more, false)
+  rmSync(home, { recursive: true, force: true })
+})
+
 test('a saved member change the group refused comes back as a warning, not a failure', async () => {
   const home = tempHome()
   const { api, rooms } = open(home, { failSetMembers: true })
