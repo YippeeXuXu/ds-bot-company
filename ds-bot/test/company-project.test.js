@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -12,6 +12,7 @@ const bots = {
   bot_a: { id: 'bot_a', name: 'Alpha' },
   bot_b: { id: 'bot_b', name: 'Beta' },
   bot_c: { id: 'bot_c', name: 'Gamma' },
+  bot_d: { id: 'bot_d', name: 'Delta' },
 }
 const botOf = id => bots[id]
 const tempHome = () => mkdtempSync(join(tmpdir(), 'ds-bot-company-project-'))
@@ -344,5 +345,236 @@ test('a group the roster refuses is saved as pending and reported as a warning',
   const read = await projectOf(commands, projectId)
   assert.equal(read.body.group.group_binding.status, 'pending')
   assert.equal(read.body.group.drifted, true)
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('a draft can be created without a coordinator, stays unbound, and starts once one joins', async () => {
+  const home = tempHome()
+  const { store, commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', {
+    operation_key: key('create-draft'),
+    ...draft(seed_, { coordinator_employee_id: undefined }),
+  })
+  assert.equal(created.status, 'committed')
+  const project = created.body.project
+  assert.equal(project.status, 'setup')
+  assert.equal(project.coordinator_assignment_id, null)
+  assert.equal(project.group_chat_ref, null)
+  assert.equal(project.group_binding.status, 'unbound')
+  assert.equal(created.body.member, null)
+  assert.equal(created.body.group_chat_ref, null)
+  // Only the department group exists: a draft without members makes no group chat.
+  assert.equal(rooms.size, 1)
+
+  const read = await projectOf(commands, project.id)
+  assert.equal(read.body.group.group_chat_ref, null)
+  assert.equal(read.body.group.members, null)
+  assert.equal(read.body.group.drifted, null)
+
+  await assert.rejects(
+    run(commands, 'project.start', { operation_key: key('start-draft'), project_id: project.id }),
+    error => error.code === 'project/missing-input' && error.details.blockers.some(blocker => blocker.field === 'coordinator'),
+  )
+  assert.equal(store.state.projects[project.id].status, 'setup')
+
+  // The first member of an unbound draft makes the group, and the coordinator post is
+  // filled by the member given that role.
+  const added = await run(commands, 'project.member.add', {
+    operation_key: key('add-coordinator'),
+    project_id: project.id,
+    employee_id: seed_.alpha,
+    role: 'coordinator',
+  })
+  assert.equal(added.status, 'committed')
+  assert.equal(added.body.project.coordinator_assignment_id, added.body.member.id)
+  assert.match(added.body.project.group_chat_ref, /^room_/)
+  assert.deepEqual(rooms.get(added.body.project.group_chat_ref).members, ['bot_a'])
+
+  const started = await run(commands, 'project.start', { operation_key: key('start-after'), project_id: project.id })
+  assert.equal(started.body.project.status, 'active')
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('the coordinator post is filled once and only from a source department', async () => {
+  const home = tempHome()
+  const { commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', {
+    operation_key: key('create-draft'),
+    ...draft(seed_, { coordinator_employee_id: undefined }),
+  })
+  const projectId = created.body.project.id
+  await run(commands, 'project.member.add', { operation_key: key('add-alpha'), project_id: projectId, employee_id: seed_.alpha, role: 'coordinator' })
+  await assert.rejects(
+    run(commands, 'project.member.add', { operation_key: key('add-beta-coordinator'), project_id: projectId, employee_id: seed_.beta, role: 'coordinator' }),
+    error => error.code === 'project/coordinator-exists',
+  )
+
+  // A Bot from a department outside the project cannot take the post.
+  const other = await run(commands, 'department.create', { operation_key: key('dept-2'), name: '工程' })
+  const foreign = await run(commands, 'employee.create', {
+    operation_key: key('foreign'),
+    bot_id: 'bot_d',
+    department_id: other.aggregate_id,
+    name: '工程 Bot',
+  })
+  const second = await run(commands, 'project.create', {
+    operation_key: key('create-second'),
+    ...draft(seed_, { coordinator_employee_id: undefined, name: '第二个项目' }),
+  })
+  await assert.rejects(
+    run(commands, 'project.member.add', { operation_key: key('add-foreign'), project_id: second.body.project.id, employee_id: foreign.aggregate_id, role: 'coordinator' }),
+    error => error.code === 'project/invalid' && error.details.field === 'employee_id',
+  )
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('one project.update can raise owner_only and name the owner together', async () => {
+  const home = tempHome()
+  const { store, commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', {
+    operation_key: key('create-draft'),
+    ...draft(seed_, { coordinator_employee_id: undefined, acceptance_actor: seed_.beta }),
+  })
+  const projectId = created.body.project.id
+  // Both halves in one command: the new requirement is judged against the new actor, not
+  // against the Bot the draft was created with.
+  const updated = await run(commands, 'project.update', {
+    operation_key: key('update-owner'),
+    project_id: projectId,
+    acceptance_requirement: 'owner_only',
+    acceptance_actor: 'user',
+  })
+  assert.equal(updated.status, 'committed')
+  assert.equal(updated.body.project.acceptance_requirement, 'owner_only')
+  assert.equal(updated.body.project.acceptance_actor, 'user')
+  assert.equal(store.state.projects[projectId].acceptance_requirement, 'owner_only')
+
+  // owner_only with a Bot in the same command is still refused, and the project is untouched.
+  await assert.rejects(
+    run(commands, 'project.update', {
+      operation_key: key('update-owner-bot'),
+      project_id: projectId,
+      acceptance_requirement: 'owner_only',
+      acceptance_actor: seed_.beta,
+    }),
+    error => error.code === 'project/owner-required',
+  )
+  assert.equal(store.state.projects[projectId].acceptance_actor, 'user')
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('project.update fills in what the draft left out and records the change', async () => {
+  const home = tempHome()
+  const { store, commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', {
+    operation_key: key('create-draft'),
+    ...draft(seed_, { coordinator_employee_id: undefined, workspace_ref: undefined, memory_employee_id: undefined }),
+  })
+  const projectId = created.body.project.id
+  const updated = await run(commands, 'project.update', {
+    operation_key: key('update'),
+    expected_revision: created.revision,
+    project_id: projectId,
+    name: 'DS Bot Company M1 试点',
+    goal: '把公司化改造跑通（试点）',
+    deliverable: '可运行的项目页',
+    acceptance: '六条验收全绿（试点）',
+    workspace_ref: '/tmp/projects/m1-pilot',
+    acceptance_actor: seed_.beta,
+    acceptance_requirement: 'daily_independent_bot',
+    memory_assignment_id: seed_.keeper,
+  })
+  assert.equal(updated.status, 'committed')
+  const project = updated.body.project
+  assert.equal(project.name, 'DS Bot Company M1 试点')
+  assert.equal(project.goal, '把公司化改造跑通（试点）')
+  assert.equal(project.deliverable, '可运行的项目页')
+  assert.equal(project.acceptance, '六条验收全绿（试点）')
+  assert.equal(project.workspace_ref, '/tmp/projects/m1-pilot')
+  assert.equal(project.acceptance_actor, seed_.beta)
+  assert.equal(project.memory_assignment_id, seed_.keeper)
+  // The edit is a new revision of the project, and it is on disk.
+  assert.equal(project.revision, 2)
+  assert.equal(store.state.projects[projectId].name, 'DS Bot Company M1 试点')
+  assert.equal(store.state.projects[projectId].revision, 2)
+  assert.match(readFileSync(store.eventsPath, 'utf8'), /"type":"project\.updated".*"fields":\["name","goal","deliverable","acceptance","workspace_ref","acceptance_requirement","acceptance_actor","memory_assignment_id"\]/)
+
+  // Configured values can be cleared again; the project then blocks its start on them.
+  const cleared = await run(commands, 'project.update', {
+    operation_key: key('update-clear'),
+    project_id: projectId,
+    workspace_ref: null,
+    memory_assignment_id: null,
+  })
+  assert.equal(cleared.body.project.workspace_ref, null)
+  assert.equal(cleared.body.project.memory_assignment_id, null)
+  assert.equal(cleared.body.project.revision, 3)
+  await assert.rejects(
+    run(commands, 'project.start', { operation_key: key('start-cleared'), project_id: projectId }),
+    error => error.code === 'project/missing-input' && error.details.blockers.some(blocker => blocker.field === 'workspace_ref') && error.details.blockers.some(blocker => blocker.field === 'memory_assignment_id'),
+  )
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('project.update replays a retry, refuses a stale revision and a changed retry', async () => {
+  const home = tempHome()
+  const { store, commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', { operation_key: key('create'), ...draft(seed_) })
+  const projectId = created.body.project.id
+
+  const first = await run(commands, 'project.update', { operation_key: 'dup-update', project_id: projectId, goal: '新目标' })
+  const replay = await run(commands, 'project.update', { operation_key: 'dup-update', project_id: projectId, goal: '新目标' })
+  assert.equal(replay.replayed, true)
+  assert.equal(replay.revision, first.revision)
+  assert.equal(store.state.projects[projectId].revision, first.body.project.revision)
+  await assert.rejects(
+    run(commands, 'project.update', { operation_key: 'dup-update', project_id: projectId, goal: '另一个目标' }),
+    error => error.code === 'company/idempotency-conflict',
+  )
+
+  await assert.rejects(
+    run(commands, 'project.update', { operation_key: key('update-stale'), expected_revision: store.state.revision - 1, project_id: projectId, goal: '过期目标' }),
+    error => error.code === 'company/revision-conflict',
+  )
+  assert.equal(store.state.projects[projectId].goal, '新目标')
+
+  // Only the listed fields are writable, and an update must change something.
+  await assert.rejects(
+    run(commands, 'project.update', { operation_key: key('update-nothing'), project_id: projectId, status: 'active' }),
+    error => error.code === 'company/invalid',
+  )
+  await assert.rejects(
+    run(commands, 'project.update', { operation_key: key('update-empty-name'), project_id: projectId, name: '   ' }),
+    error => error.code === 'company/invalid',
+  )
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('project.update refuses an archived project and a project of another company', async () => {
+  const home = tempHome()
+  const { store, commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', { operation_key: key('create'), ...draft(seed_) })
+  const projectId = created.body.project.id
+  await run(commands, 'project.archive', { operation_key: key('archive'), project_id: projectId })
+  await assert.rejects(
+    run(commands, 'project.update', { operation_key: key('update-archived'), project_id: projectId, goal: '归档后改' }),
+    error => error.code === 'project/state-conflict',
+  )
+
+  const second = await run(commands, 'project.create', {
+    operation_key: key('create-2'),
+    ...draft(seed_, { name: '另一个项目', coordinator_employee_id: undefined, memory_employee_id: undefined }),
+  })
+  store.state.projects[second.body.project.id].company_id = 'company_elsewhere'
+  await assert.rejects(
+    run(commands, 'project.update', { operation_key: key('update-elsewhere'), project_id: second.body.project.id, goal: '跨公司改' }),
+    error => error.code === 'project/not-found',
+  )
   rmSync(home, { recursive: true, force: true })
 })

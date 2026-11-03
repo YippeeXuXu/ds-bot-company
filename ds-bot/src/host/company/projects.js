@@ -1,10 +1,12 @@
 // Project commands: a project, its members, and the group chat a project lives in.
 //
 // A project is a temporary group pulled from departments, and its chat is the project
-// group itself (PRD 6.1): creating the project creates the group, and members follow the
-// group. The group is made through the roster, once, when the project is created; a
-// group that later goes missing or drifting is never rebuilt silently — the command
-// fails with `project/group-pending` and `project.group.reconcile` is the explicit repair.
+// group itself (PRD 6.1): a project created with a coordinator makes its group at once,
+// while a draft created without one stays `unbound` until its first member arrives or it
+// starts (the coordinator is a start-time requirement, spec :35). The group is made
+// through the roster once; a group that was bound and then goes missing or drifting is
+// never rebuilt silently — the command fails with `project/group-pending` and
+// `project.group.reconcile` is the explicit repair.
 //
 // Conditions that would make a project unstartable are collected and reported together
 // (`readiness.blockers`), so the screen can show everything missing in one pass.
@@ -23,6 +25,11 @@ const text = (value, field, { max = 120, min = 1 } = {}) => {
 const optionalText = (value, field, max = 2000) => (value === undefined || value === null || value === '' ? undefined : text(value, field, { max }))
 
 export const ACCEPTANCE_REQUIREMENTS = ['daily_independent_bot', 'owner_only']
+// What `project.update` may change after the draft exists (PRD 7.1: the coordinator,
+// acceptance, memory keeper and workspace are configured after creation). Identity,
+// source departments and status are fixed here; the coordinator arrives through
+// `project.member.add` with role `coordinator`.
+export const UPDATABLE_FIELDS = ['name', 'goal', 'deliverable', 'acceptance', 'workspace_ref', 'acceptance_actor', 'acceptance_requirement', 'memory_assignment_id']
 const OPEN = ['setup', 'active']
 const MEMBER_ROLES = ['executor', 'coordinator', 'acceptor', 'memory_keeper']
 
@@ -98,6 +105,23 @@ const expectedBots = (state, projectId) => activeMembers(state, projectId)
 
 const sameMembers = (left, right) => left.length === right.length && [...left].sort().join('\n') === [...right].sort().join('\n')
 
+// One project as a screen reads it: the record, its active members, and the group chat it
+// lives in with the drift already worked out. Shared by `project.get` and the HTTP read
+// model, so both answer the same shape.
+export const projectDetailOf = (state, project, roomMembers) => {
+  const actual = roomMembers(project)
+  return {
+    project,
+    members: activeMembers(state, project.id),
+    group: {
+      group_chat_ref: project.group_chat_ref,
+      group_binding: project.group_binding ?? null,
+      members: actual ?? null,
+      drifted: actual === undefined ? null : !sameMembers(actual, expectedBots(state, project.id)),
+    },
+  }
+}
+
 export function projectHandlers({ groups = {} } = {}) {
   const rooms = {
     create: undefined,
@@ -159,13 +183,19 @@ export function projectHandlers({ groups = {} } = {}) {
       if (sourceIds.length === 0) throw companyFail('project/invalid', 'source_department_ids needs at least one department.', { field: 'source_department_ids' })
       for (const departmentId of sourceIds) departmentOf(state, text(departmentId, 'source_department_ids', { max: 120 }))
 
-      const coordinator = employeeOf(state, text(payload.coordinator_employee_id, 'coordinator_employee_id', { max: 120 }))
-      if (coordinator.status !== 'active') throw companyFail('project/invalid', `Employee ${coordinator.id} is not active.`, { field: 'coordinator_employee_id' })
-      if (!sourceIds.includes(coordinator.department_id)) {
-        throw companyFail('project/invalid', `The coordinator must come from one of the source departments.`, { field: 'coordinator_employee_id', department_id: coordinator.department_id, source_department_ids: sourceIds })
-      }
-      if (busyMembership(state, coordinator.id) !== undefined) {
-        throw companyFail('project/member-busy', `Employee ${coordinator.id} is already in an active project.`, { field: 'coordinator_employee_id', employee_id: coordinator.id })
+      // The coordinator is required to start, not to create (spec :35). A draft made
+      // without one has no group chat yet, because there is nobody to put in it.
+      const coordinator = payload.coordinator_employee_id === undefined || payload.coordinator_employee_id === null || payload.coordinator_employee_id === ''
+        ? undefined
+        : employeeOf(state, text(payload.coordinator_employee_id, 'coordinator_employee_id', { max: 120 }))
+      if (coordinator !== undefined) {
+        if (coordinator.status !== 'active') throw companyFail('project/invalid', `Employee ${coordinator.id} is not active.`, { field: 'coordinator_employee_id' })
+        if (!sourceIds.includes(coordinator.department_id)) {
+          throw companyFail('project/invalid', `The coordinator must come from one of the source departments.`, { field: 'coordinator_employee_id', department_id: coordinator.department_id, source_department_ids: sourceIds })
+        }
+        if (busyMembership(state, coordinator.id) !== undefined) {
+          throw companyFail('project/member-busy', `Employee ${coordinator.id} is already in an active project.`, { field: 'coordinator_employee_id', employee_id: coordinator.id })
+        }
       }
       const requirement = requirementOf(payload.acceptance_requirement)
       const acceptanceActor = acceptanceActorOf(state, payload.acceptance_actor, requirement)
@@ -173,7 +203,6 @@ export function projectHandlers({ groups = {} } = {}) {
       if (memoryEmployee !== undefined && memoryEmployee.status !== 'active') throw companyFail('project/invalid', `Employee ${memoryEmployee.id} is not active.`, { field: 'memory_employee_id' })
 
       const projectId = newId('prj')
-      const memberId = newId('pmm')
       const project = {
         id: projectId,
         company_id: company.id,
@@ -185,7 +214,7 @@ export function projectHandlers({ groups = {} } = {}) {
         status: 'setup',
         group_chat_ref: null,
         group_binding: { status: 'unbound', room_id: null, synced_at: null },
-        coordinator_assignment_id: memberId,
+        coordinator_assignment_id: null,
         acceptance_actor: acceptanceActor ?? null,
         acceptance_requirement: requirement,
         memory_assignment_id: memoryEmployee?.id ?? null,
@@ -198,6 +227,18 @@ export function projectHandlers({ groups = {} } = {}) {
         updated_at: now(),
         revision: 1,
       }
+      state.projects[projectId] = project
+      // A draft without a coordinator is complete as it is: no membership, no group. It
+      // becomes a real project when a member is added (the first member makes the group)
+      // or when `project.start` passes its checks and makes the group then.
+      if (coordinator === undefined) {
+        return {
+          aggregate_id: projectId,
+          body: { project, member: null, project_member: null, group_chat_ref: null },
+          events: [{ type: 'project.created', data: { name, source_department_ids: sourceIds } }],
+        }
+      }
+      const memberId = newId('pmm')
       const member = {
         id: memberId,
         project_id: projectId,
@@ -216,8 +257,8 @@ export function projectHandlers({ groups = {} } = {}) {
         // checked by the host when the project starts.
         readiness: ['ready'],
       }
-      state.projects[projectId] = project
       state.members[memberId] = member
+      project.coordinator_assignment_id = memberId
       coordinator.project_id = projectId
       const roomId = await bindGroup(project, name, [coordinator.bot_id], now)
       return {
@@ -230,23 +271,77 @@ export function projectHandlers({ groups = {} } = {}) {
       }
     },
 
+    // The draft is editable while it is setup, and also while it is active: the project
+    // page fills in what creation left out. Only the fields below are writable; the
+    // operation key and expected_revision come from the envelope, so a stale screen or a
+    // retried request is caught before anything changes.
+    'project.update': async ({ state, payload, now }) => {
+      const project = projectOf(state, text(payload.project_id, 'project_id', { max: 120 }))
+      const company = companyOf(state)
+      // One company per M1: a project outside it is not addressed by this company's
+      // screen, and answering as if it were would let a stale id write across companies.
+      if (project.company_id !== company.id) {
+        throw companyFail('project/not-found', `No project ${project.id} in this company.`, { project_id: project.id })
+      }
+      if (!OPEN.includes(project.status)) throw companyFail('project/state-conflict', `A project in ${project.status} cannot be changed.`, { project_id: project.id, status: project.status })
+      const changes = []
+      const setField = (field, max) => {
+        if (payload[field] === undefined) return
+        project[field] = text(payload[field], field, { max })
+        changes.push(field)
+      }
+      setField('name', 80)
+      setField('goal', 2000)
+      setField('deliverable', 2000)
+      setField('acceptance', 2000)
+      if (payload.workspace_ref !== undefined) {
+        project.workspace_ref = optionalText(payload.workspace_ref, 'workspace_ref', 500) ?? null
+        changes.push('workspace_ref')
+      }
+      // Both halves of the acceptance pair are read before either is written: one request may
+      // raise the requirement to owner_only and name the owner at the same time, and judging
+      // the new requirement against the old actor would refuse a change that is in fact whole.
+      const nextRequirement = payload.acceptance_requirement === undefined
+        ? project.acceptance_requirement
+        : requirementOf(payload.acceptance_requirement)
+      const actorGiven = payload.acceptance_actor !== undefined
+      const nextActor = actorGiven
+        ? acceptanceActorOf(state, payload.acceptance_actor, nextRequirement) ?? null
+        : project.acceptance_actor
+      // owner_only work can only be accepted by the owner, so owner_only can never be left
+      // with a Bot or nobody as the actor — it would create a project that can never be
+      // accepted.
+      if (nextRequirement === 'owner_only' && nextActor !== 'user') {
+        throw companyFail('project/owner-required', 'owner_only acceptance belongs to the owner; set acceptance_actor to "user".', { field: 'acceptance_actor' })
+      }
+      if (payload.acceptance_requirement !== undefined) {
+        project.acceptance_requirement = nextRequirement
+        changes.push('acceptance_requirement')
+      }
+      if (actorGiven) {
+        project.acceptance_actor = nextActor
+        changes.push('acceptance_actor')
+      }
+      if (payload.memory_assignment_id !== undefined) {
+        const keeper = payload.memory_assignment_id === null || payload.memory_assignment_id === ''
+          ? null
+          : employeeOf(state, text(payload.memory_assignment_id, 'memory_assignment_id', { max: 120 }))
+        if (keeper !== null) {
+          if (keeper.status !== 'active') throw companyFail('project/invalid', `Employee ${keeper.id} is not active.`, { field: 'memory_assignment_id' })
+          if (keeper.company_id !== project.company_id) throw companyFail('project/invalid', `Employee ${keeper.id} belongs to another company.`, { field: 'memory_assignment_id' })
+        }
+        project.memory_assignment_id = keeper?.id ?? null
+        changes.push('memory_assignment_id')
+      }
+      if (changes.length === 0) throw companyFail('company/invalid', `project.update changes one of: ${UPDATABLE_FIELDS.join(', ')}.`, { fields: UPDATABLE_FIELDS })
+      project.updated_at = now()
+      project.revision += 1
+      return { aggregate_id: project.id, body: { project }, events: [{ type: 'project.updated', data: { fields: changes } }] }
+    },
+
     'project.get': ({ state, payload }) => {
       const project = projectOf(state, text(payload.project_id, 'project_id', { max: 120 }))
-      const actual = roomMembers(project)
-      return {
-        aggregate_id: project.id,
-        mutates: false,
-        body: {
-          project,
-          members: activeMembers(state, project.id),
-          group: {
-            group_chat_ref: project.group_chat_ref,
-            group_binding: project.group_binding ?? null,
-            members: actual ?? null,
-            drifted: actual === undefined ? null : !sameMembers(actual, expectedBots(state, project.id)),
-          },
-        },
-      }
+      return { aggregate_id: project.id, mutates: false, body: projectDetailOf(state, project, roomMembers) }
     },
 
     'project.list': ({ state, payload }) => {
@@ -269,7 +364,17 @@ export function projectHandlers({ groups = {} } = {}) {
       if (busyMembership(state, employee.id) !== undefined) {
         throw companyFail('project/member-busy', `Employee ${employee.id} is already in an active project.`, { project_id: project.id, employee_id: employee.id })
       }
-      if (roomMembers(project) === undefined) throw groupFailure(project, 'the project group is missing', 'no group chat')
+      // The coordinator post is one, and it is filled by the first member given that role
+      // (a draft created without a coordinator is completed this way).
+      if (role === 'coordinator') {
+        const current = project.coordinator_assignment_id == null ? undefined : state.members[project.coordinator_assignment_id]
+        if (current !== undefined && current.membership_status === 'active') {
+          throw companyFail('project/coordinator-exists', `The project already has a coordinator (${current.employee_id}).`, { project_id: project.id, coordinator_assignment_id: current.id })
+        }
+        if (!project.source_department_ids.includes(employee.department_id)) {
+          throw companyFail('project/invalid', 'The coordinator must come from one of the source departments.', { field: 'employee_id', department_id: employee.department_id, source_department_ids: project.source_department_ids })
+        }
+      }
       const memberId = newId('pmm')
       const member = {
         id: memberId,
@@ -289,14 +394,26 @@ export function projectHandlers({ groups = {} } = {}) {
       }
       state.members[memberId] = member
       employee.project_id = project.id
+      if (role === 'coordinator') project.coordinator_assignment_id = memberId
+      const events = [{ type: 'project.member.added', data: { employee_id: employee.id, role } }]
       let warning
-      try {
-        await syncGroup(project, expectedBots(state, project.id), now)
-      } catch (error) {
-        warning = markPending(project, 'the member was saved', error, now)
+      if (project.group_chat_ref == null) {
+        // The first member of a draft that was created without a coordinator makes the
+        // group, with everyone the project holds at that point. Refusing here would leave
+        // the draft permanently unstartable, since a group can only be made from members.
+        const roomId = await bindGroup(project, project.name, expectedBots(state, project.id), now)
+        events.push({ type: 'project.group.bound', data: { room_id: roomId } })
+      } else if (roomMembers(project) === undefined) {
+        throw groupFailure(project, 'the project group is missing', 'no group chat')
+      } else {
+        try {
+          await syncGroup(project, expectedBots(state, project.id), now)
+        } catch (error) {
+          warning = markPending(project, 'the member was saved', error, now)
+        }
       }
       project.updated_at = now()
-      return { aggregate_id: project.id, body: { project, member }, events: [{ type: 'project.member.added', data: { employee_id: employee.id, role } }], ...(warning === undefined ? {} : { warning }) }
+      return { aggregate_id: project.id, body: { project, member }, events, ...(warning === undefined ? {} : { warning }) }
     },
 
     'project.member.remove': async ({ state, payload, now }) => {
@@ -368,8 +485,16 @@ export function projectHandlers({ groups = {} } = {}) {
       if (blockers.length > 0) {
         throw companyFail('project/missing-input', `The project cannot start yet: ${blockers.map(blocker => blocker.message).join(' ')}`, { project_id: project.id, blockers })
       }
-      const actual = roomMembers(project)
       const expected = expectedBots(state, project.id)
+      const events = []
+      // A draft created without a coordinator has no group yet; start makes it now, with the
+      // members the project holds. A group that was bound and then vanished is a different
+      // case: it still stops the start, and reconcile is the explicit repair.
+      if (project.group_chat_ref == null) {
+        const roomId = await bindGroup(project, project.name, expected, now)
+        events.push({ type: 'project.group.bound', data: { room_id: roomId } })
+      }
+      const actual = roomMembers(project)
       if (actual === undefined) throw companyFail('project/group-pending', 'The project group is missing, so the project cannot start. Run project.group.reconcile.', { project_id: project.id, room_id: project.group_chat_ref })
       if (!sameMembers(actual, expected)) {
         throw companyFail('project/group-pending', `The project group holds ${actual.length} Bot(s), the project has ${expected.length} active member(s). Run project.group.reconcile.`, { project_id: project.id, room_id: project.group_chat_ref, expected, actual })
@@ -379,7 +504,8 @@ export function projectHandlers({ groups = {} } = {}) {
       project.updated_at = now()
       project.revision += 1
       project.group_binding = { ...project.group_binding, status: 'bound', room_id: project.group_chat_ref, synced_at: now() }
-      return { aggregate_id: project.id, body: { project, readiness: { status: 'ready', blockers: [] } }, events: [{ type: 'project.started', data: { room_id: project.group_chat_ref } }] }
+      events.push({ type: 'project.started', data: { room_id: project.group_chat_ref } })
+      return { aggregate_id: project.id, body: { project, readiness: { status: 'ready', blockers: [] } }, events }
     },
 
     'project.archive': async ({ state, payload, now }) => {

@@ -114,7 +114,7 @@ export function install(rt) {
   }
   // What a host that only reads the team may still answer.
   // Updates change the dsh profile, not the team, so a reading host may run them too.
-  const READS = new Set(['state', 'models', 'efforts', 'providers', 'provider-models', 'earlier', 'chat', 'run-stats', 'room-progress', 'exchange', 'exchange-text', 'file-text', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'thinking', 'avatar-library'])
+  const READS = new Set(['state', 'models', 'efforts', 'providers', 'provider-models', 'earlier', 'chat', 'run-stats', 'room-progress', 'exchange', 'exchange-text', 'file-text', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'thinking', 'avatar-library', 'company-model', 'company-events'])
 
   function setPrefs(body) {
     if (body.theme !== undefined) {
@@ -576,6 +576,17 @@ export function install(rt) {
         case 'diagnostics-clear':
           await rt.diagnostics.clear()
           return ok(true)
+        // The company layer, for the screens that already speak this channel. The same
+        // three answers are also served on their own routes (company/api.js); these
+        // endpoints exist so the browser needs one call style, not two.
+        case 'company-command': {
+          const result = await rt.companyApi.command(body)
+          return result.status === 200 ? ok(result.body) : { ok: false, error: result.body }
+        }
+        case 'company-model':
+          return ok((await rt.companyApi.model(body)).body)
+        case 'company-events':
+          return ok((await rt.companyApi.events(body)).body)
         default:
           return fail(`Unknown endpoint ${endpoint}`, 'bot/not-found')
       }
