@@ -412,8 +412,10 @@ export function install(rt) {
     }
   }
 
-  function checkMembers(members) {
-    if (members.length < 2) throw new Error('A group chat needs at least two Bots')
+  // A project group may hold the single Bot of a one-person project (PRD Q1); every
+  // other group keeps the two-Bot floor that makes a conversation.
+  function checkMembers(members, { allowSingle = false } = {}) {
+    if (members.length < (allowSingle ? 1 : 2)) throw new Error(allowSingle ? 'A group chat needs at least one Bot' : 'A group chat needs at least two Bots')
     if (members.length > ROOM_MAX_MEMBERS) throw new Error(`A group chat holds at most ${ROOM_MAX_MEMBERS} Bots`)
     rt.checkNoPrivate(members)
   }
@@ -422,17 +424,17 @@ export function install(rt) {
   // member when it has one.
   const defaultAdmin = (members, createdBy) => (members.includes(createdBy) ? createdBy : members.find(rt.isMain) ?? null)
 
-  async function createRoom({ members: memberIds = [], name: roomName, notice, mode, admin, createdBy } = {}) {
+  async function createRoom({ members: memberIds = [], name: roomName, notice, mode, admin, createdBy, allowSingle = false } = {}) {
     const members = [...new Set(memberIds)].filter(id => rt.botOf(id))
-    checkMembers(members)
+    checkMembers(members, { allowSingle })
     const custom = cleanRoomName(roomName ?? '')
     const adminId = admin !== undefined ? admin : defaultAdmin(members, createdBy)
     if (adminId !== null && !members.includes(adminId)) throw new Error('The admin must be a member of the group')
     if (mode !== undefined && !ROOM_MODES.includes(mode)) throw new Error(`Reply mode must be one of ${ROOM_MODES.join(', ')}`)
-    return holdName('room', custom, () => buildRoom({ members, custom, notice, mode, adminId, createdBy }))
+    return holdName('room', custom, () => buildRoom({ members, custom, notice, mode, adminId, createdBy, allowSingle }))
   }
 
-  async function buildRoom({ members, custom, notice, mode, adminId, createdBy }) {
+  async function buildRoom({ members, custom, notice, mode, adminId, createdBy, allowSingle = false }) {
     const title = custom || autoRoomName(members)
     // The group's own Session only relays; like a member's it moves to a fresh part
     // in the group's folder once the group has one (parts.js).
@@ -441,7 +443,7 @@ export function install(rt) {
       // A member deleted while the Session was made stays out, and the group is checked
       // again as it is written.
       const live = members.filter(member => rt.botOf(member))
-      checkMembers(live)
+      checkMembers(live, { allowSingle })
       const lead = adminId === null || live.includes(adminId) ? adminId : defaultAdmin(live, createdBy)
       const name = custom || autoRoomName(live)
       const room = {
@@ -475,7 +477,7 @@ export function install(rt) {
   // reads only the team, so updateRoom runs it to fail fast and again after its last
   // await: another change or a deleted Bot may have come in meanwhile, and `add` and
   // `remove` apply to the members the group has then.
-  function planRoomChange(room, patch, actorId) {
+  function planRoomChange(room, patch, actorId, { allowSingle = false } = {}) {
     const byMain = actorId === undefined || rt.isMain(actorId)
     const byAdmin = !byMain && rt.isAdminOf(room, actorId)
     if (!byMain && !byAdmin) throw new Error(`Only the user, a Main Bot, or the admin of "${room.name}" can change it`)
@@ -484,7 +486,7 @@ export function install(rt) {
     members = members.filter(member => !(patch.remove ?? []).includes(member) && rt.botOf(member))
     // A group left with one Bot by a deletion can still change its other settings.
     const current = room.members.filter(member => rt.botOf(member))
-    if (members.length !== current.length || members.some(member => !current.includes(member))) checkMembers(members)
+    if (members.length !== current.length || members.some(member => !current.includes(member))) checkMembers(members, { allowSingle })
     let admin = room.admin ?? null
     if (patch.admin !== undefined) {
       admin = patch.admin || null
@@ -508,10 +510,10 @@ export function install(rt) {
   }
 
   // `actorId` is the Bot asking, or undefined for the user. Returns what changed, in words.
-  async function updateRoom(id, patch, actorId) {
+  async function updateRoom(id, patch, actorId, { allowSingle = false } = {}) {
     const asked = rt.roomOf(id)
     if (asked === undefined) throw new Error('Unknown group chat')
-    planRoomChange(asked, patch, actorId)
+    planRoomChange(asked, patch, actorId, { allowSingle })
     const moving = patch.workDir !== undefined
     const workDir = moving ? await rt.cleanWorkDir(patch.workDir ?? '') : undefined
     const clash = workDir === undefined ? undefined : await rt.privateClash(workDir)
@@ -519,7 +521,7 @@ export function install(rt) {
     // No await from here until every change is written.
     const room = rt.roomOf(id)
     if (room === undefined) throw new Error('Unknown group chat')
-    const { members, admin, name, notice, permission } = planRoomChange(room, patch, actorId)
+    const { members, admin, name, notice, permission } = planRoomChange(room, patch, actorId, { allowSingle })
 
     const changes = []
     const names = ids => ids.map(member => rt.botOf(member)?.name).filter(Boolean).join(', ')

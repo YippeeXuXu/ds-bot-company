@@ -28,7 +28,7 @@ const text = (value, field, max = KEY_MAX) => {
   return value
 }
 
-export function createCommands({ store, handlers = {}, now = Date.now }) {
+export function createCommands({ store, handlers = {}, now = Date.now, logKept = LOG_KEPT }) {
   // Commands run one at a time: the state is read, changed and saved as a whole, so a
   // second command that started during the first would save over its result.
   let queue = Promise.resolve()
@@ -39,12 +39,13 @@ export function createCommands({ store, handlers = {}, now = Date.now }) {
   }
 
   // Keeps the replay record bounded: a long-running company would otherwise grow one
-  // file line per operation forever.
+  // file line per operation forever. The guarantee covers this window only: an
+  // operation_key trimmed out of it is a new operation again.
   const prune = log => {
     const keys = Object.keys(log)
-    if (keys.length <= LOG_KEPT) return
+    if (keys.length <= logKept) return
     const byAge = keys.sort((left, right) => (log[left].at ?? 0) - (log[right].at ?? 0))
-    for (const key of byAge.slice(0, keys.length - LOG_KEPT)) delete log[key]
+    for (const key of byAge.slice(0, keys.length - logKept)) delete log[key]
   }
 
   const execute = async (command, payload = {}) => {
@@ -92,6 +93,10 @@ export function createCommands({ store, handlers = {}, now = Date.now }) {
         activity_cursor: String(store.state.revision),
       }
       if (outcome.body !== undefined) envelope.body = outcome.body
+      // A handler may keep a successful save and still report drift it could not fix (for
+      // example a project group that needs reconciling). The warning travels on the success
+      // envelope so the screen can show "saved, needs attention" rather than a bare failure.
+      if (outcome.warning !== undefined) envelope.warning = outcome.warning
       // Reads (mutates: false) are not recorded in operation_log, so they carry no
       // replay guarantee: asking again with the same key simply reads again. Only a
       // write leaves a record, because only a write is unsafe to repeat.
