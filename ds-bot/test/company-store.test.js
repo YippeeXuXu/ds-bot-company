@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { hostname, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createCommands } from '../src/host/company/commands.js'
@@ -225,9 +225,11 @@ test('another process holding the lock makes this store read-only', async () => 
   const { commands, store } = open(home, { useLock: true })
   await seed(commands)
   store.close()
-  // A live holder on this host: pid 1 runs, and the heartbeat is fresh.
+  // A live holder on another host: the host check is skipped, so only the fresh
+  // heartbeat keeps it live. Pid liveness differs by platform (pid 1 is alive on Linux,
+  // not on Windows), and this claim must read the same on every runner.
   mkdirSync(companyDir(home), { recursive: true })
-  writeFileSync(join(companyDir(home), 'state.lock'), JSON.stringify({ pid: 1, host: hostname(), token: 'other', since: Date.now() }))
+  writeFileSync(join(companyDir(home), 'state.lock'), JSON.stringify({ pid: 1, host: 'another-host', token: 'other', since: Date.now() }))
   const again = open(home, { useLock: true })
   assert.match(again.store.readOnly(), /open in another dsh/)
   await assert.rejects(
