@@ -1268,6 +1268,7 @@ Object.assign(ZH, HOST_ZH, {
   "Project chat": "项目群聊",
   "Open chat": "打开群聊",
   "Group binding needs attention before chat can be opened.": "群绑定需要处理后才能打开聊天。",
+  "The project group is created when a member joins or the project starts.": "成员加入或项目启动时才会创建项目群。",
   "Archived project. The group history remains available for reading.": "项目已归档，群聊历史保留供查阅。",
   "Project group is linked. Open the existing chat to continue.": "项目群已绑定，可打开现有群聊继续。",
   "Group needs reconciliation": "项目群待对账",
@@ -1288,6 +1289,7 @@ Object.assign(ZH, HOST_ZH, {
   Group: "群聊",
   "Needs attention": "待处理",
   Linked: "已绑定",
+  "Not created yet": "尚未创建",
   "Reconcile group": "对账项目群",
   "Start project": "启动项目",
   "Acceptance actor": "验收人",
@@ -1314,13 +1316,13 @@ Object.assign(ZH, HOST_ZH, {
   "Department name": "部门名称",
   "Add department": "添加部门",
   Back: "上一步",
-  "Bind department chats before creating a project.": "创建项目前请先绑定部门群。",
-  "Create a group chat with at least two Bots in Chats, then select it here.": "请先在群聊中建立至少含两位 Bot 的群，再到这里选择。",
+  "Department chats are needed before the project starts.": "启动项目前需要绑定部门群。",
+  "You can create a setup draft now. Bind each department chat before starting the project.": "可以先创建待配置草稿；启动前请绑定各部门群。",
   "Existing group chat": "现有群聊",
   "Choose a group chat": "选择群聊",
   "Bind chat to {name}": "绑定群聊到 {name}",
   "Project coordinator": "项目协调员",
-  "Choose an active employee from a source department who is not assigned to another active project.": "从来源部门选择未参与其他活动项目的在职员工。",
+  "The coordinator can be assigned after creating the draft. One is required before launch.": "可先创建草稿，启动前再指定协调员。",
   Employee: "员工",
   "Choose an employee": "选择员工",
   "Add an employee profile": "添加员工档案",
@@ -1340,16 +1342,28 @@ Object.assign(ZH, HOST_ZH, {
   "Describe the deliverable": "描述交付物",
   "Acceptance criteria": "验收标准",
   "Describe how to accept the deliverable": "描述交付条件",
+  "Optional setup for launch": "启动前配置（可稍后处理）",
   "Acceptance mode": "验收方式",
-  "Independent Bot acceptance": "独立 Bot 验收",
-  "Owner acceptance": "老板验收",
-  "The owner will accept this project.": "这个项目由老板验收。",
+  "D7 classification (default)": "按 D7 分级（默认）",
+  "Assign independent acceptance Bot": "指定独立验收 Bot",
+  "Daily work uses an independent Bot; final delivery and sensitive work require owner acceptance.": "日常任务由独立验收 Bot 验收；最终交付和敏感事项由老板本人验收。",
   "Acceptance Bot": "验收 Bot",
   "Choose an acceptance Bot": "选择验收 Bot",
-  "Choose a memory keeper": "选择记忆维护员",
-  "Path to the project workspace": "项目工作目录路径",
-  "Add a memory keeper and an acceptance Bot in the previous step, or choose owner acceptance.": "请返回上一步添加记忆维护员和验收 Bot，或改选老板验收。",
-  "A new project starts in setup. Group binding and launch checks are shown on its project page.": "新项目处于待配置状态；群绑定和启动检查会在项目页显示。",
+  "Memory keeper (optional)": "记忆维护员（可选）",
+  "Assign before launch": "启动前指定",
+  "Workspace folder (optional)": "项目工作目录（可选）",
+  "Suggested: company/projects/<project name>": "建议：company/projects/<项目名>",
+  "An independent acceptance Bot, a memory keeper and a usable workspace are required before launch. Complete these on the draft after the M1a-5 bridge is connected.": "启动前需指定独立验收 Bot、记忆维护员和可用工作目录；待 M1a-5 接通后可在草稿中补齐。",
+  "Creation saves a setup draft. Complete the remaining setup before launch; draft editing awaits the M1a-5 bridge.": "创建后进入待配置草稿；启动前需补齐配置，草稿编辑待 M1a-5 接通。",
+  "Local sample cannot be started": "本地样例不可启动",
+  "reconcile the project group": "完成项目群对账",
+  "assign a project coordinator": "指定项目协调员",
+  "resolve inactive members or departments": "处理失效成员或部门",
+  "bind department chats": "绑定成员所属部门群",
+  "assign an acceptance Bot": "指定验收 Bot",
+  "assign a memory keeper": "指定记忆维护员",
+  "set a workspace folder": "设置工作目录",
+  "Before starting: {items}.": "启动前需：{items}。",
   "Creating…": "创建中…",
   "Create sample project": "创建示例项目",
   "Create project": "创建项目",
@@ -19151,10 +19165,30 @@ function ProjectPage({ project, data, preview, loading, error, onBack, onChat, o
   if (error) return (0, import_react50.createElement)("section", { className: "bc-state bc-error", role: "alert" }, (0, import_react50.createElement)("strong", null, t("Project could not be loaded.")), (0, import_react50.createElement)("p", null, error), (0, import_react50.createElement)("button", { type: "button", className: "bc-button", onClick: onRetry }, t("Try again")), (0, import_react50.createElement)("button", { type: "button", className: "bc-button", onClick: onBack }, t("Back to projects")));
   if (!project) return (0, import_react50.createElement)("section", { className: "bc-state" }, (0, import_react50.createElement)("strong", null, t("Project not found")), (0, import_react50.createElement)("p", null, t("Its record may have changed. Return to the project list.")), (0, import_react50.createElement)("button", { type: "button", className: "bc-button", onClick: onBack }, t("Back to projects")));
   const binding = preview ? project.group_binding : data.group?.group_binding ?? project.group_binding;
+  const unbound = binding?.status === "unbound" && !project.group_chat_ref;
   const pending = binding?.status !== "bound" || !preview && data.group?.drifted === true;
   const members = preview ? (data.members ?? []).filter((member) => member.project_id === project.id) : data.members ?? [];
   const coordinator = members.find((member) => member.id === project.coordinator_assignment_id || member.role === "coordinator");
   const employeeName = (id) => data.employees.find((employee) => employee.id === id)?.name ?? id;
+  const invalidMember = members.some((member) => {
+    const employee = data.employees.find((item) => item.id === member.employee_id);
+    const department = data.departments.find((item) => item.id === employee?.department_id);
+    return !employee || employee.status !== "active" || !department || department.status !== "active";
+  });
+  const missingDepartmentChat = members.some((member) => {
+    const employee = data.employees.find((item) => item.id === member.employee_id);
+    return employee && !data.departments.find((item) => item.id === employee.department_id)?.chat_ref;
+  });
+  const startBlockers = [
+    preview ? t("Local sample cannot be started") : null,
+    !coordinator ? t("assign a project coordinator") : null,
+    invalidMember ? t("resolve inactive members or departments") : null,
+    missingDepartmentChat ? t("bind department chats") : null,
+    pending && !unbound ? t("reconcile the project group") : null,
+    !project.acceptance_actor ? t("assign an acceptance Bot") : null,
+    !project.memory_assignment_id ? t("assign a memory keeper") : null,
+    !project.workspace_ref ? t("set a workspace folder") : null
+  ].filter(Boolean);
   const candidates = data.employees.filter((employee) => employee.status === "active" && (project.source_department_ids ?? []).includes(employee.department_id) && !members.some((member) => member.employee_id === employee.id && ["active", "invited", "archived_readonly"].includes(member.membership_status)) && !data.projects.some((item) => item.id === employee.project_id && ["active", "paused", "delivering"].includes(item.status)));
   return (0, import_react50.createElement)(
     "article",
@@ -19165,8 +19199,8 @@ function ProjectPage({ project, data, preview, loading, error, onBack, onChat, o
       "div",
       { className: "bc-section" },
       (0, import_react50.createElement)("div", { className: "bc-row" }, (0, import_react50.createElement)("strong", null, t("Project chat")), (0, import_react50.createElement)("button", { type: "button", className: "bc-button", onClick: onChat, disabled: pending || preview || project.status === "archived", title: preview ? t("Sample chat is unavailable") : void 0 }, t("Open chat"))),
-      (0, import_react50.createElement)("p", { className: "bc-muted" }, pending ? t("Group binding needs attention before chat can be opened.") : project.status === "archived" ? t("Archived project. The group history remains available for reading.") : t("Project group is linked. Open the existing chat to continue.")),
-      pending ? (0, import_react50.createElement)(
+      (0, import_react50.createElement)("p", { className: "bc-muted" }, unbound ? t("The project group is created when a member joins or the project starts.") : pending ? t("Group binding needs attention before chat can be opened.") : project.status === "archived" ? t("Archived project. The group history remains available for reading.") : t("Project group is linked. Open the existing chat to continue.")),
+      pending && !unbound ? (0, import_react50.createElement)(
         "div",
         { className: "bc-exception", role: "status" },
         (0, import_react50.createElement)("strong", null, t("Group needs reconciliation")),
@@ -19202,14 +19236,19 @@ function ProjectPage({ project, data, preview, loading, error, onBack, onChat, o
       "section",
       { className: "bc-section" },
       (0, import_react50.createElement)("h2", null, t("Current state")),
-      (0, import_react50.createElement)("p", { className: "bc-detail-value" }, `${t("Stage")}: ${label(project.status)} · ${t("Group")}: ${pending ? t("Needs attention") : t("Linked")}`),
+      (0, import_react50.createElement)("p", { className: "bc-detail-value" }, `${t("Stage")}: ${label(project.status)} · ${t("Group")}: ${unbound ? t("Not created yet") : pending ? t("Needs attention") : t("Linked")}`),
       (0, import_react50.createElement)("div", { className: "bc-detail-label" }, t("Acceptance actor")),
       (0, import_react50.createElement)("p", { className: "bc-detail-value" }, project.acceptance_actor === "user" ? t("Owner") : project.acceptance_actor ? employeeName(project.acceptance_actor) : t("Not assigned")),
       (0, import_react50.createElement)("div", { className: "bc-detail-label" }, t("Memory keeper")),
       (0, import_react50.createElement)("p", { className: "bc-detail-value" }, project.memory_assignment_id ? employeeName(project.memory_assignment_id) : t("Not assigned")),
       (0, import_react50.createElement)("div", { className: "bc-detail-label" }, t("Workspace folder")),
       (0, import_react50.createElement)("p", { className: "bc-detail-value" }, project.workspace_ref || t("Not assigned")),
-      project.status === "setup" ? (0, import_react50.createElement)("div", { className: "bc-actions" }, (0, import_react50.createElement)("button", { type: "button", className: "bc-button bc-primary", disabled: busy || preview || pending, onClick: () => void run2("project.start") }, busy ? t("Saving…") : t("Start project"))) : null,
+      project.status === "setup" ? (0, import_react50.createElement)(
+        "div",
+        null,
+        (0, import_react50.createElement)("div", { className: "bc-actions" }, (0, import_react50.createElement)("button", { type: "button", className: "bc-button bc-primary", disabled: busy || startBlockers.length > 0, onClick: () => void run2("project.start") }, busy ? t("Saving…") : t("Start project"))),
+        startBlockers.length ? (0, import_react50.createElement)("p", { className: "bc-start-reason", role: "status" }, t("Before starting: {items}.", { items: startBlockers.join(", ") })) : null
+      ) : null,
       actionError ? (0, import_react50.createElement)("p", { className: "bc-exception", role: "alert" }, actionError) : null,
       (0, import_react50.createElement)("p", { className: "bc-muted" }, t("Tasks, documents and approvals will appear here as their services become available."))
     )
@@ -19233,7 +19272,7 @@ function ProjectWizard({ data, roster, preview, loading, error: loadError, mutat
   const [employeeRole, setEmployeeRole] = (0, import_react51.useState)("coordinator");
   const [departmentChat, setDepartmentChat] = (0, import_react51.useState)("");
   const [coordinatorId, setCoordinatorId] = (0, import_react51.useState)("");
-  const [acceptanceRequirement, setAcceptanceRequirement] = (0, import_react51.useState)("daily_independent_bot");
+  const [acceptanceChoice, setAcceptanceChoice] = (0, import_react51.useState)("default");
   const [acceptanceActor, setAcceptanceActor] = (0, import_react51.useState)("");
   const [memoryEmployeeId, setMemoryEmployeeId] = (0, import_react51.useState)("");
   const [workspaceRef, setWorkspaceRef] = (0, import_react51.useState)("");
@@ -19284,18 +19323,18 @@ function ProjectWizard({ data, roster, preview, loading, error: loadError, mutat
     setEmployeeName("");
   });
   const createProject = () => submit(async () => {
-    if (!name.trim() || !goal.trim() || !deliverable.trim() || !acceptance.trim() || !coordinatorId || !memoryEmployeeId || !workspaceRef.trim() || acceptanceRequirement !== "owner_only" && !acceptanceActor || unbound.length) return;
+    if (!name.trim() || !goal.trim() || !deliverable.trim() || !acceptance.trim() || acceptanceChoice === "assigned" && !acceptanceActor) return;
     const result = await mutate("project.create", {
       name: name.trim(),
       goal: goal.trim(),
       deliverable: deliverable.trim(),
       acceptance: acceptance.trim(),
       source_department_ids: selected,
-      coordinator_employee_id: coordinatorId,
-      acceptance_requirement: acceptanceRequirement,
-      acceptance_actor: acceptanceRequirement === "owner_only" ? "user" : acceptanceActor,
-      memory_employee_id: memoryEmployeeId,
-      workspace_ref: workspaceRef.trim()
+      ...coordinatorId ? { coordinator_employee_id: coordinatorId } : {},
+      acceptance_requirement: "daily_independent_bot",
+      ...acceptanceChoice === "assigned" ? { acceptance_actor: acceptanceActor } : {},
+      ...memoryEmployeeId ? { memory_employee_id: memoryEmployeeId } : {},
+      ...workspaceRef.trim() ? { workspace_ref: workspaceRef.trim() } : {}
     });
     onCreated(result);
   });
@@ -19325,21 +19364,21 @@ function ProjectWizard({ data, roster, preview, loading, error: loadError, mutat
       (0, import_react51.createElement)("p", { className: "bc-muted" }, t("Choose source departments. Add their employees from the project page after creation.")),
       activeDepartments.length ? activeDepartments.map((department) => (0, import_react51.createElement)("label", { className: "bc-choice", key: department.id }, (0, import_react51.createElement)("input", { type: "checkbox", checked: selected.includes(department.id), onChange: () => toggle(department.id) }), department.name)) : (0, import_react51.createElement)("p", { className: "bc-muted" }, t("No departments yet. Add one below.")),
       (0, import_react51.createElement)("div", { className: "bc-row" }, field(t("New department"), departmentName, setDepartmentName, t("Department name"), false, true, 80), (0, import_react51.createElement)("button", { type: "button", className: "bc-button", disabled: busy || !departmentName.trim(), onClick: createDepartment }, t("Add department"))),
-      unbound.length ? (0, import_react51.createElement)("div", { className: "bc-exception", role: "status" }, (0, import_react51.createElement)("strong", null, t("Bind department chats before creating a project.")), (0, import_react51.createElement)("p", null, t("Create a group chat with at least two Bots in Chats, then select it here.")), (0, import_react51.createElement)("label", { className: "bc-field" }, t("Existing group chat"), (0, import_react51.createElement)("select", { value: departmentChat, onChange: (event) => setDepartmentChat(event.target.value) }, (0, import_react51.createElement)("option", { value: "" }, t("Choose a group chat")), (roster?.rooms ?? []).map((room2) => (0, import_react51.createElement)("option", { key: room2.id, value: room2.id }, room2.name)))), unbound.map((department) => (0, import_react51.createElement)("button", { type: "button", className: "bc-button", key: department.id, disabled: busy || !departmentChat, onClick: () => bindDepartment(department.id) }, t("Bind chat to {name}", { name: department.name })))) : null,
-      (0, import_react51.createElement)("div", { className: "bc-actions" }, (0, import_react51.createElement)("button", { type: "button", className: "bc-button", onClick: () => setStep(0) }, t("Back")), (0, import_react51.createElement)("button", { type: "button", className: "bc-button bc-primary", disabled: selected.length === 0 || unbound.length > 0, onClick: () => setStep(2) }, t("Continue")))
+      unbound.length ? (0, import_react51.createElement)("div", { className: "bc-exception", role: "status" }, (0, import_react51.createElement)("strong", null, t("Department chats are needed before the project starts.")), (0, import_react51.createElement)("p", null, t("You can create a setup draft now. Bind each department chat before starting the project.")), (0, import_react51.createElement)("label", { className: "bc-field" }, t("Existing group chat"), (0, import_react51.createElement)("select", { value: departmentChat, onChange: (event) => setDepartmentChat(event.target.value) }, (0, import_react51.createElement)("option", { value: "" }, t("Choose a group chat")), (roster?.rooms ?? []).map((room2) => (0, import_react51.createElement)("option", { key: room2.id, value: room2.id }, room2.name)))), unbound.map((department) => (0, import_react51.createElement)("button", { type: "button", className: "bc-button", key: department.id, disabled: busy || !departmentChat, onClick: () => bindDepartment(department.id) }, t("Bind chat to {name}", { name: department.name })))) : null,
+      (0, import_react51.createElement)("div", { className: "bc-actions" }, (0, import_react51.createElement)("button", { type: "button", className: "bc-button", onClick: () => setStep(0) }, t("Back")), (0, import_react51.createElement)("button", { type: "button", className: "bc-button bc-primary", disabled: selected.length === 0, onClick: () => setStep(2) }, t("Continue")))
     ) : null,
     step === 2 ? (0, import_react51.createElement)(
       "div",
       { className: "bc-section" },
       (0, import_react51.createElement)("h2", null, t("Project coordinator")),
-      (0, import_react51.createElement)("p", { className: "bc-muted" }, t("Choose an active employee from a source department who is not assigned to another active project.")),
+      (0, import_react51.createElement)("p", { className: "bc-muted" }, t("The coordinator can be assigned after creating the draft. One is required before launch.")),
       (0, import_react51.createElement)("label", { className: "bc-field" }, t("Employee"), (0, import_react51.createElement)("select", { value: coordinatorId, onChange: (event) => setCoordinatorId(event.target.value) }, (0, import_react51.createElement)("option", { value: "" }, t("Choose an employee")), eligible.map((employee) => (0, import_react51.createElement)("option", { value: employee.id, key: employee.id }, employee.name)))),
       (0, import_react51.createElement)("h2", { style: { marginTop: 24 } }, t("Add an employee profile")),
       (0, import_react51.createElement)("p", { className: "bc-muted" }, t("Select a team Bot to create an employee profile in one selected department.")),
       (0, import_react51.createElement)("div", { className: "bc-grid" }, (0, import_react51.createElement)("label", { className: "bc-field" }, t("Bot"), (0, import_react51.createElement)("select", { value: botId, onChange: (event) => setBotId(event.target.value) }, (0, import_react51.createElement)("option", { value: "" }, t("Choose a Bot")), availableBots.map((bot) => (0, import_react51.createElement)("option", { value: bot.id, key: bot.id }, bot.name)))), (0, import_react51.createElement)("label", { className: "bc-field" }, t("Department"), (0, import_react51.createElement)("select", { value: employeeDepartment, onChange: (event) => setEmployeeDepartment(event.target.value) }, (0, import_react51.createElement)("option", { value: "" }, t("Choose a department")), activeDepartments.filter((department) => selected.includes(department.id)).map((department) => (0, import_react51.createElement)("option", { value: department.id, key: department.id }, department.name))))),
       (0, import_react51.createElement)("label", { className: "bc-field" }, t("Employee role"), (0, import_react51.createElement)("select", { value: employeeRole, onChange: (event) => setEmployeeRole(event.target.value) }, (0, import_react51.createElement)("option", { value: "coordinator" }, t("Coordinator")), (0, import_react51.createElement)("option", { value: "acceptor" }, t("Independent acceptor")), (0, import_react51.createElement)("option", { value: "memory_keeper" }, t("Memory keeper")))),
       field(t("Employee display name (optional)"), employeeName, setEmployeeName, t("Use Bot name"), false, false),
-      (0, import_react51.createElement)("div", { className: "bc-actions" }, (0, import_react51.createElement)("button", { type: "button", className: "bc-button", disabled: busy || !botId || !employeeDepartment, onClick: createEmployee }, t("Add employee")), (0, import_react51.createElement)("button", { type: "button", className: "bc-button", onClick: () => setStep(1) }, t("Back")), (0, import_react51.createElement)("button", { type: "button", className: "bc-button bc-primary", disabled: !coordinatorId, onClick: () => setStep(3) }, t("Continue")))
+      (0, import_react51.createElement)("div", { className: "bc-actions" }, (0, import_react51.createElement)("button", { type: "button", className: "bc-button", disabled: busy || !botId || !employeeDepartment, onClick: createEmployee }, t("Add employee")), (0, import_react51.createElement)("button", { type: "button", className: "bc-button", onClick: () => setStep(1) }, t("Back")), (0, import_react51.createElement)("button", { type: "button", className: "bc-button bc-primary", onClick: () => setStep(3) }, t("Continue")))
     ) : null,
     step === 3 ? (0, import_react51.createElement)(
       "div",
@@ -19350,15 +19389,20 @@ function ProjectWizard({ data, roster, preview, loading, error: loadError, mutat
       field(t("Deliverable"), deliverable, setDeliverable, t("Describe the deliverable"), true),
       field(t("Acceptance criteria"), acceptance, setAcceptance, t("Describe how to accept the deliverable"), true),
       (0, import_react51.createElement)(
-        "div",
-        { className: "bc-grid" },
-        (0, import_react51.createElement)("label", { className: "bc-field" }, t("Acceptance mode"), (0, import_react51.createElement)("select", { value: acceptanceRequirement, onChange: (event) => setAcceptanceRequirement(event.target.value) }, (0, import_react51.createElement)("option", { value: "daily_independent_bot" }, t("Independent Bot acceptance")), (0, import_react51.createElement)("option", { value: "owner_only" }, t("Owner acceptance")))),
-        acceptanceRequirement === "owner_only" ? (0, import_react51.createElement)("p", { className: "bc-muted" }, t("The owner will accept this project.")) : (0, import_react51.createElement)("label", { className: "bc-field" }, t("Acceptance Bot"), (0, import_react51.createElement)("select", { value: acceptanceActor, onChange: (event) => setAcceptanceActor(event.target.value) }, (0, import_react51.createElement)("option", { value: "" }, t("Choose an acceptance Bot")), acceptanceBots.map((employee) => (0, import_react51.createElement)("option", { key: employee.id, value: employee.id }, employee.name))))
+        "details",
+        { className: "bc-optional" },
+        (0, import_react51.createElement)("summary", null, t("Optional setup for launch")),
+        (0, import_react51.createElement)(
+          "div",
+          { className: "bc-grid" },
+          (0, import_react51.createElement)("label", { className: "bc-field" }, t("Acceptance mode"), (0, import_react51.createElement)("select", { value: acceptanceChoice, onChange: (event) => setAcceptanceChoice(event.target.value) }, (0, import_react51.createElement)("option", { value: "default" }, t("D7 classification (default)")), (0, import_react51.createElement)("option", { value: "assigned" }, t("Assign independent acceptance Bot")))),
+          acceptanceChoice === "assigned" ? (0, import_react51.createElement)("label", { className: "bc-field" }, t("Acceptance Bot"), (0, import_react51.createElement)("select", { value: acceptanceActor, onChange: (event) => setAcceptanceActor(event.target.value) }, (0, import_react51.createElement)("option", { value: "" }, t("Choose an acceptance Bot")), acceptanceBots.map((employee) => (0, import_react51.createElement)("option", { key: employee.id, value: employee.id }, employee.name)))) : (0, import_react51.createElement)("p", { className: "bc-muted" }, t("Daily work uses an independent Bot; final delivery and sensitive work require owner acceptance."))
+        ),
+        (0, import_react51.createElement)("div", { className: "bc-grid" }, (0, import_react51.createElement)("label", { className: "bc-field" }, t("Memory keeper (optional)"), (0, import_react51.createElement)("select", { value: memoryEmployeeId, onChange: (event) => setMemoryEmployeeId(event.target.value) }, (0, import_react51.createElement)("option", { value: "" }, t("Assign before launch")), memoryKeepers.map((employee) => (0, import_react51.createElement)("option", { key: employee.id, value: employee.id }, employee.name)))), field(t("Workspace folder (optional)"), workspaceRef, setWorkspaceRef, t("Suggested: company/projects/<project name>"), false, false, 500)),
+        (0, import_react51.createElement)("p", { className: "bc-muted" }, t("An independent acceptance Bot, a memory keeper and a usable workspace are required before launch. Complete these on the draft after the M1a-5 bridge is connected."))
       ),
-      (0, import_react51.createElement)("div", { className: "bc-grid" }, (0, import_react51.createElement)("label", { className: "bc-field" }, t("Memory keeper"), (0, import_react51.createElement)("select", { value: memoryEmployeeId, onChange: (event) => setMemoryEmployeeId(event.target.value) }, (0, import_react51.createElement)("option", { value: "" }, t("Choose a memory keeper")), memoryKeepers.map((employee) => (0, import_react51.createElement)("option", { key: employee.id, value: employee.id }, employee.name)))), field(t("Workspace folder"), workspaceRef, setWorkspaceRef, t("Path to the project workspace"), false, true, 500)),
-      !memoryKeepers.length || acceptanceRequirement !== "owner_only" && !acceptanceBots.length ? (0, import_react51.createElement)("p", { className: "bc-exception", role: "status" }, t("Add a memory keeper and an acceptance Bot in the previous step, or choose owner acceptance.")) : null,
-      (0, import_react51.createElement)("p", { className: "bc-muted" }, t("A new project starts in setup. Group binding and launch checks are shown on its project page.")),
-      (0, import_react51.createElement)("div", { className: "bc-actions" }, (0, import_react51.createElement)("button", { type: "button", className: "bc-button", onClick: () => setStep(2) }, t("Back")), (0, import_react51.createElement)("button", { type: "button", className: "bc-button bc-primary", disabled: busy || !name.trim() || !goal.trim() || !deliverable.trim() || !acceptance.trim() || !memoryEmployeeId || !workspaceRef.trim() || acceptanceRequirement !== "owner_only" && !acceptanceActor || unbound.length, onClick: createProject }, busy ? t("Creating…") : preview ? t("Create sample project") : t("Create project")))
+      (0, import_react51.createElement)("p", { className: "bc-muted" }, t("Creation saves a setup draft. Complete the remaining setup before launch; draft editing awaits the M1a-5 bridge.")),
+      (0, import_react51.createElement)("div", { className: "bc-actions" }, (0, import_react51.createElement)("button", { type: "button", className: "bc-button", onClick: () => setStep(2) }, t("Back")), (0, import_react51.createElement)("button", { type: "button", className: "bc-button bc-primary", disabled: busy || !name.trim() || !goal.trim() || !deliverable.trim() || !acceptance.trim() || acceptanceChoice === "assigned" && !acceptanceActor, onClick: createProject }, busy ? t("Creating…") : preview ? t("Create sample project") : t("Create project")))
     ) : null,
     error ? (0, import_react51.createElement)("p", { className: "bc-exception", role: "alert" }, error) : null
   );
@@ -19408,7 +19452,7 @@ function CompanySurface({ page, actions, roster }) {
     box.current?.focus();
     const onKey = (event) => {
       if (event.key === "Tab") {
-        const focusable = [...box.current?.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])') ?? []];
+        const focusable = [...box.current?.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex]:not([tabindex="-1"])') ?? []].filter((element) => element.getClientRects().length > 0);
         if (!focusable.length) {
           event.preventDefault();
           box.current?.focus();
@@ -19492,23 +19536,23 @@ function CompanySurface({ page, actions, roster }) {
     setData(sample());
     setError("");
     setLoading(false);
-    setNotice(t("Local sample only. Nothing has been saved."));
+    setNotice("");
   };
   const mutate = async (command, fields) => {
     if (preview) {
       if (command === "department.update") {
         const department = { ...data.departments.find((item) => item.id === fields.department_id), chat_ref: fields.chat_ref };
         setData((current) => ({ ...current, departments: current.departments.map((item) => item.id === department.id ? department : item) }));
-        setNotice(t("Local sample only. Nothing has been saved."));
+        setNotice("");
         return { body: { department } };
       }
       const id = `demo-${freshKey()}`;
       const field3 = command === "company.init" ? "company" : command === "department.create" ? "department" : command === "employee.create" ? "employee" : "project";
-      const member = { id: `${id}-member`, project_id: id, employee_id: fields.coordinator_employee_id, role: "coordinator", membership_status: "active" };
-      const created2 = { ...fields, id, status: command === "project.create" ? "setup" : "active", updated_at: Date.now(), ...field3 === "project" ? { coordinator_assignment_id: member.id, memory_assignment_id: fields.memory_employee_id, group_chat_ref: null, group_binding: { status: "unbound" } } : {} };
-      setData((current) => ({ ...current, ...field3 === "company" ? { company: created2 } : { [`${field3}s`]: [...current[`${field3}s`], created2] }, ...field3 === "project" ? { members: [...current.members, member] } : {} }));
-      setNotice(t("Local sample only. Nothing has been saved."));
-      return { body: { [field3]: created2 }, warning: field3 === "project" ? { code: "group_pending" } : null };
+      const member = fields.coordinator_employee_id ? { id: `${id}-member`, project_id: id, employee_id: fields.coordinator_employee_id, role: "coordinator", membership_status: "active" } : null;
+      const created2 = { ...fields, id, status: command === "project.create" ? "setup" : "active", updated_at: Date.now(), ...field3 === "project" ? { coordinator_assignment_id: member?.id ?? null, memory_assignment_id: fields.memory_employee_id ?? null, group_chat_ref: null, group_binding: { status: "unbound" } } : {} };
+      setData((current) => ({ ...current, ...field3 === "company" ? { company: created2 } : { [`${field3}s`]: [...current[`${field3}s`], created2] }, ...field3 === "project" && member ? { members: [...current.members, member] } : {} }));
+      setNotice("");
+      return { body: { [field3]: created2 }, warning: null };
     }
     const fingerprint = `${command}:${JSON.stringify(fields)}`;
     let attempt = writeKeys.current.get(fingerprint);
@@ -19593,7 +19637,7 @@ function CompanySurface({ page, actions, roster }) {
 }
 var statusLabel = (status) => ({ setup: t("Setup"), active: t("In progress"), paused: t("Paused"), archived: t("Archived") })[status] ?? t("Unknown status");
 var COMPANY_CSS = `
-.bc-surface{--bc-small:11px;--bc-label:12px;--bc-body:13px;--bc-title:17px;--bc-radius:12px;position:fixed;inset:0;z-index:1100;background:var(--bt-main);color:var(--bt-ink);font-family:var(--bt-font);overflow:auto;overscroll-behavior:contain}.bc-surface *{box-sizing:border-box}.bc-shell{min-height:100vh;display:flex;flex-direction:column}.bc-header{height:52px;flex:none;display:flex;gap:12px;align-items:center;padding:0 max(20px,calc((100vw - 960px)/2));border-bottom:1px solid var(--bt-line);background:var(--bt-card)}.bc-brand{background:none;border:0;color:var(--bt-ink);font-size:15px;font-weight:700;cursor:pointer}.bc-header-context{color:var(--bt-ink-2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bc-icon{margin-left:auto;width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:var(--bt-ink);font-size:24px;cursor:pointer}.bc-content{width:min(100%,1000px);margin:0 auto;padding:32px 24px 64px}.bc-page{max-width:940px;margin:auto}.bc-kicker{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--bt-ink-2)}.bc-lead{display:flex;justify-content:space-between;align-items:end;gap:20px;margin:0 0 28px}.bc-lead h1{font-size:28px;line-height:1.2;letter-spacing:-.03em;margin:8px 0}.bc-lead p,.bc-muted{color:var(--bt-ink-2);line-height:1.5}.bc-lead p{margin:0;font-size:13px}.bc-button{border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);padding:9px 13px;min-height:36px;font:600 13px var(--bt-font);cursor:pointer}.bc-button:hover,.bc-icon:hover,.bc-filter:hover{background:var(--bt-hover)}.bc-primary{background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));border-color:var(--bt-accent)}.bc-primary:hover{filter:brightness(.94);background:var(--bt-accent)}.bc-button:disabled{opacity:.45;cursor:not-allowed}.bc-surface :is(button,input,textarea,select):focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}.bc-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.bc-filters{display:flex;gap:4px;border:1px solid var(--bt-line);border-radius:8px;padding:3px}.bc-filter{border:0;border-radius:6px;background:transparent;color:var(--bt-ink-2);padding:7px 11px;font-size:12px;cursor:pointer}.bc-selected{background:var(--bt-active);color:var(--bt-ink);font-weight:600}.bc-search,.bc-field :is(input,textarea,select){border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);padding:9px 11px;font:13px var(--bt-font)}.bc-search{width:210px}.bc-list{border:1px solid var(--bt-line);border-radius:12px;overflow:hidden;background:var(--bt-card)}.bc-project-row{display:flex;width:100%;gap:20px;align-items:center;text-align:left;padding:17px 20px;border:0;border-bottom:1px solid var(--bt-line);background:transparent;color:var(--bt-ink);cursor:pointer}.bc-project-row:last-child{border:0}.bc-project-row:hover{background:var(--bt-hover)}.bc-project-main{min-width:0;flex:1;display:grid;gap:5px}.bc-project-main strong{font-size:14px}.bc-project-main span,.bc-project-main small,.bc-project-meta small{font-size:12px;color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bc-project-meta{min-width:140px;display:grid;justify-items:end;gap:5px}.bc-status{display:inline-flex;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);font-size:11px;font-weight:700;padding:4px 7px}.bc-status.bc-active{color:var(--bt-green)}.bc-status.bc-paused,.bc-status.bc-pending{color:var(--bt-star)}.bc-status.bc-archived{color:var(--bt-ink-2)}.bc-state{border:1px dashed var(--bt-line-2);border-radius:12px;padding:32px;text-align:center;color:var(--bt-ink-2);font-size:13px}.bc-state strong{color:var(--bt-ink);font-size:15px}.bc-state .bc-button{margin:5px}.bc-error{border-color:var(--bt-danger)}.bc-preview{padding:8px 24px;background:var(--bt-tag-bg);text-align:center;color:var(--bt-ink);font-size:12px;font-weight:700}.bc-notice{display:flex;gap:12px;align-items:center;justify-content:center;padding:8px 20px;background:var(--bt-tag-bg);font-size:12px}.bc-notice button{border:0;background:transparent;color:var(--bt-ink);cursor:pointer}.bc-back{background:none;border:0;color:var(--bt-ink-2);font:600 12px var(--bt-font);padding:6px 0;cursor:pointer}.bc-back:hover{color:var(--bt-ink)}.bc-section{background:var(--bt-card);border:1px solid var(--bt-line);border-radius:12px;padding:20px;margin:16px 0}.bc-section h2{font-size:14px;margin:0 0 14px}.bc-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.bc-field{display:grid;gap:6px;font-size:12px;font-weight:600}.bc-field :is(input,textarea,select){width:100%}.bc-field textarea{resize:vertical;min-height:72px}.bc-field small{font-weight:400;color:var(--bt-ink-2)}.bc-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.bc-detail-title{font-size:26px;letter-spacing:-.025em;line-height:1.25;margin:10px 0}.bc-detail-label{color:var(--bt-ink-2);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}.bc-detail-value{font-size:13px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}.bc-member{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--bt-line);font-size:13px}.bc-member small{font-size:11px;color:var(--bt-ink-2)}.bc-steps{display:flex;flex-wrap:wrap;gap:6px;margin:24px 0}.bc-step{font-size:11px;color:var(--bt-ink-2);padding:7px 10px;border:1px solid var(--bt-line);border-radius:6px}.bc-step[aria-current=step]{color:var(--bt-ink);border-color:var(--bt-accent);font-weight:700}.bc-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.bc-choice{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px}.bc-choice input{accent-color:var(--bt-accent)}.bc-exception{border-left:3px solid var(--bt-star);padding:10px 12px;background:var(--bt-tag-bg);font-size:12px;line-height:1.5}.bc-exception strong{display:block}.bc-surface button{touch-action:manipulation}@media(max-width:620px){.bc-header{height:48px;padding:0 14px}.bc-content{padding:22px 14px 48px}.bc-lead{align-items:flex-start}.bc-lead h1{font-size:23px}.bc-toolbar{align-items:stretch;flex-direction:column}.bc-search{width:100%}.bc-project-row{padding:14px;gap:8px}.bc-project-meta{min-width:88px}.bc-grid{grid-template-columns:1fr}.bc-section{padding:16px}}
+.bc-surface{--bc-small:11px;--bc-label:12px;--bc-body:13px;--bc-title:17px;--bc-radius:12px;position:fixed;inset:0;z-index:1100;background:var(--bt-main);color:var(--bt-ink);font-family:var(--bt-font);overflow:auto;overscroll-behavior:contain}.bc-surface *{box-sizing:border-box}.bc-shell{min-height:100vh;display:flex;flex-direction:column}.bc-header{height:52px;flex:none;display:flex;gap:12px;align-items:center;padding:0 max(20px,calc((100vw - 960px)/2));border-bottom:1px solid var(--bt-line);background:var(--bt-card)}.bc-brand{background:none;border:0;color:var(--bt-ink);font-size:15px;font-weight:700;cursor:pointer}.bc-header-context{color:var(--bt-ink-2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bc-icon{margin-left:auto;width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:var(--bt-ink);font-size:24px;cursor:pointer}.bc-content{width:min(100%,1000px);margin:0 auto;padding:32px 24px 64px}.bc-page{max-width:940px;margin:auto}.bc-kicker{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--bt-ink-2)}.bc-lead{display:flex;justify-content:space-between;align-items:end;gap:20px;margin:0 0 28px}.bc-lead h1{font-size:var(--bc-title);line-height:24px;margin:8px 0}.bc-lead p,.bc-muted{color:var(--bt-ink-2);line-height:1.5}.bc-lead p{margin:0;font-size:13px}.bc-button{border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);padding:9px 13px;min-height:36px;font:600 13px var(--bt-font);cursor:pointer}.bc-button:hover,.bc-icon:hover,.bc-filter:hover{background:var(--bt-hover)}.bc-primary{min-height:40px;border-radius:999px;background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));border-color:var(--bt-accent)}.bc-primary:hover{filter:brightness(.94);background:var(--bt-accent)}.bc-button:disabled{opacity:.45;cursor:not-allowed}.bc-surface :is(button,input,textarea,select,summary):focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}.bc-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.bc-filters{display:flex;gap:4px;border:1px solid var(--bt-line);border-radius:8px;padding:3px}.bc-filter{border:0;border-radius:6px;background:transparent;color:var(--bt-ink-2);padding:7px 11px;font-size:12px;cursor:pointer}.bc-selected{background:var(--bt-active);color:var(--bt-ink);font-weight:600}.bc-search,.bc-field :is(input,textarea,select){border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);padding:9px 11px;font:13px var(--bt-font)}.bc-search{width:210px}.bc-list{border:1px solid var(--bt-line);border-radius:12px;overflow:hidden;background:var(--bt-card)}.bc-project-row{display:flex;width:100%;gap:20px;align-items:center;text-align:left;padding:17px 20px;border:0;border-bottom:1px solid var(--bt-line);background:transparent;color:var(--bt-ink);cursor:pointer}.bc-project-row:last-child{border:0}.bc-project-row:hover{background:var(--bt-hover)}.bc-project-main{min-width:0;flex:1;display:grid;gap:5px}.bc-project-main strong{font-size:14px}.bc-project-main span,.bc-project-main small,.bc-project-meta small{font-size:12px;color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bc-project-meta{min-width:140px;display:grid;justify-items:end;gap:5px}.bc-status{display:inline-flex;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);font-size:11px;font-weight:700;padding:4px 7px}.bc-status.bc-active{color:var(--bt-green)}.bc-status.bc-paused,.bc-status.bc-pending{color:var(--bt-star)}.bc-status.bc-archived{color:var(--bt-ink-2)}.bc-state{border:1px dashed var(--bt-line-2);border-radius:12px;padding:32px;text-align:center;color:var(--bt-ink-2);font-size:13px}.bc-state strong{color:var(--bt-ink);font-size:15px}.bc-state .bc-button{margin:5px}.bc-error{border-color:var(--bt-danger)}.bc-preview{padding:8px 24px;background:var(--bt-tag-bg);text-align:center;color:var(--bt-ink);font-size:12px;font-weight:700}.bc-notice{display:flex;gap:12px;align-items:center;justify-content:center;padding:8px 20px;background:var(--bt-tag-bg);font-size:12px}.bc-notice button{border:0;background:transparent;color:var(--bt-ink);cursor:pointer}.bc-back{background:none;border:0;color:var(--bt-ink-2);font:600 12px var(--bt-font);padding:6px 0;cursor:pointer}.bc-back:hover{color:var(--bt-ink)}.bc-section{background:var(--bt-card);border:1px solid var(--bt-line);border-radius:12px;padding:20px;margin:16px 0}.bc-section h2{font-size:14px;margin:0 0 14px}.bc-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.bc-field{display:grid;gap:6px;font-size:12px;font-weight:600}.bc-field :is(input,textarea,select){width:100%}.bc-field textarea{resize:vertical;min-height:72px}.bc-field small{font-weight:400;color:var(--bt-ink-2)}.bc-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.bc-detail-title{font-size:var(--bc-title);line-height:24px;margin:10px 0}.bc-detail-label{color:var(--bt-ink-2);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}.bc-detail-value{font-size:13px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}.bc-member{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--bt-line);font-size:13px}.bc-member small{font-size:11px;color:var(--bt-ink-2)}.bc-steps{display:flex;flex-wrap:wrap;gap:6px;margin:24px 0}.bc-step{font-size:11px;color:var(--bt-ink-2);padding:7px 10px;border:1px solid var(--bt-line);border-radius:6px}.bc-step[aria-current=step]{color:var(--bt-ink);border-color:var(--bt-accent);font-weight:700}.bc-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.bc-choice{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px}.bc-choice input{accent-color:var(--bt-accent)}.bc-exception{border-left:3px solid var(--bt-danger);padding:10px 12px;background:var(--bt-tag-bg);font-size:12px;line-height:1.5}.bc-exception strong{display:block}.bc-optional{margin-top:16px;border-top:1px solid var(--bt-line);padding-top:14px}.bc-optional summary{cursor:pointer;color:var(--bt-ink);font-size:13px;font-weight:600}.bc-optional[open] summary{margin-bottom:16px}.bc-start-reason{text-align:right;color:var(--bt-ink-2);font-size:12px;line-height:1.5}.bc-surface button{touch-action:manipulation}@media(max-width:620px){.bc-header{height:48px;padding:0 14px}.bc-content{padding:22px 14px 48px}.bc-lead{align-items:flex-start}.bc-lead h1{font-size:var(--bc-title)}.bc-toolbar{align-items:stretch;flex-direction:column}.bc-search{width:100%}.bc-project-row{padding:14px;gap:8px}.bc-project-meta{min-width:88px}.bc-grid{grid-template-columns:1fr}.bc-section{padding:16px}}
 `;
 
 // src/client/overlays.js

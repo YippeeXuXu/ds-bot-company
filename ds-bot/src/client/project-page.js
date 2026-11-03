@@ -20,10 +20,27 @@ export function ProjectPage({ project, data, preview, loading, error, onBack, on
   if (error) return h('section', { className: 'bc-state bc-error', role: 'alert' }, h('strong', null, t('Project could not be loaded.')), h('p', null, error), h('button', { type: 'button', className: 'bc-button', onClick: onRetry }, t('Try again')), h('button', { type: 'button', className: 'bc-button', onClick: onBack }, t('Back to projects')))
   if (!project) return h('section', { className: 'bc-state' }, h('strong', null, t('Project not found')), h('p', null, t('Its record may have changed. Return to the project list.')), h('button', { type: 'button', className: 'bc-button', onClick: onBack }, t('Back to projects')))
   const binding = preview ? project.group_binding : data.group?.group_binding ?? project.group_binding
+  const unbound = binding?.status === 'unbound' && !project.group_chat_ref
   const pending = binding?.status !== 'bound' || (!preview && data.group?.drifted === true)
   const members = preview ? (data.members ?? []).filter(member => member.project_id === project.id) : data.members ?? []
   const coordinator = members.find(member => member.id === project.coordinator_assignment_id || member.role === 'coordinator')
   const employeeName = id => data.employees.find(employee => employee.id === id)?.name ?? id
+  const invalidMember = members.some(member => {
+    const employee = data.employees.find(item => item.id === member.employee_id)
+    const department = data.departments.find(item => item.id === employee?.department_id)
+    return !employee || employee.status !== 'active' || !department || department.status !== 'active'
+  })
+  const missingDepartmentChat = members.some(member => {
+    const employee = data.employees.find(item => item.id === member.employee_id)
+    return employee && !data.departments.find(item => item.id === employee.department_id)?.chat_ref
+  })
+  const startBlockers = [preview ? t('Local sample cannot be started') : null,
+    !coordinator ? t('assign a project coordinator') : null,
+    invalidMember ? t('resolve inactive members or departments') : null,
+    missingDepartmentChat ? t('bind department chats') : null,
+    pending && !unbound ? t('reconcile the project group') : null,
+    !project.acceptance_actor ? t('assign an acceptance Bot') : null, !project.memory_assignment_id ? t('assign a memory keeper') : null,
+    !project.workspace_ref ? t('set a workspace folder') : null].filter(Boolean)
   const candidates = data.employees.filter(employee => employee.status === 'active' && (project.source_department_ids ?? []).includes(employee.department_id)
     && !members.some(member => member.employee_id === employee.id && ['active', 'invited', 'archived_readonly'].includes(member.membership_status))
     && !data.projects.some(item => item.id === employee.project_id && ['active', 'paused', 'delivering'].includes(item.status)))
@@ -32,8 +49,8 @@ export function ProjectPage({ project, data, preview, loading, error, onBack, on
     h('div', { className: 'bc-row' }, h('div', null, h('span', { className: 'bc-kicker' }, t('Workspace / Project')), h('h1', { className: 'bc-detail-title' }, project.name)), h('span', { className: `bc-status bc-${project.status}` }, label(project.status))),
     h('div', { className: 'bc-section' },
       h('div', { className: 'bc-row' }, h('strong', null, t('Project chat')), h('button', { type: 'button', className: 'bc-button', onClick: onChat, disabled: pending || preview || project.status === 'archived', title: preview ? t('Sample chat is unavailable') : undefined }, t('Open chat'))),
-      h('p', { className: 'bc-muted' }, pending ? t('Group binding needs attention before chat can be opened.') : project.status === 'archived' ? t('Archived project. The group history remains available for reading.') : t('Project group is linked. Open the existing chat to continue.')),
-      pending ? h('div', { className: 'bc-exception', role: 'status' }, h('strong', null, t('Group needs reconciliation')), t('Group changes are not synced. An authorized operator must reconcile the group before starting work.'), binding?.error && !preview ? h('p', null, binding.error) : null,
+      h('p', { className: 'bc-muted' }, unbound ? t('The project group is created when a member joins or the project starts.') : pending ? t('Group binding needs attention before chat can be opened.') : project.status === 'archived' ? t('Archived project. The group history remains available for reading.') : t('Project group is linked. Open the existing chat to continue.')),
+      pending && !unbound ? h('div', { className: 'bc-exception', role: 'status' }, h('strong', null, t('Group needs reconciliation')), t('Group changes are not synced. An authorized operator must reconcile the group before starting work.'), binding?.error && !preview ? h('p', null, binding.error) : null,
         project.status !== 'archived' ? h('button', { type: 'button', className: 'bc-button', disabled: busy || preview, onClick: () => void run('project.group.reconcile') }, t('Reconcile group')) : null) : null),
     h('div', { className: 'bc-grid' },
       h('section', { className: 'bc-section' }, h('h2', null, t('Purpose and delivery')), h('div', { className: 'bc-detail-label' }, t('Goal')), h('p', { className: 'bc-detail-value' }, project.goal || '—'), h('div', { className: 'bc-detail-label' }, t('Deliverable')), h('p', { className: 'bc-detail-value' }, project.deliverable || '—'), h('div', { className: 'bc-detail-label' }, t('Acceptance')), h('p', { className: 'bc-detail-value' }, project.acceptance || '—')),
@@ -42,11 +59,12 @@ export function ProjectPage({ project, data, preview, loading, error, onBack, on
         ['setup', 'active'].includes(project.status) && candidates.length ? h('div', { className: 'bc-actions' },
           h('label', { className: 'bc-field' }, t('Add a project member'), h('select', { value: selectedEmployee, onChange: event => setSelectedEmployee(event.target.value) }, h('option', { value: '' }, t('Choose an employee')), candidates.map(employee => h('option', { value: employee.id, key: employee.id }, employee.name)))),
           h('button', { type: 'button', className: 'bc-button', disabled: busy || preview || !selectedEmployee, onClick: async () => { if (await run('project.member.add', { employee_id: selectedEmployee, role: 'executor' })) setSelectedEmployee('') } }, t('Add member'))) : null)),
-    h('section', { className: 'bc-section' }, h('h2', null, t('Current state')), h('p', { className: 'bc-detail-value' }, `${t('Stage')}: ${label(project.status)} · ${t('Group')}: ${pending ? t('Needs attention') : t('Linked')}`),
+    h('section', { className: 'bc-section' }, h('h2', null, t('Current state')), h('p', { className: 'bc-detail-value' }, `${t('Stage')}: ${label(project.status)} · ${t('Group')}: ${unbound ? t('Not created yet') : pending ? t('Needs attention') : t('Linked')}`),
       h('div', { className: 'bc-detail-label' }, t('Acceptance actor')), h('p', { className: 'bc-detail-value' }, project.acceptance_actor === 'user' ? t('Owner') : project.acceptance_actor ? employeeName(project.acceptance_actor) : t('Not assigned')),
       h('div', { className: 'bc-detail-label' }, t('Memory keeper')), h('p', { className: 'bc-detail-value' }, project.memory_assignment_id ? employeeName(project.memory_assignment_id) : t('Not assigned')),
       h('div', { className: 'bc-detail-label' }, t('Workspace folder')), h('p', { className: 'bc-detail-value' }, project.workspace_ref || t('Not assigned')),
-      project.status === 'setup' ? h('div', { className: 'bc-actions' }, h('button', { type: 'button', className: 'bc-button bc-primary', disabled: busy || preview || pending, onClick: () => void run('project.start') }, busy ? t('Saving…') : t('Start project'))) : null,
+      project.status === 'setup' ? h('div', null, h('div', { className: 'bc-actions' }, h('button', { type: 'button', className: 'bc-button bc-primary', disabled: busy || startBlockers.length > 0, onClick: () => void run('project.start') }, busy ? t('Saving…') : t('Start project'))),
+        startBlockers.length ? h('p', { className: 'bc-start-reason', role: 'status' }, t('Before starting: {items}.', { items: startBlockers.join(', ') })) : null) : null,
       actionError ? h('p', { className: 'bc-exception', role: 'alert' }, actionError) : null,
       h('p', { className: 'bc-muted' }, t('Tasks, documents and approvals will appear here as their services become available.'))))
 }
