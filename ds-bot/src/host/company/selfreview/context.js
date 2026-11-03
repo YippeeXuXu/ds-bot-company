@@ -20,6 +20,12 @@ const STATE_MAX = 2048
 /** Keys whose value is never previewed, whatever it looks like. */
 const SECRET_KEYS = /(?:^|_)(?:token|secret|password|passwd|api_?key|credential|authorization|cookie|private_?key)(?:$|_)/i
 
+/**
+ * Keys that carry a document: the body of a write, the strings of an edit, a patch, a file's
+ * bytes. §3.3 forbids file contents in the request, so only the type goes through.
+ */
+const CONTENT_KEYS = /^(?:content|contents|body|text|old_?string|new_?string|old_?text|new_?text|file_?text|patch|diff|source|code|data|bytes|base64)$/i
+
 const sha256 = value => `sha256:${createHash('sha256').update(value).digest('hex')}`
 
 const sortKeys = value => {
@@ -130,6 +136,7 @@ export function summarizeArguments(args, { home } = {}) {
     const type = typeOf(value)
     if (typeof value === 'string') {
       if (SECRET_KEYS.test(key)) { parameters[key] = { type, preview: '[hidden]' }; truncated = true; continue }
+      if (CONTENT_KEYS.test(key)) { parameters[key] = { type, preview: '[content omitted]' }; truncated = true; continue }
       const cleaned = cleanText(value, home === undefined ? {} : { home })
       const preview = cleaned.slice(0, PREVIEW_MAX)
       if (cleaned.length > PREVIEW_MAX) truncated = true

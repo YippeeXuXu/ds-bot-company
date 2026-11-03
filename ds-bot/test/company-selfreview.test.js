@@ -16,7 +16,7 @@ import { buildRequest, hostApprovalMode, resolveScope, summarizeArguments } from
 import { projectEvents, projectHostOutcome, groupEvents } from '../src/host/company/selfreview/host-outcome.js'
 import { DEFAULT_CONFIG, createAdaptor, install, mergeVerdict, normalizeConfig, MODES, READ_ONLY_WHITELIST } from '../src/host/company/selfreview/index.js'
 import { createRecorder, makeRecord, RECORD_FIELDS } from '../src/host/company/selfreview/records.js'
-import { classify } from '../src/host/company/selfreview/rules.js'
+import { classify, HIGH_RISK_RULES } from '../src/host/company/selfreview/rules.js'
 
 const WORKSPACE = '/work/ds-bot'
 const OTHER_WORKSPACE = '/work/other'
@@ -360,11 +360,40 @@ test('a record carries the planned fields, a digest, and no argument value', asy
 test('the parameter summary hides secret values and keeps the shape short', () => {
   const { parameters, truncated } = summarizeArguments({ token: 'abc', content: 'x'.repeat(500), nested: { a: 1 }, list: [1, 2, 3], count: 3 }, {})
   assert.equal(parameters.token.preview, '[hidden]')
-  assert.equal(parameters.content.preview.length, 200)
+  assert.equal(parameters.content.preview, '[content omitted]')
   assert.equal(parameters.nested.preview, '{…}')
   assert.equal(parameters.list.type, 'array[3]')
   assert.equal(parameters.count.preview, '3')
   assert.equal(truncated, true)
+})
+
+test('a file body never reaches the request, whatever it holds', () => {
+  const state = companyState()
+  const rt = rtOf({ home: '/tmp/unused', state, secret: 'token' })
+  const body = `keep this private ${'x'.repeat(4000)} password: hunter2-should-not-leave`
+  const exec = execOf({ name: 'write', args: { file_path: `${WORKSPACE}/notes.md`, content: body } })
+  const scope = resolveScope({ rt, exec })
+  const local = classify({ tool: exec.name, args: exec.arguments, scope, base: scope.base })
+  const request = buildRequest({ exec, scope, local, host: { preset: 'ask', policy: 'ask', source: 'read' }, config: normalizeConfig({ mode: 'shadow' }) })
+  const serialized = JSON.stringify(request)
+  assert.equal(request.parameters.content.preview, '[content omitted]')
+  assert.equal(request.arguments_truncated, true)
+  assert.equal(serialized.includes('hunter2-should-not-leave'), false)
+  assert.equal(serialized.includes('keep this private'), false)
+  assert.equal(request.state.length <= 2048, true)
+})
+
+test('an unknown mode starts nothing less safe: it fails closed like enforce', async () => {
+  const home = tempHome()
+  const adaptor = adaptorOf({ home, config: { mode: 'bogus' } })
+  assert.equal(adaptor.mode, 'enforce')
+  const answer = await adaptor.gate(execOf({ name: 'write', args: { file_path: '/tmp/elsewhere.txt', content: 'x' } }))
+  assert.equal(answer.kind, 'ask')
+  await adaptor.close()
+  const [record] = linesOf(recordPath(home))
+  assert.equal(record.mode, 'enforce')
+  assert.equal(record.decision, 'human-needed')
+  rmSync(home, { recursive: true, force: true })
 })
 
 test('the request matches §3.2 and its state stays under 2KB', () => {
@@ -532,6 +561,42 @@ const request = {
   effective_authorization_scope: { workspace_ref: WORKSPACE, project_status: 'active' },
   arguments_truncated: false,
 }
+
+test('the rule table gives every planned class one fixed answer', () => {
+  const base = WORKSPACE
+  const scope = { base, workspaceRef: base, projectStatus: 'active' }
+  const cases = [
+    ['a read inside the project', 'allow', 'READ_ONLY', { tool: 'read', args: { file_path: `${base}/a.md` } }],
+    ['a glob inside the project', 'allow', 'READ_ONLY', { tool: 'glob', args: { pattern: '**/*.js', path: base } }],
+    ['a write inside the project', 'allow', 'WRITE_INSIDE', { tool: 'write', args: { file_path: `${base}/a.md`, content: 'x' } }],
+    ['a write outside the project', 'human-needed', 'WRITE_OUTSIDE', { tool: 'write', args: { file_path: '/tmp/elsewhere.md', content: 'x' } }],
+    ['an irreversible delete', 'human-needed', 'IRREVERSIBLE_DELETE', { tool: 'bash', args: { command: 'rm -rf build' } }],
+    ['a production operation', 'human-needed', 'PRODUCTION', { tool: 'bash', args: { command: 'kubectl apply -f app.yaml' } }],
+    ['an external send', 'human-needed', 'EXTERNAL_SEND', { tool: 'bash', args: { command: 'curl -X POST https://example.com/hook' } }],
+    ['a payment', 'human-needed', 'PAYMENT', { tool: 'bash', args: { command: 'stripe charges create' } }],
+    ['a credential read', 'deny', 'SECRET_EXFIL', { tool: 'bash', args: { command: 'cat ~/.ssh/id_rsa' } }],
+    ['a credential write', 'deny', 'SECRET_EXFIL', { tool: 'write', args: { file_path: `${base}/.env`, content: 'A=1' } }],
+    ['an unclassified command', 'human-needed', 'UNKNOWN_EFFECT', { tool: 'bash', args: { command: 'foobar --x' } }],
+    ['a command that builds itself', 'human-needed', 'UNKNOWN_EFFECT', { tool: 'bash', args: { command: 'ls $(whoami)' } }],
+    ['a tool the table does not know', 'human-needed', 'UNKNOWN_TOOL', { tool: 'mystery_tool', args: {} }],
+    ['deleting a team object', 'human-needed', 'IRREVERSIBLE_DELETE', { tool: 'delete_group', args: {} }],
+    ['a command inside the project', 'allow', 'WRITE_INSIDE', { tool: 'bash', args: { command: 'npm test' } }],
+    ['an internal message', 'allow', 'INTERNAL', { tool: 'message_bot', args: { to: 'x', message: 'y' } }],
+  ]
+  for (const [label, decision, rule, call] of cases) {
+    const verdict = classify({ ...call, scope, base })
+    assert.equal(verdict.decision, decision, label)
+    assert.equal(verdict.rule_id, rule, label)
+    assert.equal(verdict.probability >= 0 && verdict.probability <= 1, true, label)
+    assert.equal(HIGH_RISK_RULES.includes(verdict.rule_id), ['human-needed', 'deny'].includes(verdict.decision) && verdict.rule_id !== 'UNKNOWN_EFFECT' && verdict.rule_id !== 'UNKNOWN_TOOL' && verdict.rule_id !== 'SCOPE_VIOLATION', label)
+  }
+  const archived = classify({ tool: 'read', args: { file_path: `${base}/a.md` }, scope: { ...scope, projectStatus: 'archived' }, base })
+  assert.equal(archived.decision, 'deny')
+  assert.equal(archived.rule_id, 'SCOPE_VIOLATION')
+  const outsideMember = classify({ tool: 'read', args: { file_path: `${base}/a.md` }, scope: { ...scope, member: false }, base })
+  assert.equal(outsideMember.decision, 'deny')
+  assert.equal(outsideMember.rule_id, 'SCOPE_VIOLATION')
+})
 
 test('the stub answers health, refuses a wrong token, and replays the rule table', async () => {
   const token = 'stub-token'
