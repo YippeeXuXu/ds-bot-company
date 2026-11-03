@@ -19486,7 +19486,7 @@ function CompanySurface({ page, actions, roster }) {
       setError("");
     }
     try {
-      const model = await call("company-model", null, signal);
+      const model = await call("company-model", {}, signal);
       if (signal?.aborted) return;
       const next = { company: model.company ?? null, departments: model.departments ?? [], employees: model.employees ?? [], projects: model.projects ?? [], members: [], group: null, revision: model.revision };
       revision.current = model.revision;

@@ -70,7 +70,7 @@ export function CompanySurface({ page, actions, roster }) {
     try {
       // One read for the whole company: the host's company-model route answers the same
       // shape these pages render, so the list does not need one call per area.
-      const model = await call('company-model', null, signal)
+      const model = await call('company-model', {}, signal)
       if (signal?.aborted) return
       const next = { company: model.company ?? null, departments: model.departments ?? [], employees: model.employees ?? [], projects: model.projects ?? [], members: [], group: null, revision: model.revision }
       revision.current = model.revision
