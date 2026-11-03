@@ -75,7 +75,11 @@ export function createCompanyApi({ store, execute, groups = {}, now = Date.now }
   // The read model: the whole company in one answer, or one project in detail. A company
   // that does not exist yet is `company: null` with 200, not a 404 — the first screen has
   // to render the empty state, and "nobody created it" is a valid state, not a bad URL.
-  const model = (query = {}) => {
+  const model = (input = {}) => {
+    // A caller may pass null where it means "no filter": `/api/bot` forwards a client's
+    // payload as-is, and a default parameter only covers `undefined`. Reading it as an
+    // empty query keeps that mistake from turning into a 500 in the middle of a screen.
+    const query = input ?? {}
     const state = store.state
     const company = Object.values(state.companies).find(entry => entry.status !== 'archived') ?? null
     const byCreated = (left, right) => (left.created_at ?? 0) - (right.created_at ?? 0)
@@ -101,7 +105,8 @@ export function createCompanyApi({ store, execute, groups = {}, now = Date.now }
   // Events are appended once per committed command, so the file is already in cursor
   // order and a page is a slice. A torn last line (a write cut short) is skipped rather
   // than failing the read: the journal tolerates one missing audit line.
-  const events = async (query = {}) => {
+  const events = async (input = {}) => {
+    const query = input ?? {}
     const since = Number.parseInt(String(query.cursor ?? '0'), 10)
     const from = Number.isInteger(since) && since > 0 ? since : 0
     const asked = Number.parseInt(String(query.limit ?? '200'), 10)
