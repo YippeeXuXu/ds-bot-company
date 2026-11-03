@@ -14,7 +14,7 @@
 // Run: node dev/selfreview-stub.mjs
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
-import { classify } from '../src/host/company/selfreview/rules.js'
+import { HIGH_RISK_RULES, classify } from '../src/host/company/selfreview/rules.js'
 
 const TOKEN_NAMES = ['DSH_SECRET_SELFREVIEW_TOKEN', 'SELFREVIEW_TOKEN']
 const DEFAULT_PORT = 7361
@@ -94,10 +94,30 @@ const bodyText = (request) => new Promise((resolve, reject) => {
   request.on('error', reject)
 })
 
+// A request whose arguments arrived as previews leaves too little to replay: the adaptor sends
+// a shell call as its first word, and the stub cannot pretend to re-derive the rest. In that
+// case it answers from the rule hint the adaptor attached, and says so by keeping the rule id.
+const hinted = (request) => {
+  const hint = request?.rule_hint
+  if (hint === null || typeof hint !== 'object') return undefined
+  if (!['allow', 'deny', 'human-needed'].includes(hint.decision)) return undefined
+  const ruleId = typeof hint.rule_id === 'string' ? hint.rule_id : 'UNKNOWN_TOOL'
+  return {
+    decision: hint.decision,
+    rule_id: ruleId,
+    policy_hits: [ruleId],
+    probability: hint.decision === 'allow' ? 1 : 0.9,
+    risk_tier: HIGH_RISK_RULES.includes(ruleId) || hint.sensitive_flag === true ? 'high' : hint.decision === 'allow' ? 'low' : 'medium',
+    sensitive_flag: hint.sensitive_flag === true,
+    target: typeof hint.target === 'string' ? hint.target : undefined,
+  }
+}
+
 const judge = (request) => {
   const tool = typeof request?.tool === 'string' ? request.tool : ''
   const scope = scopeOf(request)
-  const verdict = classify({ tool, args: argumentsOf(request?.parameters), scope, base: scope.workspaceRef, truncated: request?.arguments_truncated === true })
+  const replayed = request?.arguments_truncated === true ? hinted(request) : undefined
+  const verdict = replayed ?? classify({ tool, args: argumentsOf(request?.parameters), scope, base: scope.workspaceRef, truncated: request?.arguments_truncated === true })
   const outsideScope = verdict.rule_id === 'SCOPE_VIOLATION' ? 0.9 : verdict.decision === 'deny' ? 0.2 : 0.05
   return {
     status: 'ok',
@@ -111,7 +131,7 @@ const judge = (request) => {
     predicted_risk_tier: verdict.risk_tier,
     // The stub never claims to know who authorized a call; the projection decides that.
     authorizer: 'none',
-    policy_hits: [verdict.rule_id],
+    policy_hits: verdict.policy_hits ?? [verdict.rule_id],
     evaluated_at: new Date().toISOString(),
   }
 }

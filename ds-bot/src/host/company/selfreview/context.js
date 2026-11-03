@@ -17,14 +17,36 @@ export const PREVIEW_MAX = 200
 /** Longest rendered `state` text; §3.3 caps the context at 2KB. */
 const STATE_MAX = 2048
 
-/** Keys whose value is never previewed, whatever it looks like. */
-const SECRET_KEYS = /(?:^|_)(?:token|secret|password|passwd|api_?key|credential|authorization|cookie|private_?key)(?:$|_)/i
+/**
+ * Keys whose value is never previewed, whatever it looks like. Names are compared with the
+ * separators removed, so `accessToken`, `access_token` and `ACCESS_TOKEN` all hide a value.
+ */
+const SECRET_WORDS = ['token', 'secret', 'password', 'passwd', 'apikey', 'credential', 'authorization', 'cookie', 'privatekey', 'sessionkey']
+const secretKey = (key) => {
+  const name = String(key).replace(/[_-]/g, '').toLowerCase()
+  return SECRET_WORDS.some(word => name === word || name.endsWith(word))
+}
 
 /**
- * Keys that carry a document: the body of a write, the strings of an edit, a patch, a file's
- * bytes. §3.3 forbids file contents in the request, so only the type goes through.
+ * Keys that carry a document: the body of a write, the strings of an edit, a chat message, a
+ * command line, a prompt, a patch, a file's bytes. §3.3 forbids contents in the request, so
+ * only the type goes through.
  */
-const CONTENT_KEYS = /^(?:content|contents|body|text|old_?string|new_?string|old_?text|new_?text|file_?text|patch|diff|source|code|data|bytes|base64)$/i
+const CONTENT_KEYS = /^(?:content|contents|body|text|message|messages|prompt|prompts|query|queries|script|snippet|command|commands|patch|diff|source|code|data|bytes|base64|old_?str(?:ing)?|new_?str(?:ing)?|old_?content|new_?content|old_?text|new_?text|file_?text)$/i
+
+/** Free text under a key that names nothing is cut here; past it a digest replaces the words,
+ *  because a long string is a message or a document rather than a short label. */
+const FREE_TEXT_MAX = 64
+
+/** Keys that name a place, an object or a short label; their text may be previewed as is. */
+const SAFE_TEXT_KEYS = /^(?:path|paths|file_?path|file_?paths|dir|dirs|directory|cwd|base|root|name|target|targets|pattern|patterns|glob|globs|url|urls|endpoint|host|port|id|ids|tool|tools|role|roles|model|preset|policy|mode|status|kind|type|title|label|tag|tags|email|project_?id|employee_?id|department_?id|company_?id|session_?id|bot_?id|room_?id|call_?id|query_?id)$/i
+
+/** The first word of a command line is the only part a shell call needs to describe itself. */
+const FIRST_WORD_MAX = 40
+const firstWord = (value) => {
+  const word = value.trim().split(/\s+/, 1)[0] ?? ''
+  return word.length > FIRST_WORD_MAX ? word.slice(0, FIRST_WORD_MAX) : word
+}
 
 const sha256 = value => `sha256:${createHash('sha256').update(value).digest('hex')}`
 
@@ -139,9 +161,22 @@ export function summarizeArguments(args, { home } = {}) {
     if (value === undefined) continue
     const type = typeOf(value)
     if (typeof value === 'string') {
-      if (SECRET_KEYS.test(key)) { parameters[key] = { type, preview: '[hidden]' }; truncated = true; continue }
+      if (secretKey(key)) { parameters[key] = { type, preview: '[hidden]' }; truncated = true; continue }
+      if (/^(?:command|commands)$/i.test(key)) {
+        // §3.3 limits a shell call's description to its first word. The line itself can carry a
+        // payload, a path or a token, and the rule layer already read it in this process.
+        parameters[key] = { type, preview: firstWord(value), digest: sha256(value) }
+        truncated = true
+        continue
+      }
       if (CONTENT_KEYS.test(key)) { parameters[key] = { type, preview: '[content omitted]' }; truncated = true; continue }
       const cleaned = cleanText(value, home === undefined ? {} : { home })
+      if (!SAFE_TEXT_KEYS.test(key) && cleaned.length > FREE_TEXT_MAX) {
+        // Prose rather than a name: keep its shape, not its words.
+        parameters[key] = { type, length: cleaned.length, digest: sha256(cleaned) }
+        truncated = true
+        continue
+      }
       const preview = cleaned.slice(0, PREVIEW_MAX)
       if (cleaned.length > PREVIEW_MAX) truncated = true
       parameters[key] = { type, preview }
@@ -223,6 +258,15 @@ export function buildRequest({ exec, scope, local, host, config, now = Date.now,
     // than the same summary rendered into `state`.
     parameters,
     arguments_truncated: truncated,
+    // The verdict taken in this process travels as a hint, not as an answer: a judge may
+    // disagree and the record keeps both. It also lets the stub answer a request whose command
+    // line was reduced to its first word.
+    rule_hint: {
+      rule_id: local.rule_id ?? null,
+      decision: ['allow', 'deny', 'human-needed'].includes(local.decision) ? local.decision : null,
+      sensitive_flag: local.sensitive_flag === true,
+      target: local.target ?? null,
+    },
     questions: [
       { id: 'decision', type: 'choice', options: ['allow', 'deny', 'human-needed'] },
       { id: 'outside_scope', type: 'Noul' },

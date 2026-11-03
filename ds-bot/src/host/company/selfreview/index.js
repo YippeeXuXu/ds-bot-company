@@ -34,10 +34,8 @@ export const DEFAULT_CONFIG = {
   minConfidence: 0.8,
   policyVersion: 'sr-2026-11-03.1',
   judgeRunCodeOuter: false,
-  sampleInAutoSessions: 0.1,
   forceDecision: null,
   readOnlyWhitelistAllow: true,
-  hostOutcomeProjection: true,
 }
 
 /** §4.2: the only tools that pass while the host's approval mode is unreadable. */
@@ -74,10 +72,11 @@ export function normalizeConfig(raw) {
   config.minConfidence = inRange(raw.minConfidence, config.minConfidence)
   if (typeof raw.policyVersion === 'string' && raw.policyVersion !== '') config.policyVersion = raw.policyVersion
   if (typeof raw.judgeRunCodeOuter === 'boolean') config.judgeRunCodeOuter = raw.judgeRunCodeOuter
-  config.sampleInAutoSessions = inRange(raw.sampleInAutoSessions, config.sampleInAutoSessions)
   if (DECISIONS.includes(raw.forceDecision)) config.forceDecision = raw.forceDecision
   if (typeof raw.readOnlyWhitelistAllow === 'boolean') config.readOnlyWhitelistAllow = raw.readOnlyWhitelistAllow
-  if (typeof raw.hostOutcomeProjection === 'boolean') config.hostOutcomeProjection = raw.hostOutcomeProjection
+  // `sampleInAutoSessions` and `hostOutcomeProjection` are M1b-1 settings: the first has no
+  // sampler and the second has no writer in M1b-0, and a knob that changes nothing would read
+  // as a feature that works.
   return config
 }
 
@@ -193,13 +192,10 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
     // process, so a call that touches credentials is never described to the engine.
     if (local.decision === 'deny') return settle({ exec, scope, host, local, request, status: 'ok', final: 'deny', started })
 
-    // §5.1: in an Auto Session the product layer refuses only what it can prove — a deny, which
-    // is final (§4.1) — and leaves everything else to the host. The high-risk classes it cannot
-    // see there are the d3 gap (`auto-session-uncovered`), reported rather than papered over.
-    if (host.preset === 'auto') return settle({ exec, scope, host, local, request, status: 'auto-session', final: 'allow', started })
-
     // §4.2: an unreadable host approval mode means no judge call at all. Only the read-only
     // whitelist passes; everything else is asked, which a `never` Session turns into a refusal.
+    // This branch runs before the Auto branch: an unknown policy is not evidence of Auto, and
+    // reading it as Auto would let an out-of-scope write through (B3 in the r1 review).
     if (host.source === 'unknown') {
       const readOnly = config.readOnlyWhitelistAllow === true
         && READ_ONLY_WHITELIST.has(exec.name)
@@ -207,6 +203,11 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
         && local.decision === 'allow'
       return settle({ exec, scope, host, local, request, status: 'host-unknown', final: readOnly ? 'allow' : 'human-needed', started })
     }
+
+    // §5.1: in an Auto Session the product layer refuses only what it can prove — a deny, which
+    // is final (§4.1) — and leaves everything else to the host. The high-risk classes it cannot
+    // see there are the d3 gap (`auto-session-uncovered`), reported rather than papered over.
+    if (host.preset === 'auto') return settle({ exec, scope, host, local, request, status: 'auto-session', final: 'allow', started })
 
     const answer = await judge({ endpoint: config.endpoint, token: tokenOf(), timeoutMs: config.timeoutMs, request, fetchImpl })
     const merged = mergeVerdict({ local, answer, mode: config.mode, minConfidence: config.minConfidence })

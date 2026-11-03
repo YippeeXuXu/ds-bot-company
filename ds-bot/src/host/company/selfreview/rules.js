@@ -230,6 +230,22 @@ const authorizedScope = (scope) => {
 
 const pathWordsOf = words => words.filter(word => !word.startsWith('-') && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word))
 
+// Reading tools that can write or run another program: `find -exec`, `sort -o`, an awk program
+// that calls `system`, a sed `-i`. A command that observes and acts is no longer a read.
+const readSideEffect = (head, rest) => {
+  const line = rest.join(' ')
+  if (head === 'find') {
+    return rest.some(word => ['-exec', '-execdir', '-ok', '-okdir', '-delete', '-fls', '-fprint', '-fprint0', '-fprintf'].includes(word))
+      || /\s-delete(\s|$)/.test(` ${line} `)
+  }
+  if (head === 'sort') return rest.some(word => word === '-o' || word === '--output' || word.startsWith('--output=') || /^-o./.test(word))
+  if (head === 'awk' || head === 'gawk' || head === 'mawk' || head === 'nawk') {
+    return /system\s*\(|print(?:f)?[^;|]*>|&>|\|\s*(?:"|')/.test(line)
+  }
+  if (head === 'sed') return /--in-place|\bsystem\s*\(|(?:^|[\s'"])(?:e|w)\s+[^\s'"]+/.test(line)
+  return false
+}
+
 // Classify one shell command. `scope.workspaceRef` is the authorized project folder; a word
 // that names a path resolves against the Session's folder first, as the shell would.
 const classifyShell = ({ command, base, scope }) => {
@@ -271,7 +287,12 @@ const classifyShell = ({ command, base, scope }) => {
       // No path words at all (`npm install`, `make`) work in the folder the command runs in.
       if (paths.length === 0) writePath(base ?? workspace ?? '.'); else for (const path of paths) writePath(path)
     } else if (SHELL_READ.has(head)) {
-      if (head === 'sed' && rest.some(word => /^-[a-zA-Z]*i/.test(word))) { for (const path of paths) writePath(path) } else found.reads = true
+      if (head === 'sed' && rest.some(word => /^-[a-zA-Z]*i/.test(word))) { for (const path of paths) writePath(path) }
+      else if (readSideEffect(head, rest)) {
+        // A read command carrying a write or an exec flag is not a read: it becomes unknown, and
+        // unknown asks a human (B2 in the r1 review).
+        found.unknown ??= `The read command "${head}" can write or run another program.`
+      } else found.reads = true
       if (head === 'find' && rest.includes('-delete')) found.deletes = true
       for (const path of paths) if (isSecretPath(path) && ['cat', 'head', 'tail', 'less', 'more', 'cp', 'scp', 'rsync', 'tee', 'grep', 'rg'].includes(head)) found.secret = true
     } else if (head === 'env' || head === 'printenv') {

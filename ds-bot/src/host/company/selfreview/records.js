@@ -23,7 +23,7 @@ export const RECORD_FIELDS = [
   'sensitive_flag', 'predicted_risk_tier', 'authorizer', 'created_at',
 ]
 
-const emptyStats = () => ({ written: 0, failed: 0, last_error: null })
+const emptyStats = () => ({ written: 0, failed: 0, rotate_failed: 0, last_error: null })
 
 /**
  * Build one record from what the adaptor already holds.
@@ -111,13 +111,27 @@ export function createRecorder({ dir, file = 'selfreview.jsonl', maxBytes = FILE
     return ready
   }
 
+  // Windows refuses a rename onto an existing file, so the target is removed first. A rotation
+  // that still fails is counted and reported rather than swallowed: the previous version set
+  // `size` to 0 anyway, so the 8MB cap quietly stopped working on Windows while the file kept
+  // growing.
   const rotate = async () => {
     for (let index = keep - 1; index >= 1; index -= 1) {
+      await unlink(`${path}.${index + 1}`).catch(() => {})
       await rename(`${path}.${index}`, `${path}.${index + 1}`).catch(() => {})
     }
-    await rename(path, `${path}.1`).catch(() => {})
+    await unlink(`${path}.1`).catch(() => {})
+    try {
+      await rename(path, `${path}.1`)
+    } catch (error) {
+      stats.rotate_failed += 1
+      stats.last_error = error instanceof Error ? error.message : String(error)
+      if (typeof warn === 'function') warn(`selfreview record rotation failed: ${stats.last_error}`)
+      return false
+    }
     await unlink(`${path}.${keep + 1}`).catch(() => {})
     size = 0
+    return true
   }
 
   const append = async (record) => {
@@ -128,6 +142,7 @@ export function createRecorder({ dir, file = 'selfreview.jsonl', maxBytes = FILE
         size = await stat(path).then(entry => entry.size).catch(() => 0)
         sized = true
       }
+      // A failed rotation must not lose the line: the record is worth more than the cap.
       if (size > 0 && size + Buffer.byteLength(line) > maxBytes) await rotate()
       await appendFile(path, line, 'utf8')
       size += Buffer.byteLength(line)
