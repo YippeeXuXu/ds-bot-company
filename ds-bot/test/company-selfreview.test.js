@@ -191,7 +191,7 @@ test('a deny never reaches the judgement layer', async () => {
   const home = tempHome()
   let called = 0
   const adaptor = adaptorOf({ home, fetchImpl: async () => { called += 1; return okFetch()() } })
-  const answer = await adaptor.gate(execOf({ args: { file_path: '/home/dev/.ssh/id_rsa' } }))
+  const answer = await adaptor.gate(execOf({ args: { file_path: '/home/user/.ssh/id_rsa' } }))
   assert.equal(answer.kind, 'deny')
   assert.equal(called, 0)
   await adaptor.close()
@@ -220,7 +220,7 @@ test('human-needed becomes an ask with a bilingual display reason', async () => 
 test('shadow records the answer it would have given and changes nothing', async () => {
   const home = tempHome()
   const adaptor = adaptorOf({ home, config: { mode: 'shadow' } })
-  const answer = await adaptor.gate(execOf({ args: { file_path: '/home/dev/.ssh/id_rsa' } }))
+  const answer = await adaptor.gate(execOf({ args: { file_path: '/home/user/.ssh/id_rsa' } }))
   assert.equal(answer, undefined)
   await adaptor.close()
   const [record] = linesOf(recordPath(home))
@@ -341,7 +341,7 @@ test('a Session outside the company is not judged and not recorded', async () =>
 test('a record carries the planned fields, a digest, and no argument value', async () => {
   const home = tempHome()
   const adaptor = adaptorOf({ home })
-  const secret = 'sk-live-abcdef1234567890'
+  const secret = 'live-value-42'
   await adaptor.gate(execOf({ name: 'write', args: { file_path: `${WORKSPACE}/a.md`, content: secret } }))
   await adaptor.close()
   const raw = readFileSync(recordPath(home), 'utf8')
@@ -534,7 +534,7 @@ const request = {
 }
 
 test('the stub answers health, refuses a wrong token, and replays the rule table', async () => {
-  const token = 'stub-shared-token'
+  const token = 'stub-token'
   const stub = await startStub({ token })
   try {
     const health = await fetch(`${stub.base}/healthz`)
@@ -559,7 +559,7 @@ test('the stub answers health, refuses a wrong token, and replays the rule table
     const secret = await fetch(`${stub.base}/v1/systemone`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ ...request, parameters: { file_path: { type: 'string', preview: '/home/dev/.ssh/id_rsa' } } }),
+      body: JSON.stringify({ ...request, parameters: { file_path: { type: 'string', preview: '/home/user/.ssh/id_rsa' } } }),
     })
     const secretAnswer = await secret.json()
     assert.equal(secretAnswer.answers[0].choice, 'deny')
@@ -575,7 +575,7 @@ test('the stub answers health, refuses a wrong token, and replays the rule table
 })
 
 test('the adaptor and the stub agree end to end over loopback', async () => {
-  const token = 'end-to-end-token'
+  const token = 'e2e-token'
   const stub = await startStub({ token })
   const home = tempHome()
   try {

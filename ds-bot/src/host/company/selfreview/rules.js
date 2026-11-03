@@ -114,6 +114,11 @@ const GIT_DELETE = new Set(['clean', 'rm', 'prune'])
 const GIT_EXTERNAL = new Set(['push', 'fetch', 'pull', 'clone', 'submodule', 'lfs'])
 
 const text = value => (typeof value === 'string' ? value : typeof value === 'number' ? String(value) : undefined)
+// A resolved path carries the host's separator; the shapes below are written with `/` so the
+// same rule reads the same on every platform.
+const slashed = value => (typeof value === 'string' ? value.replace(/\\/g, '/') : value)
+const isSecretPath = value => SECRET_PATH.test(slashed(value))
+const isProductionPath = value => PRODUCTION_PATH.test(slashed(value))
 const unquote = value => value.replace(/^['"]|['"]$/g, '')
 const cleanPath = value => unquote(value.trim())
 const inside = (inner, outer) => outer !== undefined && (inner === outer || inner.startsWith(outer.endsWith(sep) ? outer : `${outer}${sep}`))
@@ -216,8 +221,8 @@ const classifyShell = ({ command, base, scope }) => {
     const path = absolute(value, base)
     if (path === undefined) { found.unknown ??= 'The command writes, but its target could not be resolved.'; return }
     found.target ??= path
-    if (SECRET_PATH.test(path)) found.secret = true
-    if (PRODUCTION_PATH.test(path)) found.productions = true
+    if (isSecretPath(path)) found.secret = true
+    if (isProductionPath(path)) found.productions = true
     if (foreign.some(outer => inside(path, outer))) found.violations = true
     else if (inside(path, workspace)) found.inside = true
     else found.outside = true
@@ -249,14 +254,14 @@ const classifyShell = ({ command, base, scope }) => {
     } else if (SHELL_READ.has(head)) {
       if (head === 'sed' && rest.some(word => /^-[a-zA-Z]*i/.test(word))) { for (const path of paths) writePath(path) } else found.reads = true
       if (head === 'find' && rest.includes('-delete')) found.deletes = true
-      for (const path of paths) if (SECRET_PATH.test(path) && ['cat', 'head', 'tail', 'less', 'more', 'cp', 'scp', 'rsync', 'tee', 'grep', 'rg'].includes(head)) found.secret = true
+      for (const path of paths) if (isSecretPath(path) && ['cat', 'head', 'tail', 'less', 'more', 'cp', 'scp', 'rsync', 'tee', 'grep', 'rg'].includes(head)) found.secret = true
     } else if (head === 'env' || head === 'printenv') {
       found.secret = true
     } else {
       found.unknown ??= `The command "${head}" is not in the rule table.`
     }
-    for (const word of paths) if (SECRET_PATH.test(word)) found.secret = true
-    if (paths.some(word => PRODUCTION_PATH.test(word))) found.productions = true
+    for (const word of paths) if (isSecretPath(word)) found.secret = true
+    if (paths.some(word => isProductionPath(word))) found.productions = true
   }
   if (!found.target) found.target = segmentsOf(command)[0]
   return decideShell(found)
@@ -289,15 +294,15 @@ export function classify({ tool, args = {}, scope = {}, base, truncated = false 
   if (WRITE_TOOLS.has(tool)) {
     const path = absolute(text(args?.[WRITE_TOOLS.get(tool)]), base)
     if (path === undefined) return verdict('UNKNOWN_EFFECT', HUMAN, { target, reason: 'The write has no resolvable target.' })
-    if (SECRET_PATH.test(path)) return verdict('SECRET_EXFIL', DENY, { target: path, reason: 'The write targets a credential file.' })
-    if (PRODUCTION_PATH.test(path)) return verdict('PRODUCTION', HUMAN, { target: path })
+    if (isSecretPath(path)) return verdict('SECRET_EXFIL', DENY, { target: path, reason: 'The write targets a credential file.' })
+    if (isProductionPath(path)) return verdict('PRODUCTION', HUMAN, { target: path })
     if ((scope.foreignWorkspaces ?? []).some(outer => inside(path, outer))) return verdict('SCOPE_VIOLATION', DENY, { target: path, reason: 'The target belongs to another project.' })
     if (inside(path, scope.workspaceRef)) return verdict('WRITE_INSIDE', ALLOW, { target: path })
     return verdict('WRITE_OUTSIDE', HUMAN, { target: path })
   }
   if (READ_TOOLS.has(tool)) {
     const path = absolute(text(args?.file_path), base) ?? absolute(text(args?.path), base)
-    if (path !== undefined && SECRET_PATH.test(path)) return verdict('SECRET_EXFIL', DENY, { target: path, reason: 'The read targets a credential file.' })
+    if (path !== undefined && isSecretPath(path)) return verdict('SECRET_EXFIL', DENY, { target: path, reason: 'The read targets a credential file.' })
     return verdict('READ_ONLY', ALLOW, { target: path ?? target })
   }
   if (INTERNAL_TOOLS.has(tool)) return verdict('INTERNAL', ALLOW, { target })
