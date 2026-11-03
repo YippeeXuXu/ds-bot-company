@@ -1317,12 +1317,12 @@ Object.assign(ZH, HOST_ZH, {
   "Add department": "添加部门",
   Back: "上一步",
   "Department chats are needed before the project starts.": "启动项目前需要绑定部门群。",
-  "You can create a setup draft now. Bind each department chat before starting the project.": "可以先创建待配置草稿；启动前请绑定各部门群。",
+  "You can create a setup draft now. Bind each department chat before starting the project.": "可以先创建待配置项目；启动前请绑定各部门群。",
   "Existing group chat": "现有群聊",
   "Choose a group chat": "选择群聊",
   "Bind chat to {name}": "绑定群聊到 {name}",
   "Project coordinator": "项目协调员",
-  "The coordinator can be assigned after creating the draft. One is required before launch.": "可先创建草稿，启动前再指定协调员。",
+  "The coordinator can be assigned after creating the draft. One is required before launch.": "可先创建项目，启动前再指定协调员。",
   Employee: "员工",
   "Choose an employee": "选择员工",
   "Add an employee profile": "添加员工档案",
@@ -1353,8 +1353,8 @@ Object.assign(ZH, HOST_ZH, {
   "Assign before launch": "启动前指定",
   "Workspace folder (optional)": "项目工作目录（可选）",
   "Suggested: company/projects/<project name>": "建议：company/projects/<项目名>",
-  "An independent acceptance Bot, a memory keeper and a usable workspace are required before launch. Finish these in project setup when draft editing becomes available.": "启动前需指定独立验收 Bot、记忆维护员和可用工作目录；草稿编辑入口上线后可在项目配置中补齐。",
-  "The project begins as a setup draft. Complete the remaining settings before launch; draft editing will be available in a later page update.": "项目创建后进入待配置草稿；启动前需补齐配置，草稿编辑将在后续页面更新中提供。",
+  "An independent acceptance Bot, a memory keeper and a usable workspace are required before launch. Finish these in project setup when draft editing becomes available.": "启动前需指定独立验收 Bot、记忆维护员和可用工作目录；配置入口上线后可在项目设置中补齐。",
+  "The project begins as a setup draft. Complete the remaining settings before launch; draft editing will be available in a later page update.": "项目创建后进入待配置状态；启动前需补齐配置，配置编辑将在后续页面更新中提供。",
   "Local sample cannot be started": "本地样例不可启动",
   "reconcile the project group": "完成项目群对账",
   "assign a project coordinator": "指定项目协调员",
@@ -4541,7 +4541,7 @@ var HANDOFF_CSS = `
 .bt-handoff .bt-q-foot{flex-wrap:wrap}
 `;
 
-// ../../../ds-bot/node_modules/deep-view/src/react/ui.js
+// node_modules/deep-view/src/react/ui.js
 var import_react8 = require("react");
 var FallbackMarkdown = ({ text }) => (0, import_react8.createElement)("span", null, String(text ?? ""));
 var ViewUi = (0, import_react8.createContext)({ t: (key) => key, Markdown: FallbackMarkdown });
@@ -4608,7 +4608,7 @@ function useOptionKeys2(count, onPick, ownRef) {
   return count > 0 && listening <= 1;
 }
 
-// ../../../ds-bot/node_modules/deep-view/src/core/formula.js
+// node_modules/deep-view/src/core/formula.js
 var FUNCTIONS = {
   min: { args: [1, Infinity], run: (...values) => Math.min(...values.map(num)) },
   max: { args: [1, Infinity], run: (...values) => Math.max(...values.map(num)) },
@@ -4889,7 +4889,7 @@ function evaluate(tree, lookup) {
   }
 }
 
-// ../../../ds-bot/node_modules/deep-view/src/core/views.js
+// node_modules/deep-view/src/core/views.js
 var LAYOUT = ["stack", "row"];
 var DISPLAY = ["text", "metric", "table", "chart", "progress", "callout", "sources", "html"];
 var INPUT_TYPES = ["slider", "choice", "toggle", "number"];
@@ -5509,7 +5509,7 @@ function validateForm(node, values) {
   return { fields };
 }
 
-// ../../../ds-bot/node_modules/deep-view/src/react/chart.js
+// node_modules/deep-view/src/react/chart.js
 var import_react9 = require("react");
 var PALETTE = ["var(--dv-accent)", "var(--dv-ink-tangerine)", "var(--dv-ink-green)", "var(--dv-ink-violet)", "var(--dv-ink-sky)", "var(--dv-ink-rose)", "var(--dv-ink-yellow)", "var(--dv-ink-cyan)", "var(--dv-ink-magenta)"];
 var colorAt = (index) => PALETTE[index % PALETTE.length];
@@ -5948,7 +5948,7 @@ var CHART_CSS = `
 @media (prefers-reduced-motion:reduce){.dv-chart-mark,.dv-chart-dot{transition:none}.dv-chart-tip{animation:none}}
 `;
 
-// ../../../ds-bot/node_modules/deep-view/src/react/frame.js
+// node_modules/deep-view/src/react/frame.js
 var import_react10 = require("react");
 var THEME_VARS = [
   ["--view-ink", "--bt-ink", "--dv-ink"],
@@ -6030,7 +6030,7 @@ var HTML_CSS = `
 .dv-view-frame-stopped{margin:0;font-size:13px;line-height:18px;color:var(--dv-ink-2)}
 `;
 
-// ../../../ds-bot/node_modules/deep-view/src/react/card.js
+// node_modules/deep-view/src/react/card.js
 var import_react11 = require("react");
 var mdLabels = (ui2) => ({ code: { copyLabel: ui2.t("Copy"), copiedLabel: ui2.t("Copied") }, footnotes: ui2.t("Footnotes") });
 var TONES2 = ["good", "warn", "bad"];
@@ -6699,7 +6699,7 @@ ${CHART_CSS}
 ${HTML_CSS}
 `;
 
-// ../../../ds-bot/node_modules/deep-view/src/react/styles.js
+// node_modules/deep-view/src/react/styles.js
 var THEME_CSS = `
 body{
 --dv-ink:var(--dsw-alias-label-primary);
@@ -6796,10 +6796,10 @@ button.dv-q-opt:active{background:var(--dv-active)}
 @media (prefers-reduced-motion:reduce){.dv-q,.dv-view-bare,.dv-q-submit,.dv-menu,.dv-q-check{animation:none}}
 `;
 
-// ../../../ds-bot/node_modules/deep-view/src/react/index.js
+// node_modules/deep-view/src/react/index.js
 var DEEP_VIEW_CSS = THEME_CSS + QUESTION_CSS + WIDGET_CSS;
 
-// ../../../ds-bot/node_modules/deep-view/src/core/reply.js
+// node_modules/deep-view/src/core/reply.js
 var REPLY_KIND = "user-question-reply";
 function viewCardText(args) {
   let card = args;
