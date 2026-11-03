@@ -139,6 +139,16 @@ test('the settings default to off, and an unknown mode fails closed to enforce',
   assert.equal(normalizeConfig({ forceDecision: 'maybe' }).forceDecision, null)
 })
 
+test('the settings carry no switch this stage does not implement', () => {
+  // r2 review S-1: the report pointed at a config assertion that had no test behind it. The
+  // sampler switch and the projection writer belong to M1b-1; M1b-0 must not look as if it
+  // reads them, and a config that still passes them through must not grow them back.
+  for (const dead of ['sampleInAutoSessions', 'hostOutcomeProjection']) {
+    assert.equal(dead in DEFAULT_CONFIG, false, dead)
+    assert.equal(dead in normalizeConfig({ [dead]: true }), false, dead)
+  }
+})
+
 test('off builds nothing: no listener, no record, no token lookup', async () => {
   const home = tempHome()
   const ctx = fakeCtx()
@@ -694,6 +704,31 @@ test('the stub answers health, refuses a wrong token, and replays the rule table
   }
 })
 
+test('a truncated request is judged as unknown, never from a local hint', async () => {
+  // r2 review: the request used to carry `rule_hint`, which told the judge what the rule layer
+  // had already decided, so a real engine would be anchored. It is gone. A shell call now
+  // arrives as its first word plus a digest, and the honest answer to that is human-needed.
+  const token = 'stub-truncated'
+  const stub = await startStub({ token })
+  try {
+    const answer = await fetch(`${stub.base}/v1/systemone`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        tool: 'bash',
+        parameters: { command: { type: 'string', preview: 'cat', digest: 'sha256:abc' } },
+        effective_authorization_scope: { workspace_ref: WORKSPACE, project_status: 'active' },
+        arguments_truncated: true,
+      }),
+    })
+    const body = await answer.json()
+    assert.equal(body.answers[0].choice, 'human-needed')
+    assert.deepEqual(body.policy_hits, ['UNKNOWN_EFFECT'])
+  } finally {
+    stub.child.kill('SIGTERM')
+  }
+})
+
 test('the adaptor and the stub agree end to end over loopback', async () => {
   const token = 'e2e-token'
   const stub = await startStub({ token })
@@ -772,7 +807,14 @@ test('a private message, a command line and a token never reach the request', ()
   assert.equal(request.parameters.instructions.preview, undefined)
   assert.equal(typeof request.parameters.instructions.digest, 'string')
   assert.equal(request.arguments_truncated, true)
-  assert.equal(request.rule_hint.decision, local.decision)
+  // The local verdict is the answer the judge must reach on its own: its rule id must not
+  // travel, in the structured body or in `state`.
+  assert.equal('rule_hint' in request, false)
+  assert.equal(typeof local.rule_id, 'string')
+  for (const leaked of ['rule_hint', local.rule_id]) {
+    assert.equal(text.includes(leaked), false, `${leaked} must not be in the request`)
+    assert.equal(request.state.includes(leaked), false, `${leaked} must not be in state`)
+  }
 })
 
 test('a read command that can write or run another program is not a read', () => {
@@ -782,6 +824,11 @@ test('a read command that can write or run another program is not a read', () =>
     'sort -o /etc/passwd /tmp/x',
     "awk 'BEGIN{system(\"rm -rf /tmp/x\")}'",
     "sed 's/a/b/;' -i notes.txt",
+    // The program itself lives in a file, so the flags below decide nothing on their own.
+    'awk -f prog.awk /work/ds-bot/a.md',
+    'gawk --file=prog.awk /work/ds-bot/a.md',
+    'sed -f script.sed /work/ds-bot/a.md',
+    'sed -nf script.sed /work/ds-bot/a.md',
   ]
   for (const command of commands) {
     const verdict = classify({ tool: 'bash', args: { command }, scope, base: WORKSPACE })
@@ -791,6 +838,9 @@ test('a read command that can write or run another program is not a read', () =>
   // The same words without a side effect stay a read.
   assert.equal(classify({ tool: 'bash', args: { command: 'find . -name "*.md"' }, scope, base: WORKSPACE }).decision, 'allow')
   assert.equal(classify({ tool: 'bash', args: { command: 'sort notes.txt' }, scope, base: WORKSPACE }).decision, 'allow')
+  // A program that arrives inline is read as the text it is, so these stay reads.
+  assert.equal(classify({ tool: 'bash', args: { command: "awk '{print $1}' notes.txt" }, scope, base: WORKSPACE }).decision, 'allow')
+  assert.equal(classify({ tool: 'bash', args: { command: "sed 's/a/b/' notes.txt" }, scope, base: WORKSPACE }).decision, 'allow')
 })
 
 test('an unreadable policy fails closed even when the preset says auto', async () => {

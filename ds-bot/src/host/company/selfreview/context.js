@@ -195,7 +195,9 @@ export const previewArguments = (parameters) => Object.fromEntries(Object.entrie
 
 // The readable copy of the context. Lines are dropped from the end when the cap is reached,
 // so the identity and the request always survive; `state_truncated` says that happened.
-const renderState = ({ scope, tool, target, digest, mode, local }) => {
+// It describes the call and the authorization only: the verdict this process already took
+// stays local, because telling a judge the answer first would anchor the judgement.
+const renderState = ({ scope, tool, target, digest, mode }) => {
   const lines = [
     `policy_version: ${mode.policyVersion}`,
     'Three answers: allow runs the call, human-needed asks the human through the host, deny is final.',
@@ -205,7 +207,6 @@ const renderState = ({ scope, tool, target, digest, mode, local }) => {
     `tool: ${tool} call: ${target === undefined ? 'unknown' : target}`,
     `parameter_digest: ${digest}`,
     `authorized_workspace: ${scope.workspaceRef ?? 'unknown'} project_status: ${scope.projectStatus ?? 'unknown'}`,
-    `rule_hint: ${local.rule_id} ${local.decision} sensitive: ${local.sensitive_flag === true}`,
   ]
   const text = lines.join('\n')
   return { text: text.length > STATE_MAX ? text.slice(0, STATE_MAX) : text, truncated: text.length > STATE_MAX }
@@ -214,8 +215,9 @@ const renderState = ({ scope, tool, target, digest, mode, local }) => {
 /**
  * Build the judgement request for one call.
  *
- * `local` is the rule verdict already taken in this process; it only passes its summary on,
- * so the judgement layer does not need the arguments themselves.
+ * `local` is the rule verdict already taken in this process. Only facts travel with the
+ * request — the target and the high-risk flag the local pass found; its rule id and its
+ * decision do not, so the judge answers from the call itself rather than from a hint.
  */
 export function buildRequest({ exec, scope, local, host, config, now = Date.now, home }) {
   const args = exec.arguments
@@ -224,7 +226,7 @@ export function buildRequest({ exec, scope, local, host, config, now = Date.now,
   const callId = typeof exec.callId === 'string' ? exec.callId : 'unknown'
   const digest = sha256(canonical(parameters))
   const target = local.target ?? exec.name
-  const state = renderState({ scope, tool: exec.name, target, digest, mode: config, local })
+  const state = renderState({ scope, tool: exec.name, target, digest, mode: config })
   return {
     schema_version: '1',
     request_id: `sr_${callId}`,
@@ -258,15 +260,6 @@ export function buildRequest({ exec, scope, local, host, config, now = Date.now,
     // than the same summary rendered into `state`.
     parameters,
     arguments_truncated: truncated,
-    // The verdict taken in this process travels as a hint, not as an answer: a judge may
-    // disagree and the record keeps both. It also lets the stub answer a request whose command
-    // line was reduced to its first word.
-    rule_hint: {
-      rule_id: local.rule_id ?? null,
-      decision: ['allow', 'deny', 'human-needed'].includes(local.decision) ? local.decision : null,
-      sensitive_flag: local.sensitive_flag === true,
-      target: local.target ?? null,
-    },
     questions: [
       { id: 'decision', type: 'choice', options: ['allow', 'deny', 'human-needed'] },
       { id: 'outside_scope', type: 'Noul' },

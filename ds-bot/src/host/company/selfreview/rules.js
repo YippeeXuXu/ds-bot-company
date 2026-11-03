@@ -230,6 +230,10 @@ const authorizedScope = (scope) => {
 
 const pathWordsOf = words => words.filter(word => !word.startsWith('-') && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word))
 
+// A program read from a file (`awk -f`, `sed -f`) hides whatever the file holds, so the flag
+// alone already disqualifies the command from the read list.
+const readsProgramFile = rest => rest.some(word => word === '-f' || word === '--file' || word.startsWith('--file=') || /^-[a-zA-Z]*f/.test(word))
+
 // Reading tools that can write or run another program: `find -exec`, `sort -o`, an awk program
 // that calls `system`, a sed `-i`. A command that observes and acts is no longer a read.
 const readSideEffect = (head, rest) => {
@@ -240,9 +244,9 @@ const readSideEffect = (head, rest) => {
   }
   if (head === 'sort') return rest.some(word => word === '-o' || word === '--output' || word.startsWith('--output=') || /^-o./.test(word))
   if (head === 'awk' || head === 'gawk' || head === 'mawk' || head === 'nawk') {
-    return /system\s*\(|print(?:f)?[^;|]*>|&>|\|\s*(?:"|')/.test(line)
+    return readsProgramFile(rest) || /system\s*\(|print(?:f)?[^;|]*>|&>|\|\s*(?:"|')/.test(line)
   }
-  if (head === 'sed') return /--in-place|\bsystem\s*\(|(?:^|[\s'"])(?:e|w)\s+[^\s'"]+/.test(line)
+  if (head === 'sed') return readsProgramFile(rest) || /--in-place|\bsystem\s*\(|(?:^|[\s'"])(?:e|w)\s+[^\s'"]+/.test(line)
   return false
 }
 
