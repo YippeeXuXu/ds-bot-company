@@ -1353,8 +1353,8 @@ Object.assign(ZH, HOST_ZH, {
   "Assign before launch": "启动前指定",
   "Workspace folder (optional)": "项目工作目录（可选）",
   "Suggested: company/projects/<project name>": "建议：company/projects/<项目名>",
-  "An independent acceptance Bot, a memory keeper and a usable workspace are required before launch. Complete these on the draft after the M1a-5 bridge is connected.": "启动前需指定独立验收 Bot、记忆维护员和可用工作目录；待 M1a-5 接通后可在草稿中补齐。",
-  "Creation saves a setup draft. Complete the remaining setup before launch; draft editing awaits the M1a-5 bridge.": "创建后进入待配置草稿；启动前需补齐配置，草稿编辑待 M1a-5 接通。",
+  "An independent acceptance Bot, a memory keeper and a usable workspace are required before launch. Finish these in project setup when draft editing becomes available.": "启动前需指定独立验收 Bot、记忆维护员和可用工作目录；草稿编辑入口上线后可在项目配置中补齐。",
+  "The project begins as a setup draft. Complete the remaining settings before launch; draft editing will be available in a later page update.": "项目创建后进入待配置草稿；启动前需补齐配置，草稿编辑将在后续页面更新中提供。",
   "Local sample cannot be started": "本地样例不可启动",
   "reconcile the project group": "完成项目群对账",
   "assign a project coordinator": "指定项目协调员",
@@ -19399,9 +19399,9 @@ function ProjectWizard({ data, roster, preview, loading, error: loadError, mutat
           acceptanceChoice === "assigned" ? (0, import_react51.createElement)("label", { className: "bc-field" }, t("Acceptance Bot"), (0, import_react51.createElement)("select", { value: acceptanceActor, onChange: (event) => setAcceptanceActor(event.target.value) }, (0, import_react51.createElement)("option", { value: "" }, t("Choose an acceptance Bot")), acceptanceBots.map((employee) => (0, import_react51.createElement)("option", { key: employee.id, value: employee.id }, employee.name)))) : (0, import_react51.createElement)("p", { className: "bc-muted" }, t("Daily work uses an independent Bot; final delivery and sensitive work require owner acceptance."))
         ),
         (0, import_react51.createElement)("div", { className: "bc-grid" }, (0, import_react51.createElement)("label", { className: "bc-field" }, t("Memory keeper (optional)"), (0, import_react51.createElement)("select", { value: memoryEmployeeId, onChange: (event) => setMemoryEmployeeId(event.target.value) }, (0, import_react51.createElement)("option", { value: "" }, t("Assign before launch")), memoryKeepers.map((employee) => (0, import_react51.createElement)("option", { key: employee.id, value: employee.id }, employee.name)))), field(t("Workspace folder (optional)"), workspaceRef, setWorkspaceRef, t("Suggested: company/projects/<project name>"), false, false, 500)),
-        (0, import_react51.createElement)("p", { className: "bc-muted" }, t("An independent acceptance Bot, a memory keeper and a usable workspace are required before launch. Complete these on the draft after the M1a-5 bridge is connected."))
+        (0, import_react51.createElement)("p", { className: "bc-muted" }, t("An independent acceptance Bot, a memory keeper and a usable workspace are required before launch. Finish these in project setup when draft editing becomes available."))
       ),
-      (0, import_react51.createElement)("p", { className: "bc-muted" }, t("Creation saves a setup draft. Complete the remaining setup before launch; draft editing awaits the M1a-5 bridge.")),
+      (0, import_react51.createElement)("p", { className: "bc-muted" }, t("The project begins as a setup draft. Complete the remaining settings before launch; draft editing will be available in a later page update.")),
       (0, import_react51.createElement)("div", { className: "bc-actions" }, (0, import_react51.createElement)("button", { type: "button", className: "bc-button", onClick: () => setStep(2) }, t("Back")), (0, import_react51.createElement)("button", { type: "button", className: "bc-button bc-primary", disabled: busy || !name.trim() || !goal.trim() || !deliverable.trim() || !acceptance.trim() || acceptanceChoice === "assigned" && !acceptanceActor, onClick: createProject }, busy ? t("Creating…") : preview ? t("Create sample project") : t("Create project")))
     ) : null,
     error ? (0, import_react51.createElement)("p", { className: "bc-exception", role: "alert" }, error) : null
