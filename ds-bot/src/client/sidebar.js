@@ -573,6 +573,9 @@ export function TeamSidebar(props) {
         h(AccountLauncher, { seat: false, actions }))
   const content = h('div', { className: wideContent ? 'bt-side' : 'bt-side bt-rail', onKeyDown: typeToSearch },
     top,
+    h('nav', { className: wideContent ? 'bt-company-nav' : 'bt-company-nav bt-company-rail', 'aria-label': t('Workspace navigation') },
+      h('button', { type: 'button', 'aria-label': t('Projects'), 'aria-current': uiNow.companyPage ? 'page' : undefined, title: wideContent ? undefined : t('Projects'), onClick: () => actions.openCompanyPage('list') }, h('span', { 'aria-hidden': true }, '▦'), wideContent ? t('Projects') : null),
+      h('button', { type: 'button', 'aria-label': t('Chats'), 'aria-current': !uiNow.companyPage ? 'page' : undefined, title: wideContent ? undefined : t('Chats'), onClick: () => actions.closeCompanyPage() }, h('span', { 'aria-hidden': true }, '◉'), wideContent ? t('Chats') : null)),
     wideContent && roster.readOnly ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
     h('div', { ref: listRef, className: 'bt-list', role: 'region', 'aria-label': t('Bot list') },
       wideContent ? (main ? h(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : h('div', { className: 'bt-hint' }, uiNow.bootFailed ? bootHint() : t('Setting up your Main Bot…'))) : null,
@@ -945,6 +948,14 @@ export function BrandName() {
 // FooterAccount only shows when the seat went to no one. The shell's footer classes
 // are CSS-module names, so they match on their stems.
 export const SIDEBAR_CSS = `
+.bt-company-nav{display:flex;gap:4px;padding:6px 10px 9px;border-bottom:1px solid var(--bt-line)}
+.bt-company-nav button{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:8px;min-height:34px;background:none;color:var(--bt-ink-2);font:600 12px var(--bt-font);cursor:pointer}
+.bt-company-nav button:hover{background:var(--bt-hover)}
+.bt-company-nav button[aria-current=page]{background:var(--bt-active);color:var(--bt-ink)}
+.bt-company-nav button:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
+.bt-company-nav button span{font-size:15px;line-height:1}
+.bt-company-rail{display:grid;gap:3px;padding:6px 7px}
+.bt-company-rail button{width:100%;min-height:38px}
 .bt-confirm{width:260px;max-width:72vw;padding:10px 12px 12px;display:flex;flex-direction:column;gap:10px}
 .bt-confirm-text{margin:0;font-size:13px;line-height:19px;color:var(--bt-ink-2)}
 .bt-confirm-error{margin:0;font-size:12px;line-height:17px;color:var(--bt-danger);overflow-wrap:anywhere}
