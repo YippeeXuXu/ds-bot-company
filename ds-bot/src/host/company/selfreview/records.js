@@ -36,6 +36,8 @@ export function makeRecord({
   local = {},
   verdict = {},
   decision,
+  judged,
+  forced = false,
   mode,
   status,
   latencyMs,
@@ -58,9 +60,12 @@ export function makeRecord({
     model_id: answeredBy,
     model_version: verdict.modelVersion ?? null,
     input_digest: verdict.inputDigest ?? null,
-    // The product answer is the merged one; `verdict.decision` alone would hide a rule layer
-    // that raised an engine allow to human-needed.
-    decision: decision ?? verdict.decision ?? local.decision ?? null,
+    // The decision that governs the call: the merged answer, or the one `forceDecision`
+    // substituted for it during the 0f smoke. `judged_decision` keeps the answer the layers
+    // actually produced, so a forced line can never be mistaken for a judgement.
+    decision: decision ?? judged ?? verdict.decision ?? local.decision ?? null,
+    judged_decision: forced ? (judged ?? null) : (decision ?? judged ?? verdict.decision ?? local.decision ?? null),
+    forced,
     probability: typeof verdict.probability === 'number' ? verdict.probability : local.probability ?? null,
     policy_hits: Array.isArray(verdict.policyHits) && verdict.policyHits.length > 0 ? verdict.policyHits : local.policy_hits ?? [],
     status: status ?? 'ok',

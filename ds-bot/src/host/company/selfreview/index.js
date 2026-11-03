@@ -131,11 +131,16 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
     counters.judged += 1
     if (status !== 'ok' && status !== 'auto-session' && status !== 'host-unknown') counters.failed += 1
     const latency = now() - started
+    // What actually governs the call: during the 0f smoke `forceDecision` overrides the merged
+    // answer, and the record must show the decision the gate enforced, not the one it replaced.
+    const applied = config.forceDecision ?? final
     record(makeRecord({
       request,
       local: { ...local, rootCallId: exec?.rootCallId },
       verdict,
-      decision: final,
+      decision: applied,
+      judged: final,
+      forced: applied !== final,
       mode: config.mode,
       status,
       latencyMs: latency,
@@ -144,7 +149,6 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
     }))
     // Shadow records the answer and changes nothing: no listener result means `next()` runs.
     if (config.mode === 'shadow') return undefined
-    const applied = config.forceDecision ?? final
     if (applied === 'allow') return undefined
     if (applied === 'deny') {
       return {

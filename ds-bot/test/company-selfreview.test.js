@@ -418,6 +418,24 @@ test('an unknown mode starts nothing less safe: it fails closed like enforce', a
   const [record] = linesOf(recordPath(home))
   assert.equal(record.mode, 'enforce')
   assert.equal(record.decision, 'human-needed')
+  assert.equal(record.judged_decision, 'human-needed')
+  assert.equal(record.forced, false)
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('a forced decision is what the call obeys, and the record says it was forced', async () => {
+  const home = tempHome()
+  const adaptor = adaptorOf({ home, config: { mode: 'enforce', forceDecision: 'human-needed' } })
+  const answer = await adaptor.gate(execOf({ name: 'read', args: { file_path: `${WORKSPACE}/README.md` } }))
+  assert.equal(answer.kind, 'ask')
+  await adaptor.close()
+  const [record] = linesOf(recordPath(home))
+  // The gate enforced human-needed while the layers had said allow; a downstream reader must be
+  // able to tell the two apart, or the 0f smoke would look like a disagreement that never was.
+  assert.equal(record.decision, 'human-needed')
+  assert.equal(record.judged_decision, 'allow')
+  assert.equal(record.rule_decision, 'allow')
+  assert.equal(record.forced, true)
   rmSync(home, { recursive: true, force: true })
 })
 
