@@ -11585,13 +11585,13 @@ function ProjectChatPage({ project, stage: stageProp, faces, goal, nextStep, pen
 }
 var PROJECT_CHAT_CSS = `
 header[class*="_header"]:has(.pc-head){position:absolute;top:0;left:0;right:0;z-index:8;display:flex;justify-content:center;padding:0;background:transparent;pointer-events:none;height:auto!important;overflow:visible!important}
-header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inset:0 0 auto;height:100px;background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
+header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inset:0 0 auto;height:calc(100% + 26px);background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
 .pc-frame{position:relative;display:flex;flex-direction:column;width:100%;pointer-events:none}
 .pc-page{--pc-main:var(--bt-main);--pc-ring:var(--bt-line-2);--pc-ink-3:var(--bt-ink-3);position:relative;display:flex;flex-direction:column;min-height:0;flex:1;background:var(--bt-main);color:var(--bt-ink);font-family:var(--bt-font)}
 .pc-page *{box-sizing:border-box}
 .pc-head-holder{position:absolute;inset:0 0 auto;z-index:8;pointer-events:none}
 .pc-head{display:flex;flex-direction:column;background:transparent;pointer-events:none}
-.pc-head::before{content:"";position:absolute;inset:0 0 auto;height:var(--bc-mask-header,60px);background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
+.pc-head::before{content:none;background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
 .pc-head.has-stat::before{height:calc(var(--bc-mask-header,60px) + 48px)}
 .pc-headbar{position:relative;display:flex;justify-content:center;align-items:flex-start;padding:10px 0 0;pointer-events:none}
 .pc-back{position:absolute;left:12px;top:10px;pointer-events:auto;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:999px;background:transparent;color:var(--bt-ink-2);font-size:18px;line-height:1;cursor:pointer}
