@@ -46,6 +46,7 @@ var ZH = {
   "Main Bot": "主 Bot",
   Working: "工作中",
   "Waiting for your answer": "等你回答",
+  "Waiting for you": "待我决定",
   "Waiting for {names}": "等 {names} 交回",
   "Unread activity": "有未读",
   "Not read yet": "未读",
@@ -1247,6 +1248,12 @@ Object.assign(ZH, HOST_ZH, {
   All: "全部",
   "Clear search": "清除搜索",
   "Last activity": "最近活动",
+  "No recent activity": "暂无最近活动",
+  "All clear": "暂无待办",
+  "Project details": "项目详情",
+  "Open project details": "打开项目详情",
+  "Open project settings": "打开项目配置",
+  "No members yet": "暂无成员",
   "No projects in this view.": "当前没有项目组。",
   "Try another status, or view all projects.": "换个状态看看，或查看全部项目组。",
   "Show all projects": "查看全部项目组",
@@ -1633,8 +1640,8 @@ function bodyOf(def, paint, flat = false) {
     return "";
   }
 }
-var eyeMarkup = ([cx, cy, w, h53, tilt]) => `<g transform="translate(${cx} ${cy}) rotate(${tilt})"><rect class="bt-eye" x="${-w / 2}" y="${-h53 / 2}" width="${w}" height="${h53}" rx="${w / 2}"/></g>`;
-var happyEyeMarkup = ([cx, cy, w, h53, tilt]) => `<g transform="translate(${cx} ${cy}) rotate(${tilt})"><path class="bt-eye-happy" opacity="0" d="M${-w * 0.62} ${h53 * 0.14}Q0 ${-h53 * 0.42} ${w * 0.62} ${h53 * 0.14}" fill="none" stroke="#000" stroke-width="${w * 0.5}" stroke-linecap="round"/></g>`;
+var eyeMarkup = ([cx, cy, w, h54, tilt]) => `<g transform="translate(${cx} ${cy}) rotate(${tilt})"><rect class="bt-eye" x="${-w / 2}" y="${-h54 / 2}" width="${w}" height="${h54}" rx="${w / 2}"/></g>`;
+var happyEyeMarkup = ([cx, cy, w, h54, tilt]) => `<g transform="translate(${cx} ${cy}) rotate(${tilt})"><path class="bt-eye-happy" opacity="0" d="M${-w * 0.62} ${h54 * 0.14}Q0 ${-h54 * 0.42} ${w * 0.62} ${h54 * 0.14}" fill="none" stroke="#000" stroke-width="${w * 0.5}" stroke-linecap="round"/></g>`;
 var maskBox = (size) => `maskUnits="userSpaceOnUse" x="${-size}" y="${-size}" width="${size * 3}" height="${size * 3}"`;
 var holes = (def, eyes) => `<rect x="${-def.size}" y="${-def.size}" width="${def.size * 3}" height="${def.size * 3}" fill="#fff"/>${eyes}`;
 var MASK_ID = "%MASK%";
@@ -1670,8 +1677,8 @@ function maskOf(shape) {
 var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
 
 // src/client/sources.js
-function createSource(initial) {
-  let value = initial;
+function createSource(initial2) {
+  let value = initial2;
   const listeners2 = /* @__PURE__ */ new Set();
   return {
     getSnapshot: () => value,
@@ -2052,7 +2059,7 @@ function registerTheme(id, theme) {
 }
 var allThemes = () => ({ ...THEMES, ...customThemes });
 var MESSAGE_WIDTH = { min: 50, max: 100, step: 5 };
-var percent = (value, initial) => Number.isInteger(value) && value >= MESSAGE_WIDTH.min && value <= MESSAGE_WIDTH.max ? value : initial;
+var percent = (value, initial2) => Number.isInteger(value) && value >= MESSAGE_WIDTH.min && value <= MESSAGE_WIDTH.max ? value : initial2;
 var layoutOf = (prefs) => prefs?.layout === "flat" ? "flat" : "bubble";
 var thinkingShown = (prefs) => prefs?.thinking === true;
 var widthOf = (prefs) => percent(prefs?.width, 80);
@@ -2386,12 +2393,12 @@ function liveSprings(apply2) {
     const dt = Math.min(0.5, Math.max(1e-3, (now - last) / 1e3));
     last = now;
     const steps = Math.ceil(dt * 240);
-    const h53 = dt / steps;
+    const h54 = dt / steps;
     let moving = false;
     for (const value of values.values()) {
       for (let index = 0; index < steps; index += 1) {
-        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h53;
-        value.x += value.v * h53;
+        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h54;
+        value.x += value.v * h54;
       }
       if (Math.abs(value.x - value.to) < 0.05 && Math.abs(value.v) < 1) {
         value.x = value.to;
@@ -5707,8 +5714,8 @@ function donut({ categories, series }, width, active, hover) {
   });
   return { parts, height: size, size, points, total, values, categories };
 }
-function useWidth(box, initial) {
-  const [width, setWidth] = (0, import_react9.useState)(initial);
+function useWidth(box, initial2) {
+  const [width, setWidth] = (0, import_react9.useState)(initial2);
   (0, import_react9.useLayoutEffect)(() => {
     const node = box.current;
     if (!node || typeof ResizeObserver !== "function") return void 0;
@@ -19752,6 +19759,259 @@ function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useActivity
   );
 }
 
+// src/client/project-chat-overlay.js
+var import_react54 = require("react");
+var initial = (name) => typeof name === "string" && name.trim() ? name.trim().slice(0, 1).toUpperCase() : "·";
+var swallow = () => {
+};
+function ProjectChatHeader({ projectName, stage, faces, onBack, onOpenDetails, expanded }) {
+  return (0, import_react54.createElement)(
+    "div",
+    { className: "pc-head" },
+    (0, import_react54.createElement)("button", { type: "button", className: "pc-back", onClick: onBack, "aria-label": t("Back to projects") }, "‹"),
+    (0, import_react54.createElement)(
+      "button",
+      {
+        type: "button",
+        className: "pc-pill",
+        title: t("Open project details"),
+        "aria-label": `${projectName || t("Project details")}，${t("Open project details")}`,
+        "aria-expanded": expanded ? "true" : "false",
+        onClick: onOpenDetails
+      },
+      (0, import_react54.createElement)(
+        "span",
+        { className: "pc-faces" },
+        (faces || []).slice(0, 3).map((face, index) => (0, import_react54.createElement)("span", { key: index, className: "pc-face" }, initial(face)))
+      ),
+      (0, import_react54.createElement)("span", { className: "pc-name" }, projectName || t("Project details")),
+      stage ? (0, import_react54.createElement)("span", { className: "pc-stage" }, stage) : null,
+      (0, import_react54.createElement)("span", { className: "pc-chevron", "aria-hidden": "true" }, "›")
+    )
+  );
+}
+function ProjectChatStatus({ goal, pendingCount, nextStep }) {
+  const count = Number.isFinite(pendingCount) ? pendingCount : 0;
+  return (0, import_react54.createElement)(
+    "div",
+    { className: "pc-stat" },
+    (0, import_react54.createElement)("div", { className: "pc-stat-row" }, (0, import_react54.createElement)("span", { className: "pc-stat-key" }, t("Goal")), (0, import_react54.createElement)("span", { className: "pc-stat-text" }, goal || t("No goal specified"))),
+    (0, import_react54.createElement)(
+      "div",
+      { className: "pc-stat-row" },
+      (0, import_react54.createElement)("span", { className: "pc-stat-key" }, t("Waiting for you")),
+      (0, import_react54.createElement)("span", { className: "pc-stat-count" }, String(count)),
+      (0, import_react54.createElement)("span", { className: "pc-stat-text" }, nextStep ? `· ${nextStep}` : null)
+    )
+  );
+}
+function ProjectChatPinned({ count, items }) {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return null;
+  return (0, import_react54.createElement)(
+    "div",
+    { className: "pc-pin" },
+    (0, import_react54.createElement)("div", { className: "pc-pin-head" }, (0, import_react54.createElement)("span", { className: "pc-pin-title" }, t("Waiting for you")), (0, import_react54.createElement)("span", { className: "pc-pin-sub" }, `· ${t("Pinned")} ${Number.isFinite(count) ? count : list.length}`)),
+    list.map(
+      (item, index) => (0, import_react54.createElement)(
+        "div",
+        { key: item?.id ?? index, className: "pc-pin-row" },
+        (0, import_react54.createElement)("span", { className: "pc-pin-text" }, item?.title ?? ""),
+        item?.who ? (0, import_react54.createElement)("span", { className: "pc-pin-who" }, item.who) : null
+      )
+    )
+  );
+}
+function ProjectChatDock({ faces, label: label2, waiting, expanded, onOpen }) {
+  return (0, import_react54.createElement)(
+    "div",
+    { className: "pc-dock" },
+    (0, import_react54.createElement)(
+      "button",
+      {
+        type: "button",
+        className: `pc-dock-pill${waiting ? " is-wait" : ""}`,
+        "aria-expanded": expanded ? "true" : "false",
+        "aria-label": label2 || t("Open project details"),
+        onClick: onOpen
+      },
+      (0, import_react54.createElement)(
+        "span",
+        { className: "pc-dock-in" },
+        (0, import_react54.createElement)(
+          "span",
+          { className: "pc-faces" },
+          (faces || []).slice(0, 2).map((face, index) => (0, import_react54.createElement)("span", { key: index, className: "pc-face" }, initial(face)))
+        ),
+        (0, import_react54.createElement)("span", { className: "pc-dock-label" }, label2 || t("Working"))
+      )
+    )
+  );
+}
+function ProjectChatDrawer({ projectName, goal, stage, members, pending, activity, onClose, onOpenConfig }) {
+  const closeRef = (0, import_react54.useRef)(null);
+  (0, import_react54.useEffect)(() => {
+    closeRef.current?.focus?.();
+  }, []);
+  const rows2 = Array.isArray(members) ? members : [];
+  const pendingRows = Array.isArray(pending) ? pending : [];
+  const activityRows = Array.isArray(activity) ? activity : [];
+  return (0, import_react54.createElement)(
+    "aside",
+    { className: "pc-drawer", role: "dialog", "aria-label": t("Project details") },
+    (0, import_react54.createElement)("div", { className: "pc-drawer-top" }, (0, import_react54.createElement)("button", { ref: closeRef, type: "button", className: "pc-round", onClick: onClose, "aria-label": t("Close") }, "×")),
+    (0, import_react54.createElement)(
+      "div",
+      { className: "pc-drawer-id" },
+      (0, import_react54.createElement)("span", { className: "pc-drawer-name" }, projectName || t("Project details")),
+      (0, import_react54.createElement)("span", { className: "pc-drawer-role" }, stage || statusLabel("setup"))
+    ),
+    (0, import_react54.createElement)(
+      "div",
+      { className: "pc-drawer-body" },
+      (0, import_react54.createElement)("section", { className: "pc-sec" }, (0, import_react54.createElement)("h3", null, t("Goal")), (0, import_react54.createElement)("p", null, goal || t("No goal specified"))),
+      (0, import_react54.createElement)(
+        "section",
+        { className: "pc-sec" },
+        (0, import_react54.createElement)("h3", null, t("Members")),
+        rows2.length ? rows2.map((row, index) => (0, import_react54.createElement)("button", { key: index, type: "button", className: "pc-member", onClick: row.onOpen ?? swallow }, (0, import_react54.createElement)("span", null, row.name ?? ""), (0, import_react54.createElement)("small", null, row.role ?? ""))) : (0, import_react54.createElement)("p", null, t("No members yet"))
+      ),
+      (0, import_react54.createElement)(
+        "section",
+        { className: "pc-sec" },
+        (0, import_react54.createElement)("h3", null, t("Waiting for you")),
+        pendingRows.length ? pendingRows.map((row, index) => (0, import_react54.createElement)("button", { key: index, type: "button", className: "pc-wait", onClick: row.onOpen ?? swallow }, (0, import_react54.createElement)("span", null, row.title ?? ""), (0, import_react54.createElement)("small", null, row.who ?? ""))) : (0, import_react54.createElement)("p", null, t("All clear"))
+      ),
+      (0, import_react54.createElement)(
+        "section",
+        { className: "pc-sec" },
+        (0, import_react54.createElement)("h3", null, t("Last activity")),
+        activityRows.length ? activityRows.map((row, index) => (0, import_react54.createElement)("p", { key: index }, row)) : (0, import_react54.createElement)("p", null, t("No recent activity"))
+      )
+    ),
+    (0, import_react54.createElement)("div", { className: "pc-drawer-foot" }, (0, import_react54.createElement)("button", { type: "button", className: "pc-btn pc-btn-primary", onClick: onOpenConfig }, t("Open project settings")))
+  );
+}
+function ProjectChatPage({ project, stage: stageProp, faces, goal, nextStep, pendingCount, pinned, dock, members, pending, activity, onBack, onOpenConfig, slot }) {
+  const [open, setOpen] = (0, import_react54.useState)(false);
+  const openerRef = (0, import_react54.useRef)(null);
+  const close = () => {
+    setOpen(false);
+    const opener = openerRef.current;
+    if (opener && typeof opener.focus === "function") opener.focus();
+  };
+  (0, import_react54.useEffect)(() => {
+    if (!open) return;
+    const onKey = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+        const opener = openerRef.current;
+        if (opener && typeof opener.focus === "function") opener.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+  const openDrawer = (event) => {
+    openerRef.current = event?.currentTarget ?? null;
+    setOpen(true);
+  };
+  const stage = stageProp || statusLabel(project?.status);
+  return (0, import_react54.createElement)(
+    "div",
+    { className: "pc-page" },
+    (0, import_react54.createElement)(ProjectChatHeader, {
+      projectName: project?.name,
+      stage,
+      faces,
+      expanded: open,
+      onBack,
+      onOpenDetails: openDrawer
+    }),
+    (0, import_react54.createElement)(ProjectChatStatus, { goal: goal ?? project?.goal, pendingCount, nextStep }),
+    (0, import_react54.createElement)(ProjectChatPinned, { count: pinned?.count, items: pinned?.items }),
+    (0, import_react54.createElement)("div", { className: "pc-body" }, slot ?? null),
+    (0, import_react54.createElement)(ProjectChatDock, {
+      faces: dock?.faces ?? faces,
+      label: dock?.label,
+      waiting: dock?.waiting,
+      expanded: open,
+      onOpen: openDrawer
+    }),
+    open ? (0, import_react54.createElement)(ProjectChatDrawer, {
+      projectName: project?.name,
+      goal: goal ?? project?.goal,
+      stage,
+      members,
+      pending,
+      activity,
+      onClose: close,
+      onOpenConfig
+    }) : null
+  );
+}
+var PROJECT_CHAT_CSS = `
+.pc-page{--pc-main:var(--bt-main);--pc-ring:var(--bt-line-2);--pc-ink-3:var(--bt-ink-3);position:relative;display:flex;flex-direction:column;min-height:0;flex:1;background:var(--bt-main);color:var(--bt-ink);font-family:var(--bt-font)}
+.pc-page *{box-sizing:border-box}
+.pc-head{position:absolute;inset:0 0 auto;z-index:8;display:flex;justify-content:center;align-items:center;padding:10px 0 0;background:transparent;pointer-events:none}
+.pc-head::before{content:"";position:absolute;inset:0 0 auto;height:var(--bc-mask-header,60px);background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
+.pc-back{position:absolute;left:12px;top:10px;pointer-events:auto;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:999px;background:transparent;color:var(--bt-ink-2);font-size:18px;line-height:1;cursor:pointer}
+.pc-back::after{content:"";position:absolute;inset:-8px}
+.pc-back:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.pc-pill{position:relative;pointer-events:auto;display:inline-flex;align-items:center;gap:8px;height:40px;padding:7px 13px 7px 7px;border-radius:999px;border:.5px solid var(--pc-ring);background:var(--bt-main);color:var(--bt-ink);font:500 15px/22px var(--bt-font);box-shadow:0 2px 8px -1px color-mix(in srgb,var(--bt-ink) 6%,transparent),0 1px 2px color-mix(in srgb,var(--bt-ink) 4%,transparent);cursor:pointer;max-width:70%}
+.pc-pill:hover{background:color-mix(in srgb,var(--bt-main),var(--bt-ink) 6%)}
+.pc-pill:active{transform:scale(.965)}
+.pc-faces{display:inline-flex;align-items:center;flex:none}
+.pc-face{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:999px;background:var(--bt-tag-bg);color:var(--bt-ink-2);font:600 10px/1 var(--bt-font);box-shadow:0 0 0 2px var(--bt-main)}
+.pc-face+.pc-face{margin-left:-5px}
+.pc-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc-stage{flex:none;padding:2px 6px;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);font:400 11px/16px var(--bt-font)}
+.pc-chevron{color:var(--pc-ink-3);font-size:14px;line-height:1}
+.pc-pill:hover .pc-chevron,.pc-pill:focus-visible .pc-chevron{color:var(--bt-accent)}
+.pc-page :is(button,input,textarea,select,summary):focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
+.pc-stat{position:relative;z-index:7;display:flex;flex-direction:column;gap:2px;padding:56px 16px 8px;pointer-events:none}
+.pc-stat-row{display:flex;align-items:baseline;gap:6px;min-width:0;font-size:12px;line-height:16px}
+.pc-stat-key{flex:none;color:var(--pc-ink-3)}
+.pc-stat-text{color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc-stat-count{font-weight:700;color:var(--bt-ink)}
+.pc-pin{margin:8px 16px 0;padding:12px 14px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-card)}
+.pc-pin-head{display:flex;align-items:baseline;gap:6px;font-size:12px;line-height:16px}
+.pc-pin-title{font-weight:600;color:var(--bt-ink)}
+.pc-pin-sub{color:var(--pc-ink-3)}
+.pc-pin-row{display:flex;justify-content:space-between;gap:12px;margin-top:8px;font-size:13px;line-height:18px;color:var(--bt-ink)}
+.pc-pin-who{flex:none;font-size:12px;color:var(--bt-ink-2)}
+.pc-body{flex:1;min-height:0;overflow:auto;padding:12px 16px 64px}
+.pc-dock{position:sticky;bottom:8px;z-index:6;display:flex;justify-content:center;pointer-events:none;padding:0 16px}
+.pc-dock-pill{pointer-events:auto;display:inline-flex;align-items:center;height:32px;padding:0;border:0;border-radius:999px;overflow:hidden;background:var(--bt-main);color:var(--bt-ink-2);cursor:pointer;box-shadow:0 0 0 .5px var(--pc-ring),0 2px 8px -2px color-mix(in srgb,var(--bt-ink) 12%,transparent);transform-origin:50% 100%;animation:pc-dock-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} backwards,pc-dock-veil .18s ease-out backwards;transition:background-color .12s ease,scale ${SPRING_TAP.duration}ms ${SPRING_TAP.easing}}
+.pc-dock-pill:hover{background:color-mix(in srgb,var(--bt-ink) 4%,var(--bt-main))}
+.pc-dock-pill:active{scale:.97}
+.pc-dock-in{display:inline-flex;align-items:center;gap:8px;flex:none;padding:0 13px 0 6px;white-space:nowrap}
+.pc-dock-label{font:400 13px/18px var(--bt-font);max-width:min(420px,58vw);overflow:hidden;text-overflow:ellipsis}
+.pc-dock-pill.is-wait{color:var(--bt-ink-2)}
+.pc-drawer{position:fixed;top:0;right:0;bottom:0;z-index:40;width:380px;max-width:calc(100% - 56px);display:flex;flex-direction:column;background:var(--bt-main);border-left:.5px solid var(--pc-ring);color:var(--bt-ink);animation:pc-pane-in .3s cubic-bezier(.2,0,0,1)}
+.pc-drawer-top{display:flex;justify-content:flex-end;gap:8px;padding:12px 17px 6px 12px}
+.pc-round{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:0;border-radius:999px;background:transparent;color:var(--bt-ink);font-size:20px;line-height:1;cursor:pointer}
+.pc-round:hover{background:var(--bt-hover)}
+.pc-drawer-id{display:flex;flex-direction:column;align-items:center;padding:14px 16px 0}
+.pc-drawer-name{font:500 17px/24px var(--bt-font);text-align:center}
+.pc-drawer-role{margin-top:6px;font-size:12px;line-height:16px;color:var(--pc-ink-3);text-align:center}
+.pc-drawer-body{flex:1;overflow-y:auto;padding:20px 16px 16px;font-size:13px;line-height:18px;display:flex;flex-direction:column;gap:16px}
+.pc-sec h3{margin:0 0 8px;font-size:11px;line-height:16px;font-weight:600;color:var(--pc-ink-3);text-transform:uppercase;letter-spacing:.06em}
+.pc-sec p{margin:0;color:var(--bt-ink-2)}
+.pc-member,.pc-wait{display:flex;justify-content:space-between;align-items:baseline;gap:12px;width:100%;padding:8px 0;border:0;border-top:1px solid var(--bt-line);background:transparent;color:var(--bt-ink);font:13px/18px var(--bt-font);text-align:left;cursor:pointer}
+.pc-member:hover,.pc-wait:hover{color:var(--bt-accent)}
+.pc-member small,.pc-wait small{font-size:11px;color:var(--pc-ink-3)}
+.pc-drawer-foot{padding:12px 16px 16px;border-top:1px solid var(--bt-line)}
+.pc-btn{width:100%;min-height:40px;border:0;border-radius:999px;background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));font:500 13px/18px var(--bt-font);cursor:pointer}
+.pc-btn:hover{filter:brightness(.94)}
+@keyframes pc-dock-in{from{opacity:0;transform:translateY(8px) scale(.94)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes pc-dock-veil{from{opacity:0}to{opacity:1}}
+@keyframes pc-pane-in{from{transform:translateX(24px);opacity:0}to{transform:translateX(0);opacity:1}}
+@media (prefers-reduced-motion:reduce){.pc-dock-pill{animation:none}.pc-drawer{animation:none}}
+@media (max-width:640px){.pc-drawer{width:calc(100% - 56px)}.pc-pill{max-width:78%}.pc-stat{padding:52px 12px 6px}.pc-body{padding:12px 12px 56px}}
+`;
+
 // src/client/read-page.js
 var READ_LIMITS = {
   chars: 4e5,
@@ -20806,13 +21066,13 @@ function lineDiff(before, after) {
 }
 
 // src/client/learning-card.js
-var import_react54 = require("react");
+var import_react55 = require("react");
 var failedAnswers = /* @__PURE__ */ new Map();
 function ProposalCard({ proposal, initialError = "", onFailure, onResolved, actions }) {
-  const [busy, setBusy] = (0, import_react54.useState)(false);
-  const [error, setError] = (0, import_react54.useState)(initialError);
-  const busyRef = (0, import_react54.useRef)(false);
-  const titleId = (0, import_react54.useId)();
+  const [busy, setBusy] = (0, import_react55.useState)(false);
+  const [error, setError] = (0, import_react55.useState)(initialError);
+  const busyRef = (0, import_react55.useRef)(false);
+  const titleId = (0, import_react55.useId)();
   const answer = (approve) => {
     if (busyRef.current) return;
     busyRef.current = true;
@@ -20828,58 +21088,58 @@ function ProposalCard({ proposal, initialError = "", onFailure, onResolved, acti
     });
   };
   const update = proposal.action === "update";
-  const rows2 = (0, import_react54.useMemo)(() => lineDiff(update ? proposal.previous?.content : "", proposal.content), [update, proposal.previous?.content, proposal.content]);
+  const rows2 = (0, import_react55.useMemo)(() => lineDiff(update ? proposal.previous?.content : "", proposal.content), [update, proposal.previous?.content, proposal.content]);
   if (proposal.kind === "agents") {
     const blocks = proposal.edits.map((edit) => [
       ...(edit.op === "add" ? [] : editLines(edit.old)).map((line) => ({ kind: "removed", line })),
       ...(edit.op === "remove" ? [] : editLines(edit.text)).map((line) => ({ kind: "added", line }))
     ]);
-    return (0, import_react54.createElement)(
+    return (0, import_react55.createElement)(
       "section",
       { className: "bt-q bt-learning-card", role: "group", "aria-labelledby": titleId, "aria-busy": busy },
-      (0, import_react54.createElement)(ProposalHead, { titleId, icon: PencilIcon, title: t("AGENTS.md update") }),
-      (0, import_react54.createElement)(FileBox, { name: "AGENTS.md", path: proposal.folder, state: proposal.exists === false ? "Added" : "Modified", blocks }),
-      proposal.edits.map((edit, index) => edit.why ? (0, import_react54.createElement)("p", { className: "bt-learning-why", key: index }, edit.why) : null),
-      error ? (0, import_react54.createElement)("div", { className: "bt-learning-error", role: "alert" }, error) : null,
-      (0, import_react54.createElement)(ProposalFoot, { busy, answer })
+      (0, import_react55.createElement)(ProposalHead, { titleId, icon: PencilIcon, title: t("AGENTS.md update") }),
+      (0, import_react55.createElement)(FileBox, { name: "AGENTS.md", path: proposal.folder, state: proposal.exists === false ? "Added" : "Modified", blocks }),
+      proposal.edits.map((edit, index) => edit.why ? (0, import_react55.createElement)("p", { className: "bt-learning-why", key: index }, edit.why) : null),
+      error ? (0, import_react55.createElement)("div", { className: "bt-learning-error", role: "alert" }, error) : null,
+      (0, import_react55.createElement)(ProposalFoot, { busy, answer })
     );
   }
   const oldDetail = update && typeof proposal.previous?.description === "string" && proposal.previous.description !== proposal.description ? proposal.previous.description : void 0;
-  return (0, import_react54.createElement)(
+  return (0, import_react55.createElement)(
     "section",
     { className: "bt-q bt-learning-card", role: "group", "aria-labelledby": titleId, "aria-busy": busy },
-    (0, import_react54.createElement)(ProposalHead, { titleId, title: proposal.name, kind: t(update ? "Skill update" : "New skill"), detail: proposal.description, oldDetail }),
-    (0, import_react54.createElement)(FileBox, { name: "SKILL.md", path: `skills/${proposal.name}`, state: update ? "Updated" : "Added", blocks: [rows2] }),
-    proposal.why ? (0, import_react54.createElement)("p", { className: "bt-learning-why" }, proposal.why) : null,
-    error ? (0, import_react54.createElement)("div", { className: "bt-learning-error", role: "alert" }, error) : null,
-    (0, import_react54.createElement)(ProposalFoot, { busy, answer })
+    (0, import_react55.createElement)(ProposalHead, { titleId, title: proposal.name, kind: t(update ? "Skill update" : "New skill"), detail: proposal.description, oldDetail }),
+    (0, import_react55.createElement)(FileBox, { name: "SKILL.md", path: `skills/${proposal.name}`, state: update ? "Updated" : "Added", blocks: [rows2] }),
+    proposal.why ? (0, import_react55.createElement)("p", { className: "bt-learning-why" }, proposal.why) : null,
+    error ? (0, import_react55.createElement)("div", { className: "bt-learning-error", role: "alert" }, error) : null,
+    (0, import_react55.createElement)(ProposalFoot, { busy, answer })
   );
 }
 function ProposalHead({ titleId, icon: icon2 = MemoryIcon, title, kind, detail, oldDetail }) {
-  return (0, import_react54.createElement)(
+  return (0, import_react55.createElement)(
     "div",
     { className: "bt-q-head" },
-    (0, import_react54.createElement)("span", { className: "bt-learning-icon", "aria-hidden": true }, (0, import_react54.createElement)(icon2)),
-    (0, import_react54.createElement)(
+    (0, import_react55.createElement)("span", { className: "bt-learning-icon", "aria-hidden": true }, (0, import_react55.createElement)(icon2)),
+    (0, import_react55.createElement)(
       "div",
       { className: "bt-q-text" },
-      (0, import_react54.createElement)("p", { className: "bt-q-title", id: titleId }, title),
-      kind ? (0, import_react54.createElement)("div", { className: "bt-q-detail" }, kind) : null,
-      oldDetail ? (0, import_react54.createElement)("p", { className: "bt-learning-description bt-learning-old" }, (0, import_react54.createElement)("del", null, oldDetail)) : null,
-      detail ? (0, import_react54.createElement)("p", { className: "bt-learning-description" }, detail) : null
+      (0, import_react55.createElement)("p", { className: "bt-q-title", id: titleId }, title),
+      kind ? (0, import_react55.createElement)("div", { className: "bt-q-detail" }, kind) : null,
+      oldDetail ? (0, import_react55.createElement)("p", { className: "bt-learning-description bt-learning-old" }, (0, import_react55.createElement)("del", null, oldDetail)) : null,
+      detail ? (0, import_react55.createElement)("p", { className: "bt-learning-description" }, detail) : null
     ),
-    (0, import_react54.createElement)("span", { className: "bt-q-badge bt-learning-status" }, (0, import_react54.createElement)("span", { className: "bt-learning-dot", "aria-hidden": true }), t("Awaiting approval"))
+    (0, import_react55.createElement)("span", { className: "bt-q-badge bt-learning-status" }, (0, import_react55.createElement)("span", { className: "bt-learning-dot", "aria-hidden": true }), t("Awaiting approval"))
   );
 }
 function ProposalFoot({ busy, answer }) {
-  return (0, import_react54.createElement)(
+  return (0, import_react55.createElement)(
     "div",
     { className: "bt-q-foot bt-learning-foot" },
-    (0, import_react54.createElement)("button", { type: "button", className: "bt-learning-btn bt-learning-decline", disabled: busy, onClick: () => answer(false) }, t("Decline")),
-    (0, import_react54.createElement)(
+    (0, import_react55.createElement)("button", { type: "button", className: "bt-learning-btn bt-learning-decline", disabled: busy, onClick: () => answer(false) }, t("Decline")),
+    (0, import_react55.createElement)(
       "button",
       { type: "button", className: "bt-learning-btn bt-learning-approve", disabled: busy, onClick: () => answer(true) },
-      (0, import_react54.createElement)(CheckIcon),
+      (0, import_react55.createElement)(CheckIcon),
       t("Approve")
     )
   );
@@ -20887,43 +21147,43 @@ function ProposalFoot({ busy, answer }) {
 var COLLAPSE_ROWS = 8;
 var SIGNS = { added: "+", removed: "−", same: "" };
 function FileBox({ name, path, state, blocks }) {
-  const [open, setOpen] = (0, import_react54.useState)(false);
+  const [open, setOpen] = (0, import_react55.useState)(false);
   const all = blocks.flat();
   const added = all.filter((row) => row.kind === "added").length;
   const removed = all.filter((row) => row.kind === "removed").length;
   const folds = all.length > COLLAPSE_ROWS;
   const shut = folds && !open;
-  return (0, import_react54.createElement)(
+  return (0, import_react55.createElement)(
     "div",
     { className: "bt-learning-file" },
-    (0, import_react54.createElement)(
+    (0, import_react55.createElement)(
       "div",
       { className: "bt-learning-filehead" },
-      (0, import_react54.createElement)("span", { className: "bt-learning-name" }, name),
-      path ? (0, import_react54.createElement)("span", { className: "bt-learning-path" }, path) : null,
-      (0, import_react54.createElement)("span", { className: "bt-learning-spacer" }),
-      added > 0 ? (0, import_react54.createElement)("span", { className: "bt-learning-plus" }, `+${added}`) : null,
-      removed > 0 ? (0, import_react54.createElement)("span", { className: "bt-learning-minus" }, `−${removed}`) : null,
-      (0, import_react54.createElement)("span", { className: `bt-learning-state bt-learning-state-${state.toLowerCase()}` }, t(state))
+      (0, import_react55.createElement)("span", { className: "bt-learning-name" }, name),
+      path ? (0, import_react55.createElement)("span", { className: "bt-learning-path" }, path) : null,
+      (0, import_react55.createElement)("span", { className: "bt-learning-spacer" }),
+      added > 0 ? (0, import_react55.createElement)("span", { className: "bt-learning-plus" }, `+${added}`) : null,
+      removed > 0 ? (0, import_react55.createElement)("span", { className: "bt-learning-minus" }, `−${removed}`) : null,
+      (0, import_react55.createElement)("span", { className: `bt-learning-state bt-learning-state-${state.toLowerCase()}` }, t(state))
     ),
-    (0, import_react54.createElement)(
+    (0, import_react55.createElement)(
       "div",
       { className: shut ? "bt-learning-code bt-learning-shut" : "bt-learning-code" },
       blocks.map((rows2, blockIndex) => [
-        blockIndex > 0 ? (0, import_react54.createElement)("div", { className: "bt-learning-gap", key: `gap-${blockIndex}` }) : null,
-        ...rows2.map((row, rowIndex) => (0, import_react54.createElement)(
+        blockIndex > 0 ? (0, import_react55.createElement)("div", { className: "bt-learning-gap", key: `gap-${blockIndex}` }) : null,
+        ...rows2.map((row, rowIndex) => (0, import_react55.createElement)(
           "div",
           { className: `bt-learning-row bt-learning-${row.kind}`, key: `${blockIndex}-${rowIndex}` },
-          (0, import_react54.createElement)("span", { className: "bt-learning-num", "aria-hidden": true }, row.number ?? ""),
-          (0, import_react54.createElement)("span", { className: "bt-learning-sign", "aria-hidden": true }, SIGNS[row.kind]),
-          (0, import_react54.createElement)("span", { className: "bt-learning-text" }, row.line || " ")
+          (0, import_react55.createElement)("span", { className: "bt-learning-num", "aria-hidden": true }, row.number ?? ""),
+          (0, import_react55.createElement)("span", { className: "bt-learning-sign", "aria-hidden": true }, SIGNS[row.kind]),
+          (0, import_react55.createElement)("span", { className: "bt-learning-text" }, row.line || " ")
         ))
       ])
     ),
-    folds ? (0, import_react54.createElement)(
+    folds ? (0, import_react55.createElement)(
       "div",
       { className: shut ? "bt-learning-morebar bt-learning-morebar-shut" : "bt-learning-morebar" },
-      (0, import_react54.createElement)(
+      (0, import_react55.createElement)(
         "button",
         { type: "button", className: "bt-learning-more", "aria-expanded": open, onClick: () => setOpen(!open) },
         t(open ? "Show less" : "Show all {count} lines", { count: all.length })
@@ -20934,7 +21194,7 @@ function FileBox({ name, path, state, blocks }) {
 function LearningProposals({ turn, dock, sessionId, useRoster, actions }) {
   const roster = useRoster((value) => value);
   const facts = useTurnFacts(sessionId, actions);
-  const [failed, setFailed] = (0, import_react54.useState)({});
+  const [failed, setFailed] = (0, import_react55.useState)({});
   const bot = roster.byId?.[sessionId];
   if (!bot || currentPart(bot) !== sessionId) return null;
   const proposals = roster.learning?.[bot.id] ?? [];
@@ -20961,10 +21221,10 @@ function LearningProposals({ turn, dock, sessionId, useRoster, actions }) {
     delete next[id];
     return next;
   });
-  return (0, import_react54.createElement)("div", { className: dock ? "bt-learning-stack bt-learning-dock" : "bt-learning-stack" }, cards.map((proposal) => (0, import_react54.createElement)(
+  return (0, import_react55.createElement)("div", { className: dock ? "bt-learning-stack bt-learning-dock" : "bt-learning-stack" }, cards.map((proposal) => (0, import_react55.createElement)(
     "div",
     { className: "bt-q-inline", key: proposal.id },
-    (0, import_react54.createElement)(ProposalCard, {
+    (0, import_react55.createElement)(ProposalCard, {
       proposal,
       initialError: failed[proposal.id]?.error ?? failedAnswers.get(proposal.id)?.error,
       onFailure,
@@ -20974,10 +21234,10 @@ function LearningProposals({ turn, dock, sessionId, useRoster, actions }) {
   )));
 }
 function LearningTurnTail(props) {
-  return (0, import_react54.createElement)(LearningProposals, { ...props, dock: false });
+  return (0, import_react55.createElement)(LearningProposals, { ...props, dock: false });
 }
 function LearningDock(props) {
-  return (0, import_react54.createElement)(LearningProposals, { ...props, dock: true });
+  return (0, import_react55.createElement)(LearningProposals, { ...props, dock: true });
 }
 var LEARNING_CSS = `
 .bt-learning-stack{display:flex;flex-direction:column;gap:4px}
@@ -21060,7 +21320,7 @@ function createSwitchWindow(settle) {
 }
 
 // src/client/user-message.js
-var import_react55 = require("react");
+var import_react56 = require("react");
 var ui = __toESM(require("@deepseek-ai/dsh-client-ui-primitives"), 1);
 var canDrawUserMessages = () => typeof ui.projectUserText === "function";
 function contentParts(content) {
@@ -21092,38 +21352,38 @@ function userTextParts(text, bots, referenceLabels = []) {
   return parts;
 }
 function UserText({ text, bots, referenceLabels, skillNames, references, actions }) {
-  return userTextParts(text, bots, referenceLabels).map((part, index) => part.bot ? (0, import_react55.createElement)(
+  return userTextParts(text, bots, referenceLabels).map((part, index) => part.bot ? (0, import_react56.createElement)(
     "button",
     { key: index, type: "button", className: "bt-umention", title: `@${part.bot.name}`, onClick: () => actions.openSession(part.bot.id) },
-    (0, import_react55.createElement)(BotMark, { bot: part.bot, size: 16 }),
+    (0, import_react56.createElement)(BotMark, { bot: part.bot, size: 16 }),
     part.label
-  ) : (0, import_react55.createElement)(import_react55.Fragment, { key: index }, ui.projectUserText(part.text, referenceLabels, skillNames, "skill", references)));
+  ) : (0, import_react56.createElement)(import_react56.Fragment, { key: index }, ui.projectUserText(part.text, referenceLabels, skillNames, "skill", references)));
 }
 function Attachments({ attachments, renderMessageImages }) {
   const compact2 = attachments.length > 1;
-  return (0, import_react55.createElement)("div", { className: "bt-uattach" }, attachments.map((block, index) => {
+  return (0, import_react56.createElement)("div", { className: "bt-uattach" }, attachments.map((block, index) => {
     if (block.type === "image") {
-      return renderMessageImages ? (0, import_react55.createElement)(import_react55.Fragment, { key: index }, renderMessageImages({ images: [{ attachment: block.attachment }], align: "end", compact: compact2 })) : null;
+      return renderMessageImages ? (0, import_react56.createElement)(import_react56.Fragment, { key: index }, renderMessageImages({ images: [{ attachment: block.attachment }], align: "end", compact: compact2 })) : null;
     }
     const file = block.attachment;
     const meta = [ui.fileExtension?.(file.name)?.toUpperCase().slice(0, 8), ui.fileSizeText?.(file.bytes)].filter(Boolean).join(" · ");
-    return (0, import_react55.createElement)(
+    return (0, import_react56.createElement)(
       "span",
       { key: index, className: "bt-ufile", title: file.name },
-      ui.FileTypeIcon ? (0, import_react55.createElement)(ui.FileTypeIcon, { path: file.name, className: "bt-ufile-icon" }) : null,
-      (0, import_react55.createElement)("span", { className: "bt-ufile-text" }, (0, import_react55.createElement)("span", { className: "bt-ufile-name" }, file.name), meta ? (0, import_react55.createElement)("span", { className: "bt-ufile-meta" }, meta) : null)
+      ui.FileTypeIcon ? (0, import_react56.createElement)(ui.FileTypeIcon, { path: file.name, className: "bt-ufile-icon" }) : null,
+      (0, import_react56.createElement)("span", { className: "bt-ufile-text" }, (0, import_react56.createElement)("span", { className: "bt-ufile-name" }, file.name), meta ? (0, import_react56.createElement)("span", { className: "bt-ufile-meta" }, meta) : null)
     );
   }));
 }
 function CopyButton({ text }) {
-  const [copied, setCopied] = (0, import_react55.useState)(false);
+  const [copied, setCopied] = (0, import_react56.useState)(false);
   const copy2 = () => {
     void navigator.clipboard?.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1e3);
     });
   };
-  return (0, import_react55.createElement)("button", { type: "button", className: "bt-tool", "aria-label": copied ? t("Copied") : t("Copy"), title: copied ? t("Copied") : t("Copy"), onClick: copy2 }, copied ? (0, import_react55.createElement)(CheckIcon) : (0, import_react55.createElement)(CopyIcon));
+  return (0, import_react56.createElement)("button", { type: "button", className: "bt-tool", "aria-label": copied ? t("Copied") : t("Copy"), title: copied ? t("Copied") : t("Copy"), onClick: copy2 }, copied ? (0, import_react56.createElement)(CheckIcon) : (0, import_react56.createElement)(CopyIcon));
 }
 var clock3 = (time) => typeof time === "number" ? new Date(time).toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" }) : void 0;
 function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageImages, openFile, openSkill }) {
@@ -21135,10 +21395,10 @@ function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageIma
   const steering = node.kind === "steering";
   const groupTime = roster.roomsById?.[sessionId] && Number.isFinite(data.time) ? messageClock(data.time) : void 0;
   const { shown, folded, control } = useFold(text, { markdown: false });
-  const body = (0, import_react55.createElement)(UserText, { text: shown, bots: mentionableBots(roster, sessionId), referenceLabels, skillNames: data.skillNames ?? [], references, actions });
-  const row = (0, import_react55.useRef)(null);
-  const [toolsOpen, setToolsOpen] = (0, import_react55.useState)(false);
-  (0, import_react55.useEffect)(() => {
+  const body = (0, import_react56.createElement)(UserText, { text: shown, bots: mentionableBots(roster, sessionId), referenceLabels, skillNames: data.skillNames ?? [], references, actions });
+  const row = (0, import_react56.useRef)(null);
+  const [toolsOpen, setToolsOpen] = (0, import_react56.useState)(false);
+  (0, import_react56.useEffect)(() => {
     if (!toolsOpen) return void 0;
     const onDown = (event) => {
       if (!row.current?.contains(event.target)) setToolsOpen(false);
@@ -21154,24 +21414,24 @@ function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageIma
     if (!noHover() || event.target instanceof Element && event.target.closest("a,button,input,textarea,select,pre,code,[role=button],[role=link]")) return;
     setToolsOpen((value) => !value);
   };
-  return (0, import_react55.createElement)(
+  return (0, import_react56.createElement)(
     "div",
     { ref: row, className: "bt-umsg", "data-steering": steering || void 0 },
-    (0, import_react55.createElement)(
+    (0, import_react56.createElement)(
       "div",
       { className: "bt-ustack" },
-      attachments.length > 0 ? (0, import_react55.createElement)(Attachments, { attachments, renderMessageImages }) : null,
-      text !== "" || rest.length > 0 ? (0, import_react55.createElement)(
+      attachments.length > 0 ? (0, import_react56.createElement)(Attachments, { attachments, renderMessageImages }) : null,
+      text !== "" || rest.length > 0 ? (0, import_react56.createElement)(
         "div",
         { className: "bt-ubody", title: clock3(data.time), "data-folded": folded || void 0, onClick: tapTools },
-        control ? (0, import_react55.createElement)("div", { className: "bt-fold-body" }, body) : body,
+        control ? (0, import_react56.createElement)("div", { className: "bt-fold-body" }, body) : body,
         control,
-        rest.map((block, index) => ui.JsonBlock ? (0, import_react55.createElement)(ui.JsonBlock, { key: index, label: t("Content"), payload: block }) : null)
+        rest.map((block, index) => ui.JsonBlock ? (0, import_react56.createElement)(ui.JsonBlock, { key: index, label: t("Content"), payload: block }) : null)
       ) : null,
-      referenceLabels.length > 0 ? (0, import_react55.createElement)("div", { className: "bt-urefs" }, t("Referenced {labels}", { labels: referenceLabels.join(t(", ")) })) : null,
-      groupTime ? (0, import_react55.createElement)("div", { className: "bt-utime", title: clockLabel(data.time) }, groupTime) : null
+      referenceLabels.length > 0 ? (0, import_react56.createElement)("div", { className: "bt-urefs" }, t("Referenced {labels}", { labels: referenceLabels.join(t(", ")) })) : null,
+      groupTime ? (0, import_react56.createElement)("div", { className: "bt-utime", title: clockLabel(data.time) }, groupTime) : null
     ),
-    text === "" ? null : (0, import_react55.createElement)("div", { className: "bt-utools", "data-open": toolsOpen || void 0 }, (0, import_react55.createElement)(CopyButton, { text }))
+    text === "" ? null : (0, import_react56.createElement)("div", { className: "bt-utools", "data-open": toolsOpen || void 0 }, (0, import_react56.createElement)(CopyButton, { text }))
   );
 }
 var USER_MESSAGE_CSS = `
@@ -22080,6 +22340,7 @@ function apply(ctx) {
     () => installCompiledStyles(SHELL_CSS, "shell"),
     () => installCompiledStyles(SIDEBAR_CSS, "sidebar"),
     () => installCompiledStyles(COMPANY_CSS, "company"),
+    () => installCompiledStyles(PROJECT_CHAT_CSS, "project-chat"),
     () => installCompiledStyles(SECRET_CSS, "secrets"),
     () => installCompiledStyles(LEARNING_CSS, "learning"),
     () => installCompiledStyles(MODEL_CSS + FOLDER_CSS + BOT_SETTINGS_CSS + GROUP_SETTINGS_CSS + AVATAR_LIBRARY_CSS, "models"),

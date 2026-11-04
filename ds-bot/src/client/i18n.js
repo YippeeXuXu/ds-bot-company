@@ -8,7 +8,7 @@ const ZH = {
   // Shared
   'Main Bot': '主 Bot',
   Working: '工作中',
-  'Waiting for your answer': '等你回答',
+  'Waiting for your answer': '等你回答', 'Waiting for you': '待我决定',
   'Waiting for {names}': '等 {names} 交回',
   'Unread activity': '有未读',
   'Not read yet': '未读',
@@ -1191,7 +1191,8 @@ Object.assign(ZH, HOST_ZH, {
   'Browse work across departments and open a project to see its status.': '浏览跨部门项目，打开项目可查看其状态。',
   'New project': '新建项目组', Current: '进行中', Archived: '已归档',
   'Project status': '项目状态', 'Search projects': '搜索项目组',
-  All: '全部', 'Clear search': '清除搜索', 'Last activity': '最近活动', 'No projects in this view.': '当前没有项目组。', 'Try another status, or view all projects.': '换个状态看看，或查看全部项目组。', 'Show all projects': '查看全部项目组',
+  All: '全部', 'Clear search': '清除搜索', 'Last activity': '最近活动', 'No recent activity': '暂无最近活动', 'All clear': '暂无待办',
+  'Project details': '项目详情', 'Open project details': '打开项目详情', 'Open project settings': '打开项目配置', 'No members yet': '暂无成员', 'No projects in this view.': '当前没有项目组。', 'Try another status, or view all projects.': '换个状态看看，或查看全部项目组。', 'Show all projects': '查看全部项目组',
   'Just now': '刚刚', 'minutes ago': '分钟前', 'hours ago': '小时前', 'days ago': '天前',
   'No matching projects': '没有匹配的项目', 'No projects here yet': '暂无项目组',
   'Try another name or status.': '试试其他名称或状态。',
