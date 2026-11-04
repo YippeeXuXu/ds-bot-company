@@ -2,6 +2,8 @@ import { createElement as h, useEffect, useRef, useState } from 'react'
 import { t } from './i18n.js'
 import { SPRING_SHAPE, SPRING_TAP } from './motion.js'
 import { statusLabel } from './projects-page.js'
+import { call } from './api.js'
+import { HeaderPill } from './header.js'
 
 // P04 项目群聊叠加件（原型 v2.11 / 设计语言 v0.2.7 §4.6）。
 // 消息流与输入区由宿主会话 surface 提供，本模块只渲染浮动群头、状态条、
@@ -261,6 +263,9 @@ export function ProjectChatPage({ project, stage: stageProp, faces, goal, nextSt
 }
 
 export const PROJECT_CHAT_CSS = `
+header[class*="_header"]:has(.pc-head){position:absolute;top:0;left:0;right:0;z-index:8;display:flex;justify-content:center;padding:0;background:transparent;pointer-events:none;height:auto!important;overflow:visible!important}
+header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inset:0 0 auto;height:100px;background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
+.pc-frame{position:relative;display:flex;flex-direction:column;width:100%;pointer-events:none}
 .pc-page{--pc-main:var(--bt-main);--pc-ring:var(--bt-line-2);--pc-ink-3:var(--bt-ink-3);position:relative;display:flex;flex-direction:column;min-height:0;flex:1;background:var(--bt-main);color:var(--bt-ink);font-family:var(--bt-font)}
 .pc-page *{box-sizing:border-box}
 .pc-head-holder{position:absolute;inset:0 0 auto;z-index:8;pointer-events:none}
@@ -287,7 +292,7 @@ export const PROJECT_CHAT_CSS = `
 .pc-stat-key{flex:none;color:var(--pc-ink-3)}
 .pc-stat-text{color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pc-stat-count{font-weight:700;color:var(--bt-ink)}
-.pc-pin-layer{position:absolute;left:0;right:0;z-index:9;display:flex;justify-content:center;padding:0 12px;pointer-events:none}
+.pc-pin-layer{position:absolute;left:0;right:0;top:calc(100% + 8px);z-index:9;display:flex;justify-content:center;padding:0 12px;pointer-events:none}
 .pc-pin{width:min(100%,var(--dsh-chat-content-width,960px));max-height:72px;overflow:hidden;margin:0;padding:10px 14px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-card);pointer-events:none}
 .pc-pin-head{display:flex;align-items:baseline;gap:6px;font-size:12px;line-height:16px}
 .pc-pin-title{font-weight:600;color:var(--bt-ink)}
@@ -326,3 +331,82 @@ export const PROJECT_CHAT_CSS = `
 @media (prefers-reduced-motion:reduce){.pc-dock-pill{animation:none}.pc-drawer{animation:none}}
 @media (max-width:640px){.pc-drawer{width:calc(100% - 56px)}.pc-pill{max-width:78%}.pc-stat{padding:8px 12px 0}.pc-body{padding:12px 12px 56px}.pc-pin{max-height:56px;padding:8px 12px}.pc-pin-row{margin-top:4px}}
 `
+
+
+// ---- 宿主槽位接线（P04 运行态） -------------------------------------------
+// 群头槽由本仓整体替换成 HeaderPill；群会话里我们改画 P04 浮层，私聊与单聊
+// 仍回 HostPill。项目数据走 company-model 只读接口，按 group_binding.room_id
+// 或 group_chat_ref 对上当前会话房间。
+
+let companyPromise = null
+const loadCompany = () => {
+  if (!companyPromise) {
+    companyPromise = call('company-model', {}).catch(() => null)
+    companyPromise.then(model => { if (!model) companyPromise = null })
+  }
+  return companyPromise
+}
+
+export const projectOfRoom = (model, roomId) => {
+  if (!model || !roomId) return null
+  const projects = model.projects || []
+  const project = projects.find(item => item.group_binding?.room_id === roomId || item.group_chat_ref === roomId)
+  if (!project) return null
+  const members = (model.members || []).filter(item => item.project_id === project.id && item.membership_status !== 'left')
+  const employees = model.employees || []
+  const names = members.map(item => employees.find(entry => entry.id === item.employee_id)?.name).filter(Boolean)
+  return { project, members, names }
+}
+
+export function ProjectChatHeaderSlot(props) {
+  const roster = props.useRoster(value => value)
+  const room = roster?.roomsById?.[props.sessionId]
+  const roomId = room?.id ?? room?.sessionId
+  const [data, setData] = useState(null)
+  const [open, setOpen] = useState(false)
+  const opener = useRef(null)
+  useEffect(() => {
+    if (!roomId) { setData(null); return }
+    let live = true
+    loadCompany().then(model => { if (live) setData(projectOfRoom(model, roomId)) })
+    return () => { live = false }
+  }, [roomId])
+  useEffect(() => {
+    if (!open) return
+    const onKey = event => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
+      event.preventDefault()
+      setOpen(false)
+      opener.current?.focus?.()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [open])
+  if (!data) return h(HeaderPill, props)
+  const project = data.project
+  const pending = Number.isFinite(project.pending_count) ? project.pending_count : 0
+  const close = () => { setOpen(false); opener.current?.focus?.() }
+  return h('div', { className: 'pc-frame' },
+    h(ProjectChatHeader, {
+      projectName: project.name,
+      stage: statusLabel(project.status),
+      faces: data.names,
+      goal: project.goal || '',
+      pendingCount: 0,
+      onBack: () => props.actions.openCompanyPage('list'),
+      onOpenDetails: event => { opener.current = event?.currentTarget ?? null; setOpen(true) },
+      expanded: open,
+    }),
+    pending > 0 ? h('div', { className: 'pc-pin-layer' }, h(ProjectChatPinned, { count: pending, items: project.pinned_decisions || [] })) : null,
+    open ? h(ProjectChatDrawer, {
+      projectName: project.name,
+      goal: project.goal || '',
+      stage: statusLabel(project.status),
+      members: data.names,
+      pending: [],
+      activity: [],
+      onClose: close,
+      onOpenConfig: () => { props.actions.openCompanyPage('detail', project.id); close() },
+    }) : null)
+}
