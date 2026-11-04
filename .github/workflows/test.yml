@@ -16,6 +16,10 @@ jobs:
   test:
     name: ${{ matrix.os }} · Node ${{ matrix.node }} · DSH ${{ matrix.dsh }}
     runs-on: ${{ matrix.os }}
+    # A healthy leg finishes in under four minutes. One leg once sat in `npm test`
+    # overnight without finishing, so cap the job: a hang now fails in 20 minutes
+    # instead of holding the required check for hours.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
