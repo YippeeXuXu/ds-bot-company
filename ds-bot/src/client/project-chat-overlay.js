@@ -92,10 +92,10 @@ export function ProjectChatPinned({ count, items }) {
   )
 }
 
-export function ProjectChatDock({ faces, label, waiting, expanded, onOpen }) {
+export function ProjectChatDock({ faces, label, waiting, leaving, expanded, onOpen }) {
   return h(
     'div',
-    { className: 'pc-dock' },
+    { className: `pc-dock${leaving ? ' is-out' : ''}` },
     h(
       'button',
       {
@@ -190,6 +190,20 @@ export function ProjectChatPage({ project, stage: stageProp, faces, goal, nextSt
     openerRef.current = event?.currentTarget ?? null
     setOpen(true)
   }
+  const [leaving, setLeaving] = useState(false)
+  const reduced = () => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  }
+  const goBack = () => {
+    if (leaving) return
+    if (reduced()) {
+      onBack?.()
+      return
+    }
+    setLeaving(true)
+    window.setTimeout(() => onBack?.(), 170)
+  }
   const stage = stageProp || statusLabel(project?.status)
   const headRef = useRef(null)
   const [pinTop, setPinTop] = useState(0)
@@ -217,7 +231,7 @@ export function ProjectChatPage({ project, stage: stageProp, faces, goal, nextSt
         pendingCount,
         nextStep,
         expanded: open,
-        onBack,
+        onBack: goBack,
         onOpenDetails: openDrawer,
       })
     ),
@@ -227,6 +241,7 @@ export function ProjectChatPage({ project, stage: stageProp, faces, goal, nextSt
       faces: dock?.faces ?? faces,
       label: dock?.label,
       waiting: dock?.waiting,
+      leaving,
       expanded: open,
       onOpen: openDrawer,
     }),
@@ -305,6 +320,8 @@ export const PROJECT_CHAT_CSS = `
 .pc-btn:hover{filter:brightness(.94)}
 @keyframes pc-dock-in{from{opacity:0;transform:translateY(8px) scale(.94)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes pc-dock-veil{from{opacity:0}to{opacity:1}}
+@keyframes pc-dock-out{to{opacity:0;transform:translateY(6px) scale(.96);filter:blur(3px)}}
+.pc-dock.is-out .pc-dock-pill{animation:pc-dock-out .16s cubic-bezier(.4,0,1,1) forwards;pointer-events:none}
 @keyframes pc-pane-in{from{transform:translateX(24px);opacity:0}to{transform:translateX(0);opacity:1}}
 @media (prefers-reduced-motion:reduce){.pc-dock-pill{animation:none}.pc-drawer{animation:none}}
 @media (max-width:640px){.pc-drawer{width:calc(100% - 56px)}.pc-pill{max-width:78%}.pc-stat{padding:8px 12px 0}.pc-body{padding:12px 12px 56px}.pc-pin{max-height:56px;padding:8px 12px}.pc-pin-row{margin-top:4px}}
