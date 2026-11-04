@@ -23,9 +23,10 @@ function fakeGroups({ failSetMembers = false } = {}) {
   const rooms = new Map()
   let seq = 0
   const groups = {
-    create: async ({ name, members }) => {
+    create: async ({ name, members, admin }) => {
       const id = `room_${++seq}`
-      rooms.set(id, { id, name, members: [...members] })
+      // `admin` is kept so a test can see who the group is led by (M1b-1 item 4).
+      rooms.set(id, { id, name, members: [...members], admin })
       return { id }
     },
     members: (roomId) => {
@@ -576,5 +577,18 @@ test('project.update refuses an archived project and a project of another compan
     run(commands, 'project.update', { operation_key: key('update-elsewhere'), project_id: second.body.project.id, goal: '跨公司改' }),
     error => error.code === 'project/not-found',
   )
+  rmSync(home, { recursive: true, force: true })
+})
+
+
+test('the project group is led by the coordinator, not left to the roster default', async () => {
+  const home = tempHome()
+  const { commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', { operation_key: key('admin'), ...draft(seed_) })
+  const room = created.body.project.group_chat_ref
+  // The coordinator is 小蓝's Bot; the roster would have picked a Main Bot the group does not hold.
+  assert.equal(rooms.get(room).admin, 'bot_a')
+  assert.deepEqual(rooms.get(room).members, ['bot_a'])
   rmSync(home, { recursive: true, force: true })
 })

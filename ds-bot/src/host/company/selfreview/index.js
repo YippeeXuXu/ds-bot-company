@@ -19,6 +19,7 @@ import { join } from 'node:path'
 import { judge } from './client.js'
 import { buildRequest, hostApprovalMode, resolveScope } from './context.js'
 import { projectEvents } from './host-outcome.js'
+import { createHostLog, hostLogPath } from './host-log.js'
 import { createRecorder, makeRecord } from './records.js'
 import { classify } from './rules.js'
 
@@ -36,6 +37,9 @@ export const DEFAULT_CONFIG = {
   judgeRunCodeOuter: false,
   forceDecision: null,
   readOnlyWhitelistAllow: true,
+  // Item 3: the same call judged again within this window reuses the first answer and writes
+  // no second record. `0` turns the cache off, which is what a calibration run may want.
+  dedupeWindowMs: 60_000,
 }
 
 /** §4.2: the only tools that pass while the host's approval mode is unreadable. */
@@ -74,6 +78,7 @@ export function normalizeConfig(raw) {
   if (typeof raw.judgeRunCodeOuter === 'boolean') config.judgeRunCodeOuter = raw.judgeRunCodeOuter
   if (DECISIONS.includes(raw.forceDecision)) config.forceDecision = raw.forceDecision
   if (typeof raw.readOnlyWhitelistAllow === 'boolean') config.readOnlyWhitelistAllow = raw.readOnlyWhitelistAllow
+  if (typeof raw.dedupeWindowMs === 'number' && Number.isFinite(raw.dedupeWindowMs) && raw.dedupeWindowMs >= 0) config.dedupeWindowMs = Math.min(3_600_000, raw.dedupeWindowMs)
   // `sampleInAutoSessions` and `hostOutcomeProjection` are M1b-1 settings: the first has no
   // sampler and the second has no writer in M1b-0, and a knob that changes nothing would read
   // as a feature that works.
@@ -107,7 +112,11 @@ export function mergeVerdict({ local, answer, mode, minConfidence }) {
 export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl } = {}) {
   const config = normalizeConfig(raw)
   const recorder = createRecorder({ dir: join(rt.home, 'company'), warn })
-  const counters = { calls: 0, judged: 0, failed: 0, skipped: 0 }
+  // Item 2: the host's side is written while the turn runs, so the projection is rebuilt from
+  // facts instead of decoded from a multi-frame session log later.
+  const hostLog = createHostLog({ dir: join(rt.home, 'company'), warn, now })
+  const counters = { calls: 0, judged: 0, failed: 0, skipped: 0, deduped: 0, host_events: 0 }
+  const dedupe = new Map()
   let tokenRead = false
   let token
 
@@ -125,13 +134,32 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
 
   const record = (entry) => recorder.write(entry)
 
+  /**
+   * What the gate does with a decision: `shadow` records and lets the host run, `enforce`
+   * applies it. Split from `settle` because a deduped call replays this answer without writing
+   * a second record — the judgement is the same, so the file keeps one line per call.
+   */
+  const applyDecision = ({ exec, local, request, final }) => {
+    // What actually governs the call: during the 0f smoke `forceDecision` overrides the merged
+    // answer, and the gate must obey the decision the record shows, not the one it replaced.
+    const applied = config.forceDecision ?? final
+    if (config.mode === 'shadow') return undefined
+    if (applied === 'allow') return undefined
+    if (applied === 'deny') {
+      return {
+        kind: 'deny',
+        reason: DENY_REASON,
+        info: `self-review ${config.policyVersion}: ${(local.policy_hits ?? []).join(',') || local.rule_id || 'policy'} target=${request?.target ?? 'unknown'}`,
+      }
+    }
+    return { kind: 'ask', reason: ASK_REASON, displayReason: askDisplay(exec?.name ?? 'tool') }
+  }
+
   /** Turn the product answer into the gate value, and write the line for it. */
   const settle = ({ exec, host, local, request, verdict = {}, status, final, started }) => {
     counters.judged += 1
     if (status !== 'ok' && status !== 'auto-session' && status !== 'host-unknown') counters.failed += 1
     const latency = now() - started
-    // What actually governs the call: during the 0f smoke `forceDecision` overrides the merged
-    // answer, and the record must show the decision the gate enforced, not the one it replaced.
     const applied = config.forceDecision ?? final
     record(makeRecord({
       request,
@@ -146,17 +174,26 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
       host,
       call: { callId: exec?.callId, rootCallId: exec?.rootCallId },
     }))
-    // Shadow records the answer and changes nothing: no listener result means `next()` runs.
-    if (config.mode === 'shadow') return undefined
-    if (applied === 'allow') return undefined
-    if (applied === 'deny') {
-      return {
-        kind: 'deny',
-        reason: DENY_REASON,
-        info: `self-review ${config.policyVersion}: ${(local.policy_hits ?? []).join(',') || local.rule_id || 'policy'} target=${request?.target ?? 'unknown'}`,
-      }
+    return applyDecision({ exec, local, request, final })
+  }
+
+  const dedupeKey = (request, host) => `${request?.operation_fingerprint ?? ''}|${host?.preset ?? ''}|${host?.policy ?? ''}`
+
+  const cachedDecision = (key) => {
+    if (config.dedupeWindowMs <= 0) return undefined
+    const entry = dedupe.get(key)
+    if (entry === undefined) return undefined
+    if (now() - entry.at > config.dedupeWindowMs) {
+      dedupe.delete(key)
+      return undefined
     }
-    return { kind: 'ask', reason: ASK_REASON, displayReason: askDisplay(exec?.name ?? 'tool') }
+    return entry
+  }
+
+  const rememberDecision = (key, decision) => {
+    if (config.dedupeWindowMs <= 0) return
+    dedupe.set(key, { decision, at: now() })
+    while (dedupe.size > 256) dedupe.delete(dedupe.keys().next().value)
   }
 
   /**
@@ -209,8 +246,18 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
     // see there are the d3 gap (`auto-session-uncovered`), reported rather than papered over.
     if (host.preset === 'auto') return settle({ exec, scope, host, local, request, status: 'auto-session', final: 'allow', started })
 
+    // Item 3: the same call inside the window reuses the first answer instead of asking the
+    // engine twice, and writes no second record — a repeat is one judgement, one line.
+    const key = dedupeKey(request, host)
+    const cached = cachedDecision(key)
+    if (cached !== undefined) {
+      counters.deduped += 1
+      return applyDecision({ exec, local, request, final: cached.decision })
+    }
+
     const answer = await judge({ endpoint: config.endpoint, token: tokenOf(), timeoutMs: config.timeoutMs, request, fetchImpl })
     const merged = mergeVerdict({ local, answer, mode: config.mode, minConfidence: config.minConfidence })
+    rememberDecision(key, merged.decision)
     return settle({
       exec,
       scope,
@@ -238,16 +285,54 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
     return result === undefined ? next() : result
   }
 
+  // Only a company employee's Session is written down: the boss's own chats, plain groups and
+  // every Session outside the company keep their facts to themselves. The Bot → employee index
+  // is read through the store, cached for a moment because it is consulted on every event.
+  let ownersAt = 0
+  let owners
+  const ownersOf = () => {
+    const store = rt.companyStore
+    if (store === undefined || typeof store.byBotId !== 'function') return undefined
+    if (owners === undefined || now() - ownersAt > 5000) {
+      owners = store.byBotId()
+      ownersAt = now()
+    }
+    return owners
+  }
+  const isCompanySession = (sessionId) => {
+    try {
+      const botId = typeof rt.selfOf === 'function' ? rt.selfOf(sessionId) : undefined
+      if (botId === undefined) return false
+      const index = ownersOf()
+      const employeeId = index?.get?.(botId)
+      const employee = typeof employeeId === 'string' ? rt.companyStore?.state?.employees?.[employeeId] : undefined
+      return employee !== undefined && employee.status === 'active'
+    } catch {
+      return false
+    }
+  }
+
+  /** One host event, appended when it says something about a company call. */
+  const hostEvent = (session, event) => {
+    const sessionId = session?.id ?? session?.sessionId
+    if (typeof sessionId !== 'string' || isCompanySession(sessionId) === false) return
+    hostLog.append(session, event)
+    counters.host_events += 1
+  }
+
   return {
     config,
     mode: config.mode,
     gate,
     listener,
-    stats: () => ({ mode: config.mode, ...counters, records: recorder.stats() }),
+    hostEvent,
+    hostLogPath: hostLogPath(rt.home),
+    stats: () => ({ mode: config.mode, ...counters, records: recorder.stats(), host_log: hostLog.stats() }),
     /** Pure projection of one Session's events, exposed for 0d/0e and for tests. */
     project: ({ events = [], products = [], preset = 'unknown', policy = 'unknown', isolated = false } = {}) => projectEvents({ events, products, preset, policy, isolated }),
     async close() {
       await recorder.flush()
+      await hostLog.flush()
     },
   }
 }
@@ -263,7 +348,7 @@ export function install(rt) {
       mode: 'off',
       config,
       gate: async () => undefined,
-      stats: () => ({ mode: 'off', calls: 0, judged: 0, failed: 0, skipped: 0, records: { written: 0, failed: 0, last_error: null } }),
+      stats: () => ({ mode: 'off', calls: 0, judged: 0, failed: 0, skipped: 0, deduped: 0, host_events: 0, records: { written: 0, failed: 0, last_error: null }, host_log: { written: 0, failed: 0, rotate_failed: 0, last_error: null } }),
       project: () => [],
       close: async () => {},
     }
@@ -272,5 +357,6 @@ export function install(rt) {
   const adaptor = createAdaptor({ rt, config, warn: message => rt.ctx?.logger?.warn?.(`[selfreview] ${message}`) })
   rt.selfReview = adaptor
   rt.ctx.on('tools/pre-execute', adaptor.listener, { prepend: true })
+  rt.ctx.on('session/event', (session, event) => adaptor.hostEvent(session, event))
   rt.ctx.effect(() => () => adaptor.close(), 'ds-bot: company self-review records')
 }

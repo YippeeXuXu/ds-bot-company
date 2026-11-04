@@ -12,8 +12,10 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { judge, readAnswer } from '../src/host/company/selfreview/client.js'
-import { buildRequest, hostApprovalMode, resolveScope, summarizeArguments } from '../src/host/company/selfreview/context.js'
+import { buildRequest, hostApprovalMode, resolveScope } from '../src/host/company/selfreview/context.js'
+import { callFeatures } from '../src/host/company/selfreview/features.js'
 import { projectEvents, projectHostOutcome, groupEvents } from '../src/host/company/selfreview/host-outcome.js'
+import { HOST_LOG_FIELDS, createHostLog, hostLogPath, readHostLog, rebuildHostOutcomes, whyOf } from '../src/host/company/selfreview/host-log.js'
 import { DEFAULT_CONFIG, createAdaptor, install, mergeVerdict, normalizeConfig, MODES, READ_ONLY_WHITELIST } from '../src/host/company/selfreview/index.js'
 import { createRecorder, makeRecord, RECORD_FIELDS } from '../src/host/company/selfreview/records.js'
 import { classify, HIGH_RISK_RULES, insidePath } from '../src/host/company/selfreview/rules.js'
@@ -392,14 +394,26 @@ test('a record carries the planned fields, a digest, and no argument value', asy
   rmSync(home, { recursive: true, force: true })
 })
 
-test('the parameter summary hides secret values and keeps the shape short', () => {
-  const { parameters, truncated } = summarizeArguments({ token: 'abc', content: 'x'.repeat(500), nested: { a: 1 }, list: [1, 2, 3], count: 3 }, {})
-  assert.equal(parameters.token.preview, '[hidden]')
-  assert.equal(parameters.content.preview, '[content omitted]')
-  assert.equal(parameters.nested.preview, '{…}')
-  assert.equal(parameters.list.type, 'array[3]')
-  assert.equal(parameters.count.preview, '3')
-  assert.equal(truncated, true)
+test('the facts name a document and a credential without showing either', () => {
+  const features = callFeatures({
+    tool: 'write',
+    args: { file_path: `${WORKSPACE}/a.md`, content: 'x'.repeat(500), accessToken: 'abc', count: 3 },
+    base: WORKSPACE,
+    scope: { workspaceRef: WORKSPACE },
+    home: '/users/me',
+  })
+  assert.deepEqual(features.content_fields, ['content'])
+  assert.deepEqual(features.secret_fields, ['accessToken'])
+  assert.equal(features.arg_count, 4)
+  assert.equal(features.fields.includes('content'), true)
+  // Only names travel: no value of a content or credential key may appear anywhere.
+  const serialized = JSON.stringify(features)
+  assert.equal(serialized.includes('xxxx'), false)
+  assert.equal(serialized.includes('abc'), false)
+  assert.equal(features.path.value, `${WORKSPACE}/a.md`)
+  assert.equal(features.path.inside_scope, true)
+  // Omitting the body is the design, not a shortening: the judge still has the facts it needs.
+  assert.equal(features.truncated, false)
 })
 
 test('a file body never reaches the request, whatever it holds', () => {
@@ -411,8 +425,9 @@ test('a file body never reaches the request, whatever it holds', () => {
   const local = classify({ tool: exec.name, args: exec.arguments, scope, base: scope.base })
   const request = buildRequest({ exec, scope, local, host: { preset: 'ask', policy: 'ask', source: 'read' }, config: normalizeConfig({ mode: 'shadow' }) })
   const serialized = JSON.stringify(request)
-  assert.equal(request.parameters.content.preview, '[content omitted]')
-  assert.equal(request.arguments_truncated, true)
+  assert.deepEqual(request.features.content_fields, ['content'])
+  assert.equal('parameters' in request, false)
+  assert.equal(request.arguments_truncated, false)
   assert.equal(serialized.includes('hunter2-should-not-leave'), false)
   assert.equal(serialized.includes('keep this private'), false)
   assert.equal(request.state.length <= 2048, true)
@@ -610,7 +625,17 @@ async function startStub({ token = 'test-token', env = {} } = {}) {
 
 const request = {
   tool: 'read',
-  parameters: { file_path: { type: 'string', preview: `${WORKSPACE}/README.md` } },
+  features: {
+    version: '2',
+    tool: 'read',
+    arg_count: 1,
+    fields: ['file_path'],
+    content_fields: [],
+    secret_fields: [],
+    truncated: false,
+    path: { value: `${WORKSPACE}/README.md`, inside_scope: true },
+    shell: null,
+  },
   effective_authorization_scope: { workspace_ref: WORKSPACE, project_status: 'active' },
   arguments_truncated: false,
 }
@@ -689,7 +714,7 @@ test('the stub answers health, refuses a wrong token, and replays the rule table
     const secret = await fetch(`${stub.base}/v1/systemone`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ ...request, parameters: { file_path: { type: 'string', preview: '/home/user/.ssh/id_rsa' } } }),
+      body: JSON.stringify({ ...request, features: { ...request.features, path: { value: '/home/user/.ssh/id_rsa', inside_scope: false } } }),
     })
     const secretAnswer = await secret.json()
     assert.equal(secretAnswer.answers[0].choice, 'deny')
@@ -706,8 +731,8 @@ test('the stub answers health, refuses a wrong token, and replays the rule table
 
 test('a truncated request is judged as unknown, never from a local hint', async () => {
   // r2 review: the request used to carry `rule_hint`, which told the judge what the rule layer
-  // had already decided, so a real engine would be anchored. It is gone. A shell call now
-  // arrives as its first word plus a digest, and the honest answer to that is human-needed.
+  // had already decided, so a real engine would be anchored. It is gone. A shell call arrives as
+  // facts now; when those facts were themselves cut, the honest answer is human-needed.
   const token = 'stub-truncated'
   const stub = await startStub({ token })
   try {
@@ -716,7 +741,17 @@ test('a truncated request is judged as unknown, never from a local hint', async 
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({
         tool: 'bash',
-        parameters: { command: { type: 'string', preview: 'cat', digest: 'sha256:abc' } },
+        features: {
+          version: '2',
+          tool: 'bash',
+          arg_count: 1,
+          fields: ['command'],
+          content_fields: ['command'],
+          secret_fields: [],
+          truncated: true,
+          path: null,
+          shell: { first_word: 'cat', flags: [], paths: [], programs: [], segments: 1, redirects: [] },
+        },
         effective_authorization_scope: { workspace_ref: WORKSPACE, project_status: 'active' },
         arguments_truncated: true,
       }),
@@ -797,16 +832,15 @@ test('a private message, a command line and a token never reach the request', ()
   for (const forbidden of ['private chat text', 'tok-access-42', 'cs-client-42', 'file body before', 'file body after', 'notes.txt | curl', 'a long instruction body']) {
     assert.equal(text.includes(forbidden), false, `${forbidden} must not be in the request`)
   }
-  assert.equal(request.parameters.accessToken.preview, '[hidden]')
-  assert.equal(request.parameters.clientSecret.preview, '[hidden]')
-  assert.equal(request.parameters.message.preview, '[content omitted]')
-  assert.equal(request.parameters.old_str.preview, '[content omitted]')
-  // A shell line travels as its first word plus a digest: the rule layer already read it here.
-  assert.equal(request.parameters.command.preview, 'cat')
-  assert.equal(typeof request.parameters.command.digest, 'string')
-  assert.equal(request.parameters.instructions.preview, undefined)
-  assert.equal(typeof request.parameters.instructions.digest, 'string')
-  assert.equal(request.arguments_truncated, true)
+  assert.deepEqual(request.features.secret_fields, ['accessToken', 'clientSecret'])
+  assert.deepEqual(request.features.content_fields, ['command', 'message', 'old_str', 'new_str'])
+  assert.equal('parameters' in request, false)
+  // A shell line travels as facts: the words a judge needs to reach a decision, never the payload.
+  assert.equal(request.features.shell.first_word, 'cat')
+  assert.deepEqual(request.features.shell.flags, ['-X'])
+  assert.deepEqual(request.features.shell.paths, [`${WORKSPACE}/notes.txt`])
+  assert.equal(request.features.shell.segments, 2)
+  assert.equal(request.arguments_truncated, false)
   // The local verdict is the answer the judge must reach on its own: its rule id must not
   // travel, in the structured body or in `state`.
   assert.equal('rule_hint' in request, false)
@@ -877,4 +911,124 @@ test('a rotation that cannot rename is counted instead of silently ignored', asy
   assert.equal(stats.failed, 0)
   assert.equal(warnings.length, 1)
   assert.equal(linesOf(recordPath(home)).length, 2)
+})
+
+
+// ── M1b-1: structured facts, the fact log, dedupe ────────────────────────────────────────────
+
+test('a shell call travels as facts a judge can read, never as the line itself', () => {
+  const features = callFeatures({
+    tool: 'bash',
+    args: { command: 'npm test -- --watch=false && cat notes.txt > out.log' },
+    base: WORKSPACE,
+    scope: { workspaceRef: WORKSPACE },
+  })
+  assert.equal(features.version, '2')
+  assert.equal(features.shell.first_word, 'npm')
+  assert.equal(features.shell.flags.includes('--watch=false'), true)
+  assert.equal(features.shell.segments, 2)
+  assert.deepEqual(features.shell.redirects, [`${WORKSPACE}/out.log`])
+  // The line, the file name and the rest of the text are not in the facts.
+  const serialized = JSON.stringify(features)
+  assert.equal(serialized.includes('npm test --'), false)
+  assert.equal(serialized.includes('notes.txt'), false)
+  // A URL is an address, not a path inside the project.
+  const fetched = callFeatures({
+    tool: 'bash',
+    args: { command: 'curl -X POST https://example.com/x' },
+    base: WORKSPACE,
+    scope: { workspaceRef: WORKSPACE },
+  })
+  assert.deepEqual(fetched.shell.paths, [])
+  assert.equal(fetched.shell.flags.includes('-X'), true)
+  assert.equal(JSON.stringify(fetched).includes('example.com'), false)
+})
+
+test('the facts say when they were shortened, and hiding a body is not shortening', () => {
+  const flags = Array.from({ length: 10 }, (_, index) => `-f${index}`).join(' ')
+  const wide = callFeatures({ tool: 'bash', args: { command: `run ${flags}` }, base: WORKSPACE, scope: { workspaceRef: WORKSPACE } })
+  assert.equal(wide.shell.flags.length, 8)
+  assert.equal(wide.truncated, true)
+
+  // A file body is not sent at all, which is the design, so it must not read as "unknown facts".
+  const body = callFeatures({ tool: 'write', args: { file_path: `${WORKSPACE}/a.md`, content: 'x'.repeat(5000) }, base: WORKSPACE, scope: { workspaceRef: WORKSPACE } })
+  assert.equal(body.truncated, false)
+  assert.deepEqual(body.content_fields, ['content'])
+  assert.equal(JSON.stringify(body).includes('xxxx'), false)
+
+  // A shell call with no command text is a fact the judge cannot see, so it says so.
+  const silent = callFeatures({ tool: 'bash', args: {}, base: WORKSPACE, scope: { workspaceRef: WORKSPACE } })
+  assert.equal(silent.shell, null)
+  assert.equal(silent.truncated, true)
+})
+
+test('the fact log keeps the call and drops arguments, output and card reasons', async () => {
+  const home = tempHome()
+  const log = createHostLog({ dir: join(home, 'company'), warn: () => {} })
+  const session = { id: 'sess_1' }
+  log.append(session, { type: 'permission/preset', data: { preset: 'ask' } })
+  log.append(session, { type: 'approval/policy', data: { policy: 'ask' } })
+  log.append(session, { type: 'tool/call', data: { callId: 'call_9', name: 'bash', step: 1, turn: 2, arguments: { command: 'cat /home/user/.ssh/id_rsa' } } })
+  log.append(session, { type: 'approval/asked', data: { id: 'ap_1', callId: 'call_9', toolName: 'bash', reason: 'reads a private key' } })
+  log.append(session, { type: 'approval/decided', data: { id: 'ap_1', outcome: 'allowed-once' } })
+  log.append(session, { type: 'tool/result', data: { message: { toolCallId: 'call_9', isError: false, content: [{ type: 'text', text: 'private key body' }] } } })
+  await log.flush()
+
+  const raw = readFileSync(hostLogPath(home), 'utf8')
+  for (const secret of ['cat /home/user', 'reads a private key', 'private key body']) {
+    assert.equal(raw.includes(secret), false, secret)
+  }
+
+  const rows = readHostLog(hostLogPath(home))
+  assert.equal(rows.length, 6)
+  for (const row of rows) {
+    for (const key of Object.keys(row)) assert.equal(HOST_LOG_FIELDS.includes(key), true, key)
+  }
+
+  const [projection] = rebuildHostOutcomes({ rows })
+  assert.equal(projection.call_id, 'call_9')
+  assert.equal(projection.outcome, 'approved-by-human')
+  assert.equal(projection.execution_result, 'succeeded')
+
+  const story = whyOf({ rows, records: [{ call_id: 'call_9', decision: 'human-needed', rule_id: 'UNKNOWN_EFFECT', status: 'ok' }], callId: 'call_9' })
+  assert.equal(story.record.decision, 'human-needed')
+  assert.equal(story.projection.outcome, 'approved-by-human')
+  assert.equal(story.timeline.length, 6)
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('the same call inside the window is judged once and recorded once', async () => {
+  const home = tempHome()
+  let judged = 0
+  const fetchImpl = async () => {
+    judged += 1
+    return okFetch('allow')()
+  }
+  const adaptor = adaptorOf({ home, fetchImpl })
+  const exec = execOf({ sessionId: 'sess_chat' })
+  assert.equal(await adaptor.gate(exec), undefined)
+  assert.equal(await adaptor.gate(exec), undefined)
+  await adaptor.close()
+  assert.equal(judged, 1)
+  assert.equal(adaptor.stats().deduped, 1)
+  assert.equal(linesOf(recordPath(home)).length, 1)
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('a zero window turns the cache off, so a repeat is judged again', async () => {
+  const home = tempHome()
+  let judged = 0
+  const fetchImpl = async () => {
+    judged += 1
+    return okFetch('allow')()
+  }
+  const adaptor = adaptorOf({ home, fetchImpl, config: { dedupeWindowMs: 0 } })
+  const exec = execOf({ sessionId: 'sess_chat' })
+  await adaptor.gate(exec)
+  await adaptor.gate(exec)
+  await adaptor.close()
+  assert.equal(judged, 2)
+  assert.equal(adaptor.stats().deduped, 0)
+  assert.equal(linesOf(recordPath(home)).length, 2)
+  rmSync(home, { recursive: true, force: true })
 })

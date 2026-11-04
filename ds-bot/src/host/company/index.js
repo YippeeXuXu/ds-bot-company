@@ -16,9 +16,11 @@ import { createCompanyStore } from './store.js'
 // The roster side of a project group. `members` returns undefined when the group is gone,
 // which is how the project commands tell "missing" from "drifted".
 const groupAdapter = (rt) => ({
-  create: async ({ name, members }) => {
+  create: async ({ name, members, admin }) => {
     if (typeof rt.createRoom !== 'function') throw new Error('The roster does not create groups here.')
-    const room = await rt.createRoom({ name, members, allowSingle: true })
+    // `admin` is the project coordinator when the project has one (M1b-1 item 4); without it the
+    // roster's own default applies, which is what a draft with no coordinator should get.
+    const room = await rt.createRoom({ name, members, ...(admin === undefined ? {} : { admin }), allowSingle: true })
     return room?.id
   },
   members: (roomId) => {

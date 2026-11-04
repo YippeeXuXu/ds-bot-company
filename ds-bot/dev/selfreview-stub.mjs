@@ -58,15 +58,26 @@ const reply = (response, status, body) => {
   response.end(text)
 }
 
-// The request carries argument previews, not the arguments; the rules are replayed on exactly
+// The request carries structured facts, not the arguments; the rules are replayed on exactly
 // what a judge would see, so the stub cannot be more informed than the real engine will be.
-const argumentsOf = (parameters) => {
-  const args = {}
-  if (parameters === null || typeof parameters !== 'object') return args
-  for (const [key, entry] of Object.entries(parameters)) {
-    if (entry !== null && typeof entry === 'object' && typeof entry.preview === 'string') args[key] = entry.preview
+// A shell line arrives as its first word, its flags, the paths it names, the programs an
+// `-exec` would run and its redirect targets; those words are rebuilt into a command line so
+// the same table can read it. Everything the table would have read from the raw line — the
+// quoted payload, a URL, a second sentence — is simply not here.
+const visibleArguments = (features) => {
+  if (features === null || typeof features !== 'object') return {}
+  const list = value => (Array.isArray(value) ? value.filter(entry => typeof entry === 'string' && entry !== '') : [])
+  const shell = features.shell
+  if (shell !== null && typeof shell === 'object') {
+    const words = [typeof shell.first_word === 'string' ? shell.first_word : '', ...list(shell.flags)]
+    for (const program of list(shell.programs)) words.push('-exec', program)
+    for (const path of list(shell.paths)) words.push(path)
+    for (const target of list(shell.redirects)) words.push('>', target)
+    return { command: words.filter(word => word !== '').join(' ') }
   }
-  return args
+  const path = features.path
+  if (path !== null && typeof path === 'object' && typeof path.value === 'string') return { file_path: path.value, path: path.value }
+  return {}
 }
 
 const scopeOf = (request) => {
@@ -94,14 +105,14 @@ const bodyText = (request) => new Promise((resolve, reject) => {
   request.on('error', reject)
 })
 
-// The request carries argument previews and nothing else: no rule id, no decision, no hint of
-// what the adaptor's own rule table concluded. A call whose arguments arrived truncated is
-// therefore judged on what is visible — one word and a digest — and `classify` answers
-// UNKNOWN_EFFECT/human-needed, which is what a real engine must do when it cannot see enough.
+// The request carries facts and nothing else: no rule id, no decision, no hint of what the
+// adaptor's own rule table concluded. A call whose facts are shortened is judged on what is
+// visible, and `classify` answers UNKNOWN_EFFECT/human-needed when that is not enough — which
+// is what a real engine must do when it cannot see the call.
 const judge = (request) => {
   const tool = typeof request?.tool === 'string' ? request.tool : ''
   const scope = scopeOf(request)
-  const verdict = classify({ tool, args: argumentsOf(request?.parameters), scope, base: scope.workspaceRef, truncated: request?.arguments_truncated === true })
+  const verdict = classify({ tool, args: visibleArguments(request?.features), scope, base: scope.workspaceRef, truncated: request?.arguments_truncated === true })
   const outsideScope = verdict.rule_id === 'SCOPE_VIOLATION' ? 0.9 : verdict.decision === 'deny' ? 0.2 : 0.05
   return {
     status: 'ok',

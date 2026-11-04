@@ -1,52 +1,17 @@
 // The minimal context one tool call is judged on: which Bot, which employee, which project,
-// which folder is authorized, and a redacted summary of the arguments. §3.3 of the M1b plan
-// is the contract — the JSON fields decide, the rendered `state` text is only a readable copy
-// for the stub and for a person reading a record later.
+// which folder is authorized, and the structured facts of the call. §3.3 of the M1b plan is
+// the contract — the JSON fields decide, the rendered `state` text is only a readable copy for
+// the stub and for a person reading a record later.
 //
 // What never leaves this module: file contents, command output, conversation history,
-// credentials, tokens, the whole company state, and other projects' data. Argument values are
-// cut to a short preview after the diagnostics cleaner has removed credential shapes, and a
-// key that names a secret keeps no preview at all.
+// credentials, tokens, the whole company state, and other projects' data. The facts are
+// projected in `features.js`; this module only adds the identity and the authorization scope.
 import { createHash } from 'node:crypto'
-import { cleanText } from '../../diagnostics.js'
+import { callFeatures } from './features.js'
 import { HIGH_RISK_RULES } from './rules.js'
-
-/** Longest argument preview kept; §3.3 asks for ≤200 characters. */
-export const PREVIEW_MAX = 200
 
 /** Longest rendered `state` text; §3.3 caps the context at 2KB. */
 const STATE_MAX = 2048
-
-/**
- * Keys whose value is never previewed, whatever it looks like. Names are compared with the
- * separators removed, so `accessToken`, `access_token` and `ACCESS_TOKEN` all hide a value.
- */
-const SECRET_WORDS = ['token', 'secret', 'password', 'passwd', 'apikey', 'credential', 'authorization', 'cookie', 'privatekey', 'sessionkey']
-const secretKey = (key) => {
-  const name = String(key).replace(/[_-]/g, '').toLowerCase()
-  return SECRET_WORDS.some(word => name === word || name.endsWith(word))
-}
-
-/**
- * Keys that carry a document: the body of a write, the strings of an edit, a chat message, a
- * command line, a prompt, a patch, a file's bytes. §3.3 forbids contents in the request, so
- * only the type goes through.
- */
-const CONTENT_KEYS = /^(?:content|contents|body|text|message|messages|prompt|prompts|query|queries|script|snippet|command|commands|patch|diff|source|code|data|bytes|base64|old_?str(?:ing)?|new_?str(?:ing)?|old_?content|new_?content|old_?text|new_?text|file_?text)$/i
-
-/** Free text under a key that names nothing is cut here; past it a digest replaces the words,
- *  because a long string is a message or a document rather than a short label. */
-const FREE_TEXT_MAX = 64
-
-/** Keys that name a place, an object or a short label; their text may be previewed as is. */
-const SAFE_TEXT_KEYS = /^(?:path|paths|file_?path|file_?paths|dir|dirs|directory|cwd|base|root|name|target|targets|pattern|patterns|glob|globs|url|urls|endpoint|host|port|id|ids|tool|tools|role|roles|model|preset|policy|mode|status|kind|type|title|label|tag|tags|email|project_?id|employee_?id|department_?id|company_?id|session_?id|bot_?id|room_?id|call_?id|query_?id)$/i
-
-/** The first word of a command line is the only part a shell call needs to describe itself. */
-const FIRST_WORD_MAX = 40
-const firstWord = (value) => {
-  const word = value.trim().split(/\s+/, 1)[0] ?? ''
-  return word.length > FIRST_WORD_MAX ? word.slice(0, FIRST_WORD_MAX) : word
-}
 
 const sha256 = value => `sha256:${createHash('sha256').update(value).digest('hex')}`
 
@@ -57,13 +22,6 @@ const sortKeys = value => {
 }
 
 const canonical = value => JSON.stringify(sortKeys(value))
-
-const typeOf = (value) => {
-  if (value === null) return 'null'
-  if (Array.isArray(value)) return `array[${value.length}]`
-  if (typeof value === 'object') return 'object'
-  return typeof value
-}
 
 const sessionOf = exec => exec?.agent?.session
 
@@ -151,48 +109,6 @@ export function hostApprovalMode({ rt, exec }) {
   return { preset: typeof preset === 'string' ? preset : 'unknown', policy: typeof policy === 'string' ? policy : 'unknown', source }
 }
 
-/** Argument summaries for the request: key, type, and a short redacted preview. */
-export function summarizeArguments(args, { home } = {}) {
-  const parameters = {}
-  let truncated = false
-  if (args === null || typeof args !== 'object' || Array.isArray(args)) return { parameters, truncated }
-  for (const key of Object.keys(args).slice(0, 32)) {
-    const value = args[key]
-    if (value === undefined) continue
-    const type = typeOf(value)
-    if (typeof value === 'string') {
-      if (secretKey(key)) { parameters[key] = { type, preview: '[hidden]' }; truncated = true; continue }
-      if (/^(?:command|commands)$/i.test(key)) {
-        // §3.3 limits a shell call's description to its first word. The line itself can carry a
-        // payload, a path or a token, and the rule layer already read it in this process.
-        parameters[key] = { type, preview: firstWord(value), digest: sha256(value) }
-        truncated = true
-        continue
-      }
-      if (CONTENT_KEYS.test(key)) { parameters[key] = { type, preview: '[content omitted]' }; truncated = true; continue }
-      const cleaned = cleanText(value, home === undefined ? {} : { home })
-      if (!SAFE_TEXT_KEYS.test(key) && cleaned.length > FREE_TEXT_MAX) {
-        // Prose rather than a name: keep its shape, not its words.
-        parameters[key] = { type, length: cleaned.length, digest: sha256(cleaned) }
-        truncated = true
-        continue
-      }
-      const preview = cleaned.slice(0, PREVIEW_MAX)
-      if (cleaned.length > PREVIEW_MAX) truncated = true
-      parameters[key] = { type, preview }
-      continue
-    }
-    if (typeof value === 'number' || typeof value === 'boolean') { parameters[key] = { type, preview: String(value) }; continue }
-    parameters[key] = { type, preview: type.startsWith('array') ? '[…]' : '{…}' }
-    truncated = true
-  }
-  if (Object.keys(args).length > 32) truncated = true
-  return { parameters, truncated }
-}
-
-/** Fold a parameter summary back into the values `classify` reads (previews, not originals). */
-export const previewArguments = (parameters) => Object.fromEntries(Object.entries(parameters ?? {}).map(([key, entry]) => [key, entry?.preview]))
-
 // The readable copy of the context. Lines are dropped from the end when the cap is reached,
 // so the identity and the request always survive; `state_truncated` says that happened.
 // It describes the call and the authorization only: the verdict this process already took
@@ -221,10 +137,13 @@ const renderState = ({ scope, tool, target, digest, mode }) => {
  */
 export function buildRequest({ exec, scope, local, host, config, now = Date.now, home }) {
   const args = exec.arguments
-  // `home` is the DSH home, so paths under it are redacted like any other host folder.
-  const { parameters, truncated } = summarizeArguments(args, { home })
+  // The judge reads facts, not text: `features.js` projects the call into the shape §3.3 asks
+  // for and redacts the host home. `home` is the DSH home, so paths under it become `<dsh-home>`.
+  const features = callFeatures({ tool: exec.name, args, base: scope.base, scope, home })
   const callId = typeof exec.callId === 'string' ? exec.callId : 'unknown'
-  const digest = sha256(canonical(parameters))
+  // The digest identifies the call for dedupe and for the record without carrying its arguments;
+  // it is computed here and never sent as text.
+  const digest = sha256(canonical(args ?? {}))
   const target = local.target ?? exec.name
   const state = renderState({ scope, tool: exec.name, target, digest, mode: config })
   return {
@@ -256,10 +175,10 @@ export function buildRequest({ exec, scope, local, host, config, now = Date.now,
     timestamp: new Date(now()).toISOString(),
     state: state.text,
     state_truncated: state.truncated,
-    // §3.3 asks the request to carry the parameter summary; structured is easier to judge
-    // than the same summary rendered into `state`.
-    parameters,
-    arguments_truncated: truncated,
+    // §3.3: the judge reads facts, not text. `parameter_digest` above identifies the call;
+    // `features` is its structured projection.
+    features,
+    arguments_truncated: features.truncated,
     questions: [
       { id: 'decision', type: 'choice', options: ['allow', 'deny', 'human-needed'] },
       { id: 'outside_scope', type: 'Noul' },
