@@ -10,9 +10,12 @@
 //   DSH_SECRET_SELFREVIEW_TOKEN   required; the same value the plugin reads from its secrets
 //   DSH_SELFREVIEW_PORT           optional, defaults to 7361
 //   DSH_SELFREVIEW_HOST           optional, must stay a loopback address
+//   DSH_SELFREVIEW_STUB_CAPTURE   optional; append every judged request as one JSON line, so a
+//                                 probe can show what actually travelled instead of asserting it
 //
 // Run: node dev/selfreview-stub.mjs
 import { createHash, timingSafeEqual } from 'node:crypto'
+import { appendFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { classify } from '../src/host/company/selfreview/rules.js'
 
@@ -45,6 +48,18 @@ if (!Number.isInteger(port) || port < 0 || port > 65535) {
 
 const sha256 = value => `sha256:${createHash('sha256').update(value).digest('hex')}`
 const expected = Buffer.from(`Bearer ${token}`, 'utf8')
+
+// A probe that claims "no body travelled" should be able to show the request it is talking about.
+// The capture is opt-in and best effort: a full disk must never change a judgement.
+const capturePath = process.env.DSH_SELFREVIEW_STUB_CAPTURE ?? ''
+const capture = (request) => {
+  if (capturePath === '') return
+  try {
+    appendFileSync(capturePath, `${JSON.stringify({ at: new Date().toISOString(), request })}\n`)
+  } catch {
+    // Evidence capture is a probe convenience, not part of answering the call.
+  }
+}
 
 const authorized = (header) => {
   if (typeof header !== 'string') return false
@@ -150,6 +165,7 @@ const server = createServer(async (request, response) => {
   } catch (error) {
     return reply(response, error instanceof Error && error.message === 'body-too-large' ? 413 : 400, { status: 'invalid', detail: 'json' })
   }
+  capture(body)
   return reply(response, 200, judge(body))
 })
 

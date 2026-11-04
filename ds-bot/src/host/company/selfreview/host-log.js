@@ -158,6 +158,27 @@ const sessionRowsOf = (rows, sessionId) => sessionId === null || sessionId === u
   : rows.filter(row => row?.session_id === sessionId)
 
 /**
+ * The Session's preset and policy: the log's own rows first, then what the record saw.
+ *
+ * A Session that was already running when this process started never writes its
+ * `permission/preset` and `approval/policy` lines, so the log alone cannot say whether a card
+ * was answered under `ask` or `never` — and without that a decided card reads as
+ * `policy-unreadable`. The record carries the same two facts, taken from the host when the call
+ * was judged, so it fills the gap without guessing.
+ */
+const hostFactsOf = (sessionRows, record) => {
+  const fromLog = (type, key) => {
+    const value = sticky(sessionRows, type, key)
+    return value === 'unknown' ? undefined : value
+  }
+  const fromRecord = value => (typeof value === 'string' && value !== 'unknown' ? value : undefined)
+  return {
+    preset: fromLog('permission/preset', 'preset') ?? fromRecord(record?.host_preset),
+    policy: fromLog('approval/policy', 'policy') ?? fromRecord(record?.host_policy),
+  }
+}
+
+/**
  * Rebuild the seven-value projection for every call the fact file knows about.
  *
  * `records` is the product side of the same calls; a call without one is projected anyway and
@@ -176,14 +197,16 @@ export function rebuildHostOutcomes({ rows = [], records = [], isolated = false 
   for (const record of records) {
     if (typeof record?.call_id === 'string') products.set(record.call_id, record)
   }
-  return [...byCall].map(([callId, { sessionId, events }]) => projectHostOutcome({
-    callId,
-    events,
-    product: products.get(callId),
-    preset: sticky(sessionRowsOf(rows, sessionId), 'permission/preset', 'preset'),
-    policy: sticky(sessionRowsOf(rows, sessionId), 'approval/policy', 'policy'),
-    isolated,
-  }))
+  return [...byCall].map(([callId, { sessionId, events }]) => {
+    const product = products.get(callId)
+    return projectHostOutcome({
+      callId,
+      events,
+      product,
+      ...hostFactsOf(sessionRowsOf(rows, sessionId), product),
+      isolated,
+    })
+  })
 }
 
 /**
@@ -200,8 +223,7 @@ export function whyOf({ rows = [], records = [], callId, isolated = false } = {}
     callId,
     events: owned.map(row => eventOf(row, callId)),
     product: record ?? undefined,
-    preset: sticky(sessionRows, 'permission/preset', 'preset'),
-    policy: sticky(sessionRows, 'approval/policy', 'policy'),
+    ...hostFactsOf(sessionRows, record),
     isolated,
   })
   const timeline = sessionRows.filter(row => callOf(row) === callId || row?.type === 'permission/preset' || row?.type === 'approval/policy')

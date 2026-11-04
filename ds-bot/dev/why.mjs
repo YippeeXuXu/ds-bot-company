@@ -2,13 +2,16 @@
 //
 //   node ds-bot/dev/why.mjs <home> [call_id] [--json]
 //
+// `<home>` is either the DSH home (`~/.dsh`, where the bot keeps its own folder under `bot/`)
+// or the bot's own folder; the one that holds `company/` is used.
+//
 // Without a call id it lists every call the fact log knows, with the product's decision, the
 // host's outcome and the reason both agree or disagree. With one it prints that call's record,
 // its projection and its facts in order, which is the answer to "why did this run" without
 // opening a session transcript.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { rebuildHostOutcomes, whyOf, hostLogPath, readHostLog } from '../src/host/company/selfreview/host-log.js'
+import { rebuildHostOutcomes, whyOf, readHostLog } from '../src/host/company/selfreview/host-log.js'
 
 const args = process.argv.slice(2)
 const json = args.includes('--json')
@@ -19,7 +22,12 @@ if (home === undefined) {
   process.exit(2)
 }
 
-const recordsPath = join(home, 'company', 'selfreview.jsonl')
+const companyDir = (root) => {
+  const nested = join(root, 'bot', 'company')
+  return existsSync(nested) ? nested : join(root, 'company')
+}
+
+const recordsPath = join(companyDir(home), 'selfreview.jsonl')
 const records = existsSync(recordsPath)
   ? readFileSync(recordsPath, 'utf8').split('\n').filter(line => line.trim() !== '').flatMap(line => {
     try {
@@ -29,7 +37,7 @@ const records = existsSync(recordsPath)
     }
   })
   : []
-const rows = readHostLog(hostLogPath(home))
+const rows = readHostLog(join(companyDir(home), 'selfreview-host.jsonl'))
 
 if (json) {
   process.stdout.write(`${JSON.stringify(callId === undefined ? { calls: rebuildHostOutcomes({ rows, records }) } : whyOf({ rows, records, callId }), null, 2)}\n`)

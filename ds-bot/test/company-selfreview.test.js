@@ -389,7 +389,9 @@ test('a record carries the planned fields, a digest, and no argument value', asy
   assert.equal(record.host_policy, 'ask')
   assert.equal(record.request_id, 'sr_call_1')
   assert.equal(raw.includes(secret), false)
-  assert.equal(raw.includes('content'), false)
+  // The facts name the field that carried the body; the body itself is what must not be there.
+  assert.deepEqual(record.features.content_fields, ['content'])
+  assert.equal(raw.includes('"content":"'), false)
   assert.match(record.operation_fingerprint, /^sha256:[0-9a-f]{64}$/)
   rmSync(home, { recursive: true, force: true })
 })
@@ -416,6 +418,21 @@ test('the facts name a document and a credential without showing either', () => 
   assert.equal(features.truncated, false)
 })
 
+test('a folder change names where it goes, not just the tool', () => {
+  // `working_directory` carries its place in `cd`; without that key the facts said nothing
+  // about where the Session would move, which is the one thing the judge needs to see.
+  const features = callFeatures({
+    tool: 'working_directory',
+    args: { cd: `${WORKSPACE}/src` },
+    base: WORKSPACE,
+    scope: { workspaceRef: WORKSPACE },
+  })
+  assert.equal(features.path.value, `${WORKSPACE}/src`)
+  assert.equal(features.path.inside_scope, true)
+  const outside = callFeatures({ tool: 'working_directory', args: { cd: '/tmp/elsewhere' }, base: WORKSPACE, scope: { workspaceRef: WORKSPACE } })
+  assert.equal(outside.path.inside_scope, false)
+})
+
 test('a file body never reaches the request, whatever it holds', () => {
   const state = companyState()
   const rt = rtOf({ home: '/tmp/unused', state, secret: 'token' })
@@ -431,6 +448,14 @@ test('a file body never reaches the request, whatever it holds', () => {
   assert.equal(serialized.includes('hunter2-should-not-leave'), false)
   assert.equal(serialized.includes('keep this private'), false)
   assert.equal(request.state.length <= 2048, true)
+  // The record keeps the same facts so the line explains itself later, and the body stays out
+  // of it the same way it stays out of the request.
+  const record = makeRecord({ request, local, decision: 'human-needed', mode: 'shadow', host: { preset: 'ask', policy: 'ask' }, call: { callId: 'call_1' }, now: 0 })
+  const line = JSON.stringify(record)
+  assert.equal(record.features.version, '2')
+  assert.deepEqual(record.features.content_fields, ['content'])
+  assert.equal(line.includes('hunter2-should-not-leave'), false)
+  assert.equal(line.includes('keep this private'), false)
 })
 
 test('an unknown mode starts nothing less safe: it fails closed like enforce', async () => {
@@ -994,6 +1019,39 @@ test('the fact log keeps the call and drops arguments, output and card reasons',
   assert.equal(story.record.decision, 'human-needed')
   assert.equal(story.projection.outcome, 'approved-by-human')
   assert.equal(story.timeline.length, 6)
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('a Session that was already running takes its policy from the record, never from a guess', async () => {
+  const home = tempHome()
+  const log = createHostLog({ dir: join(home, 'company'), warn: () => {} })
+  const session = { id: 'sess_2' }
+  log.append(session, { type: 'tool/call', data: { callId: 'call_12', name: 'read_own_chat', step: 1, turn: 1, arguments: { query: '项目' } } })
+  log.append(session, { type: 'approval/asked', data: { id: 'ap_2', callId: 'call_12', toolName: 'read_own_chat', reason: 'needs a decision' } })
+  log.append(session, { type: 'approval/decided', data: { id: 'ap_2', outcome: 'allowed-once' } })
+  log.append(session, { type: 'tool/result', data: { message: { toolCallId: 'call_12', isError: false, content: [{ type: 'text', text: 'ok' }] } } })
+  await log.flush()
+
+  const rows = readHostLog(hostLogPath(home))
+
+  // No preset or policy line: the log cannot tell `ask` from `never`, so a decided card stays open.
+  const [blindProjection] = rebuildHostOutcomes({ rows })
+  assert.equal(blindProjection.outcome, 'unobservable')
+  assert.equal(blindProjection.reason, 'policy-unreadable')
+
+  // The record read both facts from the same Session when it judged the call, so it fills the gap.
+  const records = [{ call_id: 'call_12', decision: 'human-needed', rule_id: 'READ_ONLY', status: 'ok', host_preset: 'workspace-write', host_policy: 'ask' }]
+  const story = whyOf({ rows, records, callId: 'call_12' })
+  assert.equal(story.projection.outcome, 'approved-by-human')
+  assert.equal(story.projection.reason, 'ask-allowed')
+  assert.equal(story.projection.approval_policy, 'ask')
+  assert.equal(story.projection.host_preset, 'workspace-write')
+  assert.equal(rebuildHostOutcomes({ rows, records })[0].outcome, 'approved-by-human')
+
+  // A record that never saw the policy keeps the gap visible instead of inventing one.
+  const blindStory = whyOf({ rows, records: [{ call_id: 'call_12', decision: 'human-needed', host_policy: 'unknown' }], callId: 'call_12' })
+  assert.equal(blindStory.projection.outcome, 'unobservable')
+  assert.equal(blindStory.projection.reason, 'policy-unreadable')
   rmSync(home, { recursive: true, force: true })
 })
 

@@ -31,7 +31,7 @@ const EXEC_FLAGS = new Set(['-exec', '-execdir', '-ok', '-okdir'])
 const WRITE_ARG = new Map([['write', 'file_path'], ['edit', 'file_path'], ['str_replace_editor', 'path']])
 
 /** Arguments that name a place, in the order they are preferred. */
-const PATH_KEYS = ['file_path', 'path', 'file', 'dir', 'cwd', 'base', 'root', 'target']
+const PATH_KEYS = ['file_path', 'path', 'file', 'dir', 'cwd', 'cd', 'base', 'root', 'target']
 
 /**
  * Keys whose value is never described, whatever it holds. Names are compared with the
