@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { judge, readAnswer } from '../src/host/company/selfreview/client.js'
@@ -25,6 +25,9 @@ const OTHER_WORKSPACE = '/work/other'
 const DS_BOT_DIR = fileURLToPath(new URL('..', import.meta.url))
 const tempHome = () => mkdtempSync(join(tmpdir(), 'ds-bot-selfreview-'))
 const recordPath = home => join(home, 'company', 'selfreview.jsonl')
+// The facts carry resolved paths with forward slashes; a Windows run resolves the same
+// fixture against the current drive, so the expectation has to be built the same way.
+const atPath = value => resolve(value).replace(/\\/g, '/')
 
 const linesOf = path => readFileSync(path, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
 
@@ -412,7 +415,7 @@ test('the facts name a document and a credential without showing either', () => 
   const serialized = JSON.stringify(features)
   assert.equal(serialized.includes('xxxx'), false)
   assert.equal(serialized.includes('abc'), false)
-  assert.equal(features.path.value, `${WORKSPACE}/a.md`)
+  assert.equal(features.path.value, atPath(`${WORKSPACE}/a.md`))
   assert.equal(features.path.inside_scope, true)
   // Omitting the body is the design, not a shortening: the judge still has the facts it needs.
   assert.equal(features.truncated, false)
@@ -427,7 +430,7 @@ test('a folder change names where it goes, not just the tool', () => {
     base: WORKSPACE,
     scope: { workspaceRef: WORKSPACE },
   })
-  assert.equal(features.path.value, `${WORKSPACE}/src`)
+  assert.equal(features.path.value, atPath(`${WORKSPACE}/src`))
   assert.equal(features.path.inside_scope, true)
   const outside = callFeatures({ tool: 'working_directory', args: { cd: '/tmp/elsewhere' }, base: WORKSPACE, scope: { workspaceRef: WORKSPACE } })
   assert.equal(outside.path.inside_scope, false)
@@ -863,7 +866,7 @@ test('a private message, a command line and a token never reach the request', ()
   // A shell line travels as facts: the words a judge needs to reach a decision, never the payload.
   assert.equal(request.features.shell.first_word, 'cat')
   assert.deepEqual(request.features.shell.flags, ['-X'])
-  assert.deepEqual(request.features.shell.paths, [`${WORKSPACE}/notes.txt`])
+  assert.deepEqual(request.features.shell.paths, [atPath(`${WORKSPACE}/notes.txt`)])
   assert.equal(request.features.shell.segments, 2)
   assert.equal(request.arguments_truncated, false)
   // The local verdict is the answer the judge must reach on its own: its rule id must not
@@ -952,7 +955,7 @@ test('a shell call travels as facts a judge can read, never as the line itself',
   assert.equal(features.shell.first_word, 'npm')
   assert.equal(features.shell.flags.includes('--watch=false'), true)
   assert.equal(features.shell.segments, 2)
-  assert.deepEqual(features.shell.redirects, [`${WORKSPACE}/out.log`])
+  assert.deepEqual(features.shell.redirects, [atPath(`${WORKSPACE}/out.log`)])
   // The line, the file name and the rest of the text are not in the facts.
   const serialized = JSON.stringify(features)
   assert.equal(serialized.includes('npm test --'), false)
