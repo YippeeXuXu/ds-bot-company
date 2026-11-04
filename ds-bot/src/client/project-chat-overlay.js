@@ -12,30 +12,49 @@ const initial = name => (typeof name === 'string' && name.trim() ? name.trim().s
 
 const swallow = () => {}
 
-export function ProjectChatHeader({ projectName, stage, faces, onBack, onOpenDetails, expanded }) {
+export function ProjectChatHeader({ projectName, stage, faces, goal, pendingCount, nextStep, onBack, onOpenDetails, expanded }) {
+  const hasCount = Number.isFinite(pendingCount) && pendingCount > 0
+  const statRows = []
+  if (goal) statRows.push(h('div', { key: 'goal', className: 'pc-stat-row' }, h('span', { className: 'pc-stat-key' }, t('Goal')), h('span', { className: 'pc-stat-text' }, goal)))
+  if (hasCount || nextStep) {
+    statRows.push(
+      h(
+        'div',
+        { key: 'pending', className: 'pc-stat-row' },
+        hasCount ? h('span', { className: 'pc-stat-key' }, t('Waiting for you')) : null,
+        hasCount ? h('span', { className: 'pc-stat-count' }, String(pendingCount)) : null,
+        nextStep ? h('span', { className: 'pc-stat-text' }, `\u00b7 ${nextStep}`) : null
+      )
+    )
+  }
   return h(
     'div',
-    { className: 'pc-head' },
-    h('button', { type: 'button', className: 'pc-back', onClick: onBack, 'aria-label': t('Back to projects') }, '\u2039'),
+    { className: `pc-head${statRows.length ? ' has-stat' : ''}` },
     h(
-      'button',
-      {
-        type: 'button',
-        className: 'pc-pill',
-        title: t('Open project details'),
-        'aria-label': `${projectName || t('Project details')}\uff0c${t('Open project details')}`,
-        'aria-expanded': expanded ? 'true' : 'false',
-        onClick: onOpenDetails,
-      },
+      'div',
+      { className: 'pc-headbar' },
+      h('button', { type: 'button', className: 'pc-back', onClick: onBack, 'aria-label': t('Back to projects') }, '\u2039'),
       h(
-        'span',
-        { className: 'pc-faces' },
-        (faces || []).slice(0, 3).map((face, index) => h('span', { key: index, className: 'pc-face' }, initial(face)))
-      ),
-      h('span', { className: 'pc-name' }, projectName || t('Project details')),
-      stage ? h('span', { className: 'pc-stage' }, stage) : null,
-      h('span', { className: 'pc-chevron', 'aria-hidden': 'true' }, '\u203a')
-    )
+        'button',
+        {
+          type: 'button',
+          className: 'pc-pill',
+          title: t('Open project details'),
+          'aria-label': `${projectName || t('Project details')}\uff0c${t('Open project details')}`,
+          'aria-expanded': expanded ? 'true' : 'false',
+          onClick: onOpenDetails,
+        },
+        h(
+          'span',
+          { className: 'pc-faces' },
+          (faces || []).slice(0, 3).map((face, index) => h('span', { key: index, className: 'pc-face' }, initial(face)))
+        ),
+        h('span', { className: 'pc-name' }, projectName || t('Project details')),
+        stage ? h('span', { className: 'pc-stage' }, stage) : null,
+        h('span', { className: 'pc-chevron', 'aria-hidden': 'true' }, '\u203a')
+      )
+    ),
+    statRows.length ? h('div', { className: 'pc-stat' }, statRows) : null
   )
 }
 
@@ -172,19 +191,37 @@ export function ProjectChatPage({ project, stage: stageProp, faces, goal, nextSt
     setOpen(true)
   }
   const stage = stageProp || statusLabel(project?.status)
+  const headRef = useRef(null)
+  const [pinTop, setPinTop] = useState(0)
+  useEffect(() => {
+    const measure = () => {
+      const el = headRef.current
+      if (el) setPinTop(Math.round(el.getBoundingClientRect().height) + 8)
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [project?.name, goal, pendingCount, nextStep, stage])
+  const pinnedEl = pinned?.items?.length ? h(ProjectChatPinned, { count: pinned?.count, items: pinned.items }) : null
   return h(
     'div',
     { className: 'pc-page' },
-    h(ProjectChatHeader, {
-      projectName: project?.name,
-      stage,
-      faces,
-      expanded: open,
-      onBack,
-      onOpenDetails: openDrawer,
-    }),
-    h(ProjectChatStatus, { goal: goal ?? project?.goal, pendingCount, nextStep }),
-    h(ProjectChatPinned, { count: pinned?.count, items: pinned?.items }),
+    h(
+      'div',
+      { ref: headRef, className: 'pc-head-holder' },
+      h(ProjectChatHeader, {
+        projectName: project?.name,
+        stage,
+        faces,
+        goal: goal ?? project?.goal,
+        pendingCount,
+        nextStep,
+        expanded: open,
+        onBack,
+        onOpenDetails: openDrawer,
+      })
+    ),
+    pinnedEl ? h('div', { className: 'pc-pin-layer', style: { top: `${pinTop}px` } }, pinnedEl) : null,
     h('div', { className: 'pc-body' }, slot ?? null),
     h(ProjectChatDock, {
       faces: dock?.faces ?? faces,
@@ -211,8 +248,11 @@ export function ProjectChatPage({ project, stage: stageProp, faces, goal, nextSt
 export const PROJECT_CHAT_CSS = `
 .pc-page{--pc-main:var(--bt-main);--pc-ring:var(--bt-line-2);--pc-ink-3:var(--bt-ink-3);position:relative;display:flex;flex-direction:column;min-height:0;flex:1;background:var(--bt-main);color:var(--bt-ink);font-family:var(--bt-font)}
 .pc-page *{box-sizing:border-box}
-.pc-head{position:absolute;inset:0 0 auto;z-index:8;display:flex;justify-content:center;align-items:center;padding:10px 0 0;background:transparent;pointer-events:none}
+.pc-head-holder{position:absolute;inset:0 0 auto;z-index:8;pointer-events:none}
+.pc-head{display:flex;flex-direction:column;background:transparent;pointer-events:none}
 .pc-head::before{content:"";position:absolute;inset:0 0 auto;height:var(--bc-mask-header,60px);background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
+.pc-head.has-stat::before{height:calc(var(--bc-mask-header,60px) + 48px)}
+.pc-headbar{position:relative;display:flex;justify-content:center;align-items:flex-start;padding:10px 0 0;pointer-events:none}
 .pc-back{position:absolute;left:12px;top:10px;pointer-events:auto;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:999px;background:transparent;color:var(--bt-ink-2);font-size:18px;line-height:1;cursor:pointer}
 .pc-back::after{content:"";position:absolute;inset:-8px}
 .pc-back:hover{background:var(--bt-hover);color:var(--bt-ink)}
@@ -227,16 +267,17 @@ export const PROJECT_CHAT_CSS = `
 .pc-chevron{color:var(--pc-ink-3);font-size:14px;line-height:1}
 .pc-pill:hover .pc-chevron,.pc-pill:focus-visible .pc-chevron{color:var(--bt-accent)}
 .pc-page :is(button,input,textarea,select,summary):focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
-.pc-stat{position:relative;z-index:7;display:flex;flex-direction:column;gap:2px;padding:56px 16px 8px;pointer-events:none}
+.pc-stat{position:relative;z-index:7;display:flex;flex-direction:column;gap:2px;padding:8px 16px 0;pointer-events:none;font-size:12px;line-height:16px}
 .pc-stat-row{display:flex;align-items:baseline;gap:6px;min-width:0;font-size:12px;line-height:16px}
 .pc-stat-key{flex:none;color:var(--pc-ink-3)}
 .pc-stat-text{color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pc-stat-count{font-weight:700;color:var(--bt-ink)}
-.pc-pin{margin:8px 16px 0;padding:12px 14px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-card)}
+.pc-pin-layer{position:absolute;left:0;right:0;z-index:9;display:flex;justify-content:center;padding:0 12px;pointer-events:none}
+.pc-pin{width:min(100%,var(--dsh-chat-content-width,960px));max-height:72px;overflow:hidden;margin:0;padding:10px 14px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-card);pointer-events:none}
 .pc-pin-head{display:flex;align-items:baseline;gap:6px;font-size:12px;line-height:16px}
 .pc-pin-title{font-weight:600;color:var(--bt-ink)}
 .pc-pin-sub{color:var(--pc-ink-3)}
-.pc-pin-row{display:flex;justify-content:space-between;gap:12px;margin-top:8px;font-size:13px;line-height:18px;color:var(--bt-ink)}
+.pc-pin-row{display:flex;justify-content:space-between;gap:12px;margin-top:8px;font-size:13px;line-height:18px;color:var(--bt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pc-pin-who{flex:none;font-size:12px;color:var(--bt-ink-2)}
 .pc-body{flex:1;min-height:0;overflow:auto;padding:12px 16px 64px}
 .pc-dock{position:sticky;bottom:8px;z-index:6;display:flex;justify-content:center;pointer-events:none;padding:0 16px}
@@ -266,5 +307,5 @@ export const PROJECT_CHAT_CSS = `
 @keyframes pc-dock-veil{from{opacity:0}to{opacity:1}}
 @keyframes pc-pane-in{from{transform:translateX(24px);opacity:0}to{transform:translateX(0);opacity:1}}
 @media (prefers-reduced-motion:reduce){.pc-dock-pill{animation:none}.pc-drawer{animation:none}}
-@media (max-width:640px){.pc-drawer{width:calc(100% - 56px)}.pc-pill{max-width:78%}.pc-stat{padding:52px 12px 6px}.pc-body{padding:12px 12px 56px}}
+@media (max-width:640px){.pc-drawer{width:calc(100% - 56px)}.pc-pill{max-width:78%}.pc-stat{padding:8px 12px 0}.pc-body{padding:12px 12px 56px}.pc-pin{max-height:56px;padding:8px 12px}.pc-pin-row{margin-top:4px}}
 `
