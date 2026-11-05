@@ -12,6 +12,7 @@ import { createCompanyApi } from './api.js'
 import { createCommands } from './commands.js'
 import { orgHandlers } from './org.js'
 import { projectHandlers } from './projects.js'
+import { pathRedactor } from './selfreview/features.js'
 import { companyFail, createCompanyStore } from './store.js'
 
 // The roster side of a project group. `members` returns undefined when the group is gone,
@@ -68,7 +69,13 @@ export function install(rt) {
     approvals: () => rt.approvalsView?.() ?? [],
     sessionBot: id => rt.selfOf?.(id),
     home: rt.home,
-    redact: text => (typeof rt.redactSecrets === 'function' ? rt.redactSecrets(text) : text),
+    // Two redactions in one lookup: the home becomes `<dsh-home>`, then the host's secret
+    // redactor runs over the result, exactly as the SelfReview features do it. Read time is
+    // when this runs, so a target already on disk is tagged too (B-5).
+    redact: (text) => {
+      const tagged = pathRedactor(rt.home)(text)
+      return typeof rt.redactSecrets === 'function' ? rt.redactSecrets(tagged) : tagged
+    },
     // Answering a card is relaying to the host, never a company-level decision of its own
     // (contract §5.1). A lookup, because the approvals module installs before or after this
     // one depending on load order.

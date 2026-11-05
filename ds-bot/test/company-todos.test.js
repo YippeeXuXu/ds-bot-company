@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { createCompanyApi } from '../src/host/company/api.js'
 import { install } from '../src/host/company/index.js'
+import { pathRedactor } from '../src/host/company/selfreview/features.js'
 import { createCompanyStore } from '../src/host/company/store.js'
 import { createTodos } from '../src/host/company/todos.js'
 
@@ -158,7 +159,7 @@ test('A5: two projects, two cards — each row belongs to its own project and re
 test('A6/A11: a private-chat card is listed unassigned, read-only, with its Session', async () => {
   const home = await openHome()
   seed(home, { projects: [project('prj_1', 'Alpha', 'room_1')], employees: [employee('emp_1', '小蓝', 'bot_1')] })
-  const api = apiOf(home, { approvals: () => [liveCard({ sessionId: 'sess_private', answerable: false })] })
+  const api = apiOf(home, { approvals: () => [liveCard({ sessionId: 'sess_private', roomId: 'room_private', answerable: false })] })
   const { body } = await api.todos({})
 
   assert.equal(body.waiting.length, 1)
@@ -170,6 +171,9 @@ test('A6/A11: a private-chat card is listed unassigned, read-only, with its Sess
   assert.equal(row.reason_code, 'private-chat')
   assert.equal(row.reason, '请在私聊中处理')
   assert.equal(row.answer_ref, null)
+  assert.equal(row.room_id, null)
+  assert.equal(row.host_outcome, null)
+  assert.equal(row.authorizer, 'unknown')
   assert.equal(row.session_id, 'sess_private')
   assert.equal(body.counts.waiting_unassigned, 1)
   assert.equal(body.counts.waiting_approvals, 1)
@@ -257,13 +261,19 @@ test('A7: titles carry a verb and a redacted object, never a secret or a home pa
     target: `${home}/deploy?token=SECRET42`,
     predicted_risk_tier: 'medium',
   })])
-  const redact = text => text.replaceAll(home, '[home]').replaceAll('SECRET42', '[secret]')
+  // The production redaction, not a stand-in: the home is tagged, then the host's secret
+  // redactor runs over the result, exactly as `install` composes it (B-5).
+  const redactSecrets = text => text.replaceAll('SECRET42', '[secret]')
+  const redact = text => redactSecrets(pathRedactor(home)(text))
   const api = apiOf(home, { approvals: () => [liveCard({ roomId: 'room_1', callId: 'call_secret' })], redact, sessionBot: () => 'bot_1' })
   const { body } = await api.todos({})
   const row = body.waiting.find(entry => entry.card_kind === 'approval')
   assert.equal(row.title.startsWith('访问网络'), true)
   assert.equal(row.title.includes(home), false)
+  assert.equal(row.title.includes('<dsh-home>'), true)
   assert.equal(row.title.includes('SECRET42'), false)
+  assert.equal(row.target.includes(home), false)
+  assert.equal(row.target.includes('<dsh-home>'), true)
   assert.equal(row.target.includes('SECRET42'), false)
   assert.equal(row.risk_text, '需要授权')
   assert.equal(row.risk_source, 'predicted')
@@ -291,18 +301,92 @@ test('A8: counts agree with the lists, and the handled window is a window', asyn
   facts.push(fact({ type: 'tool/result', call_id: 'call_policy', is_error: false, session_id: 'sess_1' }))
   writeRecords(home, records)
   writeFacts(home, facts)
+  seed(home, {
+    projects: [project('prj_1', 'Alpha', 'room_1')],
+    employees: [employee('emp_1', '小蓝', 'bot_1')],
+    acceptances: {
+      acc_ret: acceptance({ id: 'acc_ret', state: 'returned', decided_at: new Date(AT - 10 * MINUTE).toISOString(), opinion: '补测试' }),
+    },
+  })
   const api = apiOf(home, { sessionBot: () => 'bot_1' })
 
   const { body } = await api.todos({ handled_limit: 2 })
   assert.equal(body.handled.length, 2)
   assert.equal(body.handled_has_more, true)
-  assert.equal(body.counts.handled_total, 3)
+  assert.equal(body.counts.handled_total, 4)
   assert.equal(body.counts.handled_total_capped, false)
-  assert.equal(body.counts.handled_returned, 0)
+  // `handled_returned` is this response's page, not a state count (B-1).
+  assert.equal(body.counts.handled_returned, body.handled.length)
+  assert.equal(body.counts.handled_returned, 2)
+  // A returned row inside the page still leaves the count equal to the page length.
+  const wide = await api.todos({ handled_limit: 4 })
+  assert.equal(wide.body.handled.length, 4)
+  assert.equal(wide.body.counts.handled_returned, 4)
+  assert.equal(wide.body.handled.some(row => row.state === 'returned'), true)
   assert.equal(body.counts.waiting_total, body.waiting.length)
   assert.equal(body.waiting.length, 0)
   // Newest handled first.
   assert.equal(body.handled[0].id, 'ap_appr_1')
+})
+
+test('B-2/B-3/B-4: a waiting row has no outcome, and a decided row waits until it was decided', async () => {
+  const home = await openHome()
+  seed(home, {
+    projects: [project('prj_1', 'Alpha', 'room_1')],
+    employees: [employee('emp_1', '小蓝', 'bot_1')],
+    acceptances: {
+      acc_done: acceptance({ id: 'acc_done', state: 'accepted', created_at: new Date(AT - 30 * MINUTE).toISOString(), decided_at: new Date(AT - 2 * MINUTE).toISOString(), opinion: '通过' }),
+    },
+  })
+  writeRecords(home, [record('call_done', { project_id: 'prj_1', created_at: new Date(AT - 20 * MINUTE).toISOString() })])
+  writeFacts(home, [
+    fact({ at: new Date(AT - 20 * MINUTE).toISOString(), type: 'tool/call', call_id: 'call_done', tool: 'bash', session_id: 'sess_1' }),
+    fact({ at: new Date(AT - 20 * MINUTE).toISOString(), type: 'approval/asked', call_id: 'call_done', approval_id: 'appr_done', tool: 'bash', session_id: 'sess_1' }),
+    fact({ at: new Date(AT - 11 * MINUTE).toISOString(), type: 'approval/decided', approval_id: 'appr_done', outcome: 'allowed-once', session_id: 'sess_1' }),
+  ])
+  const api = apiOf(home, {
+    approvals: () => [
+      liveCard({ id: 'row_live', roomId: 'room_1', callId: 'call_live' }),
+      liveCard({ id: 'row_private', roomId: 'room_elsewhere', callId: 'call_private', answerable: false }),
+    ],
+    sessionBot: () => 'bot_1',
+  })
+  const { body } = await api.todos({})
+
+  const waiting = new Map(body.waiting.map(row => [row.id, row]))
+  const live = waiting.get('ap_row_live')
+  assert.equal(live.host_outcome, null)
+  assert.equal(live.authorizer, 'unknown')
+  assert.equal(live.room_id, 'room_1')
+  const privateRow = waiting.get('ap_row_private')
+  assert.equal(privateRow.project_id, null)
+  assert.equal(privateRow.room_id, null)
+  assert.equal(privateRow.authorizer, 'unknown')
+
+  const handled = new Map(body.handled.map(row => [row.id, row]))
+  const approval = handled.get('ap_appr_done')
+  assert.equal(approval.handled_at, new Date(AT - 11 * MINUTE).toISOString())
+  assert.equal(approval.wait_minutes, 9)
+  assert.equal(approval.authorizer, 'unknown')
+  assert.equal(approval.host_outcome, 'approved-by-human')
+  const acc = handled.get('ac_acc_done')
+  assert.equal(acc.wait_minutes, 28)
+  assert.equal(acc.authorizer, 'unknown')
+  assert.equal(acc.host_outcome, null)
+})
+
+test('B-7: handled_limit takes only a whole number from 1 to 200', async () => {
+  const home = await openHome()
+  seed(home, {})
+  const api = apiOf(home, {})
+  for (const value of [1.5, '2x', 0, 201, 'abc']) {
+    const refused = await api.todos({ handled_limit: value })
+    assert.equal(refused.status, 422, `handled_limit=${String(value)}`)
+    assert.equal(refused.body.code, 'todo/invalid')
+    assert.equal(refused.body.details.field, 'handled_limit')
+  }
+  const accepted = await api.todos({ handled_limit: '2' })
+  assert.equal(accepted.status, 200)
 })
 
 test('A13: an owner-only acceptance is listed even when an employee submitted it', async () => {

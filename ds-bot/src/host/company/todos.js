@@ -366,7 +366,10 @@ const scanHistory = home => {
 
 const handledLimitOf = value => {
   if (value === undefined || value === null || value === '') return HANDLED_LIMIT_DEFAULT
-  const parsed = typeof value === 'number' ? value : Number.parseInt(String(value), 10)
+  // A page size counts rows: `1.5` and `"2x"` are not counts, and parseInt would silently
+  // shorten either into one instead of refusing it (§3.10).
+  const text = String(value).trim()
+  const parsed = /^\d+$/.test(text) ? Number(text) : NaN
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > HANDLED_LIMIT_MAX) {
     throw companyFail('todo/invalid', `handled_limit is a whole number from 1 to ${HANDLED_LIMIT_MAX}.`, { field: 'handled_limit', max: HANDLED_LIMIT_MAX })
   }
@@ -427,7 +430,9 @@ export function createTodos({ store, approvals = () => [], sessionBot, home, now
     row.approval_id = typeof projection?.approval_id === 'string' ? projection.approval_id : null
     row.approval_policy = policyOf(projection?.approval_policy ?? record?.host_policy)
     row.host_preset = typeof (projection?.host_preset ?? record?.host_preset) === 'string' ? (projection?.host_preset ?? record?.host_preset) : null
-    row.host_outcome = typeof projection?.outcome === 'string' ? projection.outcome : null
+    // A card that is still waiting has no result yet (§4.4:370), and this view cannot tell
+    // who will authorize it, so the word stays unknown rather than guessed (B-2).
+    row.authorizer = 'unknown'
     if (project === undefined) {
       // No room means no answering surface here: the card lives in the private chat, where
       // the host drew it. This row only tells the person it exists and where it is (B-1).
@@ -438,6 +443,9 @@ export function createTodos({ store, approvals = () => [], sessionBot, home, now
       row.reason_code = 'private-chat'
       row.reason = REASON_TEXT.get('private-chat')
       row.answer_ref = null
+      // The card lives in a private chat, so this row must not name the room it was asked
+      // in; a renderer reading `room_id` would mistake it for a project row (§3.3:164).
+      row.room_id = null
       row.coordinator_bot_id = null
       return row
     }
@@ -477,11 +485,12 @@ export function createTodos({ store, approvals = () => [], sessionBot, home, now
     row.room_id = null
     row.request_id = typeof record?.request_id === 'string' ? record.request_id : null
     row.created_at = isoOf(record?.created_at) ?? meta?.firstAt ?? null
-    row.wait_minutes = waitMinutes(row.created_at, now())
     row.approval_id = typeof projection.approval_id === 'string' ? projection.approval_id : null
     row.approval_policy = policyOf(projection.approval_policy ?? record?.host_policy)
     row.host_preset = typeof (projection.host_preset ?? record?.host_preset) === 'string' ? (projection.host_preset ?? record?.host_preset) : null
     row.host_outcome = typeof projection.outcome === 'string' ? projection.outcome : null
+    // The host names who authorized a decided call; nothing else may fill this in (B-2).
+    row.authorizer = typeof projection.authorizer === 'string' ? projection.authorizer : null
     row.host_reject_reason = mapped.hostRejectReason ?? null
     row.answer_ref = null
     row.revision = null
@@ -505,6 +514,8 @@ export function createTodos({ store, approvals = () => [], sessionBot, home, now
       row.reason_code = mapped.reasonCode ?? null
       row.reason = mapped.reasonCode === undefined ? null : (REASON_TEXT.get(mapped.reasonCode) ?? null)
     }
+    // A handled row waited until it was decided, not until this read (§4.4:358).
+    row.wait_minutes = waitMinutes(row.created_at, handled ? (Date.parse(row.handled_at ?? '') || now()) : now())
     return row
   }
 
@@ -538,7 +549,6 @@ export function createTodos({ store, approvals = () => [], sessionBot, home, now
     row.revision = typeof acceptance.revision === 'number' ? acceptance.revision : null
     row.owner_only = ownerOnly
     row.created_at = isoOf(acceptance.created_at)
-    row.wait_minutes = waitMinutes(row.created_at, at)
     row.answer_ref = null
     row.handled = HANDLED_STATES.has(row.state)
     row.ready = row.handled === false && row.state === 'pending'
@@ -546,12 +556,13 @@ export function createTodos({ store, approvals = () => [], sessionBot, home, now
     row.stale = false
     row.retry_available = false
     row.host_outcome = null
-    row.authorizer = null
+    row.authorizer = 'unknown'
     row.host_risk_tier = null
     if (row.handled) {
       row.handled_at = isoOf(acceptance.decided_at) ?? row.created_at
       row.opinion = typeof acceptance.opinion === 'string' && acceptance.opinion !== '' ? acceptance.opinion : null
     }
+    row.wait_minutes = waitMinutes(row.created_at, row.handled ? (Date.parse(row.handled_at ?? '') || at) : at)
     return row
   }
 
@@ -613,7 +624,7 @@ export function createTodos({ store, approvals = () => [], sessionBot, home, now
       waiting_total: waitingRows.length,
       handled_total: handledRows.length,
       handled_total_capped: history.capped,
-      handled_returned: handledRows.filter(row => row.state === 'returned').length,
+      handled_returned: page.length,
       waiting_unassigned: waitingRows.filter(row => row.project_id === null).length,
     }
     const readAt = new Date(at).toISOString()

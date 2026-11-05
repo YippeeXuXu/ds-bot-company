@@ -137,7 +137,7 @@ const text = value => (typeof value === 'string' ? value : typeof value === 'num
 const slashed = value => value.replace(/\\/g, '/')
 
 /** Replace the host home with a tag, so a record never spells out where the instance lives. */
-const pathRedactor = (home) => {
+export const pathRedactor = (home) => {
   const root = typeof home === 'string' && home !== '' ? slashed(resolve(home)) : undefined
   return (value) => {
     const path = slashed(value)
