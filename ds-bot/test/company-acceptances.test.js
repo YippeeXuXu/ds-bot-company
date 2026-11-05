@@ -345,6 +345,31 @@ test('A13: an older decision without a project on it still counts as that projec
   assert.equal(none.body.has_more, false)
 })
 
+test('B: a submitted acceptance names the employee on its event, and the project page reads it back', async () => {
+  const home = await openHome()
+  seed(home, {
+    projects: [project('prj_1', 'Alpha', 'room_1')],
+    employees: [employee('emp_1', '小蓝', 'bot_1')],
+    members: [member('mem_1', 'prj_1', 'emp_1')],
+  })
+  const store = storeOf(home)
+  const api = createCompanyApi({ store, execute: commandsFor(store).execute, groups: {}, now: () => AT, approvals: () => [], home })
+
+  const submitted = await api.command({ command: 'acceptance.submit', operation_key: 'submit-b', payload: { project_id: 'prj_1', title: 'B 事件带提交人', requester_employee_id: 'emp_1' } })
+  assert.equal(submitted.status, 200)
+  const acceptanceId = submitted.body.body.acceptance.id
+
+  // The write carries the submitting employee, so a reader needs no second lookup.
+  const written = eventsOf(home).findLast(entry => entry.type === 'acceptance.submitted')
+  assert.deepEqual(written.data, { acceptance_id: acceptanceId, project_id: 'prj_1', employee_id: 'emp_1' })
+
+  // The project page gets the same line back through the filtered read.
+  const page = await api.events({ project_id: 'prj_1' })
+  assert.deepEqual(page.body.events.map(entry => entry.type), ['acceptance.submitted'])
+  assert.equal(page.body.events[0].data.employee_id, 'emp_1')
+  assert.equal(page.body.events[0].data.acceptance_id, acceptanceId)
+})
+
 test('A14: an owner_only project refuses an employee actor before anything is written', async () => {
   const home = await openHome()
   seed(home, {

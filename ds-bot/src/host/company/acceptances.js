@@ -109,7 +109,10 @@ export function acceptanceHandlers() {
       return {
         aggregate_id: acceptance.id,
         body: { acceptance },
-        events: [{ type: 'acceptance.submitted', data: { acceptance_id: acceptance.id, project_id: project.id } }],
+        // The submitting employee travels with the event so the project page can name the
+        // person without a second lookup. Older lines keep their text; readers fall back to
+        // the generic member label when the field is absent.
+        events: [{ type: 'acceptance.submitted', data: { acceptance_id: acceptance.id, project_id: project.id, employee_id: acceptance.requester_employee_id } }],
       }
     },
 
