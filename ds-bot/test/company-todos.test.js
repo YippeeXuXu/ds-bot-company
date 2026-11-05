@@ -576,7 +576,11 @@ test('M1c: the archive handler reports what it closed to logs and tests, not to 
     },
   })
 
-  const outcome = await projectHandlers({})['project.archive']({ state, payload: { project_id: 'prj_1' }, now: () => AT })
+  // A clock that moves on every read: the closure must read it once, so `decided_at` and
+  // `updated_at` cannot straddle a millisecond boundary.
+  let tick = AT
+  const clock = () => (tick += 1)
+  const outcome = await projectHandlers({})['project.archive']({ state, payload: { project_id: 'prj_1' }, now: clock })
 
   // The separate list is what a log or a test reads; body and event keep the three arrays.
   assert.deepEqual(outcome.closed_acceptances, ['acc_pending'])
@@ -585,8 +589,8 @@ test('M1c: the archive handler reports what it closed to logs and tests, not to 
   assert.equal(outcome.body.project.status, 'archived')
   assert.equal(state.acceptances.acc_pending.state, 'cancelled')
   assert.equal(state.acceptances.acc_pending.close_reason, 'project_archived')
-  assert.equal(state.acceptances.acc_pending.decided_at, AT)
-  assert.equal(state.acceptances.acc_pending.updated_at, AT)
+  assert.equal(state.acceptances.acc_pending.decided_at, state.acceptances.acc_pending.updated_at)
+  assert.ok(state.acceptances.acc_pending.decided_at > AT)
   assert.equal(state.acceptances.acc_pending.revision, 4)
   // A card that was already decided, and a card of another project, stay as they were.
   assert.equal(state.acceptances.acc_done.state, 'accepted')

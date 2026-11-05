@@ -564,13 +564,16 @@ export function projectHandlers({ groups = {} } = {}) {
       // only entry: `acceptance.submit` and `acceptance.decide` refuse an archived project,
       // so the read-side filter is for history, not for a second closure path.
       const closedAcceptances = []
+      // One timestamp for the whole closure: `decided_at` and `updated_at` must agree, and two
+      // `now()` calls can land on either side of a millisecond.
+      const closedAt = now()
       for (const acceptance of Object.values(state.acceptances ?? {})) {
         if (acceptance === null || typeof acceptance !== 'object' || Array.isArray(acceptance)) continue
         if (acceptance.project_id !== project.id || acceptance.state !== 'pending') continue
         acceptance.state = 'cancelled'
         acceptance.close_reason = 'project_archived'
-        acceptance.decided_at = now()
-        acceptance.updated_at = now()
+        acceptance.decided_at = closedAt
+        acceptance.updated_at = closedAt
         acceptance.revision = (acceptance.revision ?? 1) + 1
         closedAcceptances.push(acceptance.id)
       }
