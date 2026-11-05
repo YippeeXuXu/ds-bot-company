@@ -250,6 +250,41 @@ test('the events page follows its cursor and never repeats an event', async () =
   rmSync(home, { recursive: true, force: true })
 })
 
+test('the events read narrows to one project and can walk backwards from the newest', async () => {
+  const home = tempHome()
+  const { api, rooms } = open(home)
+  const seed_ = await seed(api, rooms)
+  const created = await command(api, 'project.create', draft(seed_))
+  const projectId = created.body.body.project.id
+  await command(api, 'project.update', { project_id: projectId, goal: '换一个目标' })
+  await command(api, 'project.member.add', { project_id: projectId, employee_id: seed_.beta })
+
+  // A project names its own events through `aggregate_id`. The company and department
+  // events stay out of this page, and the order stays the journal's.
+  const own = await api.events({ project_id: projectId })
+  assert.equal(own.status, 200)
+  assert.deepEqual(own.body.events.map(event => event.type), ['project.created', 'project.group.bound', 'project.updated', 'project.member.added'])
+  assert.deepEqual(own.body.events.map(event => event.cursor), [6, 6, 7, 8])
+  assert.equal(own.body.has_more, false)
+
+  // `order=desc` is what a recent-activity panel asks for: newest first, bounded, and its
+  // `cursor` is the oldest event on the page, so passing it back walks further back.
+  const newest = await api.events({ project_id: projectId, order: 'desc', limit: '2' })
+  assert.deepEqual(newest.body.events.map(event => event.type), ['project.member.added', 'project.updated'])
+  assert.equal(newest.body.cursor, '7')
+  assert.equal(newest.body.has_more, true)
+
+  const older = await api.events({ project_id: projectId, order: 'desc', limit: '2', cursor: newest.body.cursor })
+  assert.deepEqual(older.body.events.map(event => event.type), ['project.group.bound', 'project.created'])
+  assert.equal(older.body.cursor, '6')
+  assert.equal(older.body.has_more, false)
+
+  const missing = await api.events({ project_id: 'prj_missing' })
+  assert.equal(missing.status, 404)
+  assert.equal(missing.body.code, 'project/not-found')
+  rmSync(home, { recursive: true, force: true })
+})
+
 test('a null query is read as an empty one instead of failing the screen', async () => {
   const home = tempHome()
   const { api, rooms } = open(home)

@@ -109,7 +109,10 @@ export function acceptanceHandlers() {
       return {
         aggregate_id: acceptance.id,
         body: { acceptance },
-        events: [{ type: 'acceptance.submitted', data: { acceptance_id: acceptance.id, project_id: project.id } }],
+        // The submitting employee travels with the event so the project page can name the
+        // person without a second lookup. Older lines keep their text; readers fall back to
+        // the generic member label when the field is absent.
+        events: [{ type: 'acceptance.submitted', data: { acceptance_id: acceptance.id, project_id: project.id, employee_id: acceptance.requester_employee_id } }],
       }
     },
 
@@ -142,8 +145,10 @@ export function acceptanceHandlers() {
         aggregate_id: acceptance.id,
         body: { acceptance },
         // The journal records the decision and not the owner's words: the opinion is
-        // business text and stays in the object (contract §5.2).
-        events: [{ type: 'acceptance.decided', data: { acceptance_id: acceptance.id, decision } }],
+        // business text and stays in the object (contract §5.2). The project id rides on
+        // the event itself, so a project's activity is readable without walking every
+        // acceptance; older decisions that lack it are resolved from the acceptance record.
+        events: [{ type: 'acceptance.decided', data: { acceptance_id: acceptance.id, project_id: acceptance.project_id, decision } }],
       }
     },
   }
