@@ -585,8 +585,10 @@ export function install(rt) {
         }
         case 'company-model':
           return ok((await rt.companyApi.model(body)).body)
-        case 'company-events':
-          return ok((await rt.companyApi.events(body)).body)
+        case 'company-events': {
+          const result = await rt.companyApi.events(body)
+          return result.status === 200 ? ok(result.body) : { ok: false, error: result.body }
+        }
         // The to-do read: same answer as GET /api/company/todos, through the channel the
         // screens already use for everything else.
         case 'company-todos': {
