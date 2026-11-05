@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { COMMAND_PATH, EVENTS_PATH, MODEL_PATH, createCompanyApi } from '../src/host/company/api.js'
+import { TODOS_PATH } from '../src/host/company/todos.js'
 import { createCommands } from '../src/host/company/commands.js'
 import { orgHandlers } from '../src/host/company/org.js'
 import { projectHandlers } from '../src/host/company/projects.js'
@@ -311,6 +312,7 @@ test('the routes are registered on the host carrier and disposed with the plugin
     [COMMAND_PATH, ['POST']],
     [MODEL_PATH, ['GET']],
     [EVENTS_PATH, ['GET']],
+    [TODOS_PATH, ['GET']],
   ])
 
   const post = await routes[0].fetch(new Request(`http://127.0.0.1${COMMAND_PATH}`, {
@@ -331,6 +333,6 @@ test('the routes are registered on the host carrier and disposed with the plugin
   assert.equal((await broken.json()).code, 'company/invalid')
 
   dispose()
-  assert.deepEqual(disposed, [COMMAND_PATH, MODEL_PATH, EVENTS_PATH])
+  assert.deepEqual(disposed, [COMMAND_PATH, MODEL_PATH, EVENTS_PATH, TODOS_PATH])
   rmSync(home, { recursive: true, force: true })
 })

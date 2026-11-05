@@ -11,7 +11,9 @@
 // without matching message text. A command's own refusal is the company layer's decision
 // and keeps its code in the body; HTTP only says what kind of answer it is.
 import { readFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { projectDetailOf } from './projects.js'
+import { createTodos, TODOS_PATH } from './todos.js'
 
 export const COMMAND_PATH = '/api/company/command'
 export const MODEL_PATH = '/api/company/model'
@@ -46,6 +48,14 @@ const STATUS = new Map([
   ['project/invalid', 422],
   ['project/owner-required', 422],
   ['project/missing-input', 422],
+  // The to-do view's own refusals: a bad window, a card that is gone, a card that changed
+  // under the caller, an answer this build cannot give, and the D7 acceptance refusal.
+  ['todo/invalid', 422],
+  ['todo/unknown', 404],
+  ['todo/changed', 409],
+  ['todo/stale', 409],
+  ['todo/unsupported', 422],
+  ['owner_only_requires_user', 422],
 ])
 
 export const statusOf = code => STATUS.get(code) ?? 500
@@ -66,10 +76,21 @@ export const queryOf = url => {
   return query
 }
 
-export function createCompanyApi({ store, execute, groups = {}, now = Date.now }) {
+export function createCompanyApi({ store, execute, groups = {}, now = Date.now, approvals = () => [], sessionBot, home, redact = value => value }) {
   const roomMembers = project => {
     if (typeof groups.members !== 'function' || project.group_chat_ref == null) return undefined
     return groups.members(project.group_chat_ref)
+  }
+
+  // The to-do read is the one answer assembled from several sources rather than projected
+  // from one table. It is created once so the route and the client channel cannot drift.
+  const todos = createTodos({ store, approvals, sessionBot, home: home ?? dirname(store.dir), now, redact })
+  const todosRead = (input = {}) => {
+    try {
+      return { status: 200, body: todos.read(input ?? {}) }
+    } catch (error) {
+      return { status: statusOf(error?.code), body: failureBody(error) }
+    }
   }
 
   // The read model: the whole company in one answer, or one project in detail. A company
@@ -186,11 +207,12 @@ export function createCompanyApi({ store, execute, groups = {}, now = Date.now }
       }),
       ctx.connection.fetch.register({ path: MODEL_PATH, methods: ['GET'], requestBody: 'buffered', fetch: read(model) }),
       ctx.connection.fetch.register({ path: EVENTS_PATH, methods: ['GET'], requestBody: 'buffered', fetch: read(events) }),
+      ctx.connection.fetch.register({ path: TODOS_PATH, methods: ['GET'], requestBody: 'buffered', fetch: read(todosRead) }),
     ]
     return () => {
       for (const dispose of disposers) dispose?.()
     }
   }
 
-  return { command, model, events, register }
+  return { command, model, events, todos: todosRead, register }
 }

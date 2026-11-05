@@ -51,7 +51,41 @@ export function install(rt) {
   const execute = commands.execute
   // The HTTP layer and the client channel read the same three answers; the groups adapter
   // is shared so a screen's `group` block comes from the roster, not a copy of it.
-  const api = createCompanyApi({ store, execute, groups: groupAdapter(rt), now })
+  // The to-do view reads what the other modules already know: the live cards, the review
+  // records, the host facts, and the host's secret redactor for its titles. The three are
+  // passed as lookups, not values, because the roster and the approval queue change after
+  // install.
+  const api = createCompanyApi({
+    store,
+    execute,
+    groups: groupAdapter(rt),
+    now,
+    approvals: () => rt.approvalsView?.() ?? [],
+    sessionBot: id => rt.selfOf?.(id),
+    home: rt.home,
+    redact: text => (typeof rt.redactSecrets === 'function' ? rt.redactSecrets(text) : text),
+  })
+  // A company file written by an older plugin is read as the current version in memory; the
+  // upgrade is saved back once, with the one event that records it, so the file stops being
+  // ambiguous. A read-only company keeps the pending upgrade for the next writable start.
+  const migration = store.migration()
+  if (migration !== undefined && store.readOnly() === undefined) {
+    void (async () => {
+      try {
+        await store.commit(store.state)
+        await store.appendEvents([{
+          id: 'evt_migrated',
+          cursor: store.state.revision,
+          at: new Date(now()).toISOString(),
+          type: 'company/migrated',
+          data: migration,
+        }])
+        store.clearMigration()
+      } catch (error) {
+        warn('ds-bot: could not write the company upgrade: %s', error?.message ?? String(error))
+      }
+    })()
+  }
   // `rt.company` is what the HTTP layer and the tools call.
   rt.company = { dir, store, execute, commands: commands.commands, api, close: () => store.close() }
   Object.assign(rt, { companyExecute: execute, companyStore: store, companyApi: api, companyState: () => store.state })

@@ -14,7 +14,11 @@ import { join } from 'node:path'
 import { replaceFile } from '../files.js'
 import { homeLock } from '../home-lock.js'
 
-export const COMPANY_VERSION = 1
+export const COMPANY_VERSION = 2
+// v1 files carry the same six tables; v2 adds the two to-do tables. A v1 file is read as
+// v2 in memory (revision untouched) and saved back as v2 on the next commit; `migration`
+// reports that upgrade once, so the caller can record one `company/migrated` event.
+const READABLE_VERSIONS = [1, 2]
 
 // Error codes follow the plugin's `area/kind` shape, so the HTTP layer (M1a-5) can turn
 // them into status codes without matching on message text.
@@ -31,17 +35,21 @@ export const emptyCompanyState = () => ({
   members: {},
   // One entry per committed operation_key: the replay record behind idempotency.
   operation_log: {},
+  // v2: acceptance objects (M1b-2b) and the append-only record of answers given from the
+  // to-do view. Both are empty on a v1 file, so the upgrade loses nothing.
+  acceptances: {},
+  todo_log: {},
 })
 
 const isTable = value => value !== null && typeof value === 'object' && !Array.isArray(value)
-const TABLES = ['companies', 'departments', 'employees', 'projects', 'members', 'operation_log']
+const TABLES = ['companies', 'departments', 'employees', 'projects', 'members', 'operation_log', 'acceptances', 'todo_log']
 
 // A file written by a newer plugin is not a file this version can edit: its tables may
 // mean something else, so it counts as corrupt rather than being rewritten in the old
 // shape.
 function shapeTrouble(parsed) {
   if (!isTable(parsed)) return 'the file does not hold an object'
-  if (parsed.version !== COMPANY_VERSION) return `version ${parsed.version} is not ${COMPANY_VERSION}`
+  if (!READABLE_VERSIONS.includes(parsed.version)) return `version ${parsed.version} is not ${COMPANY_VERSION}`
   if (!Number.isInteger(parsed.revision) || parsed.revision < 0) return 'revision is not a whole number'
   for (const name of TABLES) if (parsed[name] !== undefined && !isTable(parsed[name])) return `${name} is not a table`
   return undefined
@@ -56,6 +64,8 @@ export function createCompanyStore({ dir, now = Date.now, warn = () => {}, useLo
   // Why the file cannot be used: parse trouble, a newer version, two active employees
   // for one Bot. The file stays untouched until someone fixes or moves it.
   let stuck
+  // The v1 → v2 upgrade noticed on load, or undefined once written back.
+  let migration
   // The other dsh holding state.lock while this one may only read.
   let holder
   let disposed = false
@@ -114,6 +124,10 @@ export function createCompanyStore({ dir, now = Date.now, warn = () => {}, useLo
       return state
     }
     for (const name of TABLES) if (parsed[name] === undefined) parsed[name] = {}
+    if (parsed.version !== COMPANY_VERSION) {
+      migration = { from: parsed.version, to: COMPANY_VERSION }
+      parsed.version = COMPANY_VERSION
+    }
     state = parsed
     byBotId = rebuildIndex()
     if (stuck !== undefined) warn('ds-bot: company %s is unusable: %s', statePath, stuck)
@@ -181,5 +195,15 @@ export function createCompanyStore({ dir, now = Date.now, warn = () => {}, useLo
     appendEvents,
     close,
     now,
+    // The pending v1 → v2 upgrade, undefined when there is none or it was written back.
+    // Reading it loads the file first: the upgrade is noticed while loading, and a caller
+    // that only looks here must not be told "nothing to do" before the file was read.
+    migration: () => {
+      load()
+      return migration
+    },
+    clearMigration: () => {
+      migration = undefined
+    },
   }
 }
