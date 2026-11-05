@@ -215,8 +215,7 @@ export function CompanyPageView(props) {
         }, '←'),
         h('div', { className: 'bc-co-depttitle' },
           h('h2', null, department.name),
-          h('p', null, t('{count} people', { count: staff.length }))),
-        h('span', { className: 'bc-co-pill' + (bound ? ' is-bound' : '') }, bound ? t('Linked') : t('Not bound yet'))),
+          h('p', null, t('{count} people', { count: staff.length })))),
       // Only the two blocks the read model can fill. Capability allocation and the
       // department owner have no fields yet, so they render nothing rather than an
       // empty shell.
@@ -358,7 +357,8 @@ export const COMPANY_PAGE_CSS = `
 .bc-co-company:hover{background:none}
 .bc-co.is-dim .bc-co-company{opacity:1}
 .bc-co-branches{display:flex;flex-direction:column;gap:14px;flex:1}
-.bc-co-branch{display:flex;align-items:flex-start}
+.bc-co-branch{position:relative;display:flex;align-items:flex-start}
+.bc-co-branch::before{content:"";position:absolute;left:-24px;top:16px;width:24px;height:1px;background:var(--bt-line)}
 .bc-co-dept{width:200px;flex:none;margin-right:10px}
 .bc-co-emps{display:flex;flex-direction:column;gap:2px;min-width:240px;padding-left:18px;position:relative}
 .bc-co-emps::before{content:"";position:absolute;left:6px;top:10px;bottom:10px;width:1px;background:var(--bt-line)}
@@ -375,7 +375,6 @@ export const COMPANY_PAGE_CSS = `
 .bc-co-back:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
 .bc-co-depttitle h2{margin:0;font-size:17px;line-height:24px;font-weight:600}
 .bc-co-depttitle p{margin:2px 0 0;font-size:12px;line-height:16px;color:var(--bt-ink-2)}
-.bc-co-pill{margin-left:auto;padding:4px 10px;border-radius:999px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);font-size:12px;line-height:16px}
 .bc-co-block{display:flex;flex-direction:column;gap:8px;padding-top:16px;border-top:1px solid var(--bt-line)}
 .bc-co-block h3{margin:0;font-size:13px;line-height:18px;font-weight:600;color:var(--bt-ink-2)}
 .bc-co-line{margin:0;font-size:13px;line-height:18px}
