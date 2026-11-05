@@ -46,11 +46,23 @@ const resultWord = item => (item.card_kind === 'approval' && item.host_reject_re
   ? item.host_reject_reason
   : stateLabel(item))
 
+// An acceptance answers a submitted revision, so its version belongs next to the
+// submitter. Only render it when the service actually sent one.
+const versionLabel = item => {
+  if (item.submitted_version === null || item.submitted_version === undefined) return ''
+  const value = String(item.submitted_version).trim()
+  return value ? t('Version {n}', { n: value }) : ''
+}
+
 const metaOf = (item, handled) => {
   const approval = item.card_kind === 'approval'
   const parts = []
   if (item.project_name) parts.push(item.project_name)
   parts.push(approval ? t('Approval') : t('Acceptance review'))
+  if (!approval) {
+    const version = versionLabel(item)
+    if (version) parts.push(version)
+  }
   if (handled) parts.push(resultWord(item))
   else if (approval) {
     if (item.risk_text) parts.push(item.risk_text)

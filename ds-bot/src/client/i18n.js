@@ -1209,6 +1209,7 @@ Object.assign(ZH, HOST_ZH, {
   Agree: '同意', Pass: '通过', Return: '退回', 'Look into it': '细究', 'Add a note': '补充意见',
   'Write a note, optional': '写一句意见，可不填', Note: '意见', 'Actions for {title}': '{title} 的操作',
   'View project': '查看项目',
+  'Version {n}': '第 {n} 版',
   // P09 待办接读接口后新增：状态词、不可答原因、答复反馈
   'Suspended · waiting': '已挂起 · 等待中',
   'Host offline': '宿主失联',

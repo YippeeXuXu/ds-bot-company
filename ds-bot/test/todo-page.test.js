@@ -87,6 +87,15 @@ test('approvals, acceptances and handled rows each land in their own section', (
   assert.match(text(tree), /Project A · Approval · Approved/)
 })
 
+test('a submitted acceptance shows its version, and only when the service sent one', () => {
+  const pending = acceptance({ submitted_version: 3 })
+  const done = handled({ card_kind: 'acceptance', state: 'accepted', project_name: 'Project B', submitted_version: 2 })
+  const tree = page({ todos: [pending, done, acceptance({ id: 'k2', submitted_version: null })] })
+  assert.match(text(tree), /Project B · Acceptance review · Version 3 · Submitted by Keyboard · Waiting 12 min/)
+  assert.match(text(tree), /Project B · Acceptance review · Version 2 · Passed/)
+  assert.doesNotMatch(text(tree), /Version null/)
+})
+
 test('counts drive the headings, and a truncated handled group says so', () => {
   const tree = page({
     todos: [approval(), handled()],

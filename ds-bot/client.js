@@ -1297,6 +1297,7 @@ Object.assign(ZH, HOST_ZH, {
   Note: "意见",
   "Actions for {title}": "{title} 的操作",
   "View project": "查看项目",
+  "Version {n}": "第 {n} 版",
   // P09 待办接读接口后新增：状态词、不可答原因、答复反馈
   "Suspended · waiting": "已挂起 · 等待中",
   "Host offline": "宿主失联",
@@ -10924,11 +10925,20 @@ var stateLabel = (item) => {
   }
 };
 var resultWord = (item) => item.card_kind === "approval" && item.host_reject_reason ? item.host_reject_reason : stateLabel(item);
+var versionLabel = (item) => {
+  if (item.submitted_version === null || item.submitted_version === void 0) return "";
+  const value = String(item.submitted_version).trim();
+  return value ? t("Version {n}", { n: value }) : "";
+};
 var metaOf = (item, handled) => {
   const approval = item.card_kind === "approval";
   const parts = [];
   if (item.project_name) parts.push(item.project_name);
   parts.push(approval ? t("Approval") : t("Acceptance review"));
+  if (!approval) {
+    const version = versionLabel(item);
+    if (version) parts.push(version);
+  }
   if (handled) parts.push(resultWord(item));
   else if (approval) {
     if (item.risk_text) parts.push(item.risk_text);
