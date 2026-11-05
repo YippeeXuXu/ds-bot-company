@@ -11963,6 +11963,18 @@ function ProjectChatDrawer({ projectName, goal, stage, members, pending, activit
   const rows2 = Array.isArray(members) ? members : [];
   const pendingRows = Array.isArray(pending) ? pending : [];
   const activityRows = Array.isArray(activity) ? activity : [];
+  const sections = [
+    (0, import_react25.createElement)("section", { className: "pc-sec" }, (0, import_react25.createElement)("h3", null, t("Goal")), (0, import_react25.createElement)("p", null, goal || t("No goal specified")))
+  ];
+  if (rows2.length) {
+    sections.push((0, import_react25.createElement)("section", { className: "pc-sec" }, (0, import_react25.createElement)("h3", null, t("Members")), rows2.map((row, index) => (0, import_react25.createElement)("button", { key: row.id ?? index, type: "button", className: "pc-member", onClick: row.onOpen ?? swallow }, (0, import_react25.createElement)("span", null, row.name ?? ""), (0, import_react25.createElement)("small", null, row.role ?? "")))));
+  }
+  if (pendingRows.length) {
+    sections.push((0, import_react25.createElement)("section", { className: "pc-sec" }, (0, import_react25.createElement)("h3", null, t("Waiting for you")), pendingRows.map((row, index) => (0, import_react25.createElement)("button", { key: row.id ?? index, type: "button", className: "pc-wait", onClick: row.onOpen ?? swallow }, (0, import_react25.createElement)("span", null, row.title ?? ""), (0, import_react25.createElement)("small", null, row.who ?? "")))));
+  }
+  if (activityRows.length) {
+    sections.push((0, import_react25.createElement)("section", { className: "pc-sec" }, (0, import_react25.createElement)("h3", null, t("Last activity")), activityRows.map((row, index) => (0, import_react25.createElement)("p", { key: index }, row))));
+  }
   return (0, import_react25.createElement)(
     "aside",
     { className: "pc-drawer", role: "dialog", "aria-label": t("Project details") },
@@ -11973,29 +11985,7 @@ function ProjectChatDrawer({ projectName, goal, stage, members, pending, activit
       (0, import_react25.createElement)("span", { className: "pc-drawer-name" }, projectName || t("Project details")),
       (0, import_react25.createElement)("span", { className: "pc-drawer-role" }, stage || statusLabel("setup"))
     ),
-    (0, import_react25.createElement)(
-      "div",
-      { className: "pc-drawer-body" },
-      (0, import_react25.createElement)("section", { className: "pc-sec" }, (0, import_react25.createElement)("h3", null, t("Goal")), (0, import_react25.createElement)("p", null, goal || t("No goal specified"))),
-      (0, import_react25.createElement)(
-        "section",
-        { className: "pc-sec" },
-        (0, import_react25.createElement)("h3", null, t("Members")),
-        rows2.length ? rows2.map((row, index) => (0, import_react25.createElement)("button", { key: index, type: "button", className: "pc-member", onClick: row.onOpen ?? swallow }, (0, import_react25.createElement)("span", null, row.name ?? ""), (0, import_react25.createElement)("small", null, row.role ?? ""))) : (0, import_react25.createElement)("p", null, t("No members yet"))
-      ),
-      (0, import_react25.createElement)(
-        "section",
-        { className: "pc-sec" },
-        (0, import_react25.createElement)("h3", null, t("Waiting for you")),
-        pendingRows.length ? pendingRows.map((row, index) => (0, import_react25.createElement)("button", { key: index, type: "button", className: "pc-wait", onClick: row.onOpen ?? swallow }, (0, import_react25.createElement)("span", null, row.title ?? ""), (0, import_react25.createElement)("small", null, row.who ?? ""))) : (0, import_react25.createElement)("p", null, t("All clear"))
-      ),
-      (0, import_react25.createElement)(
-        "section",
-        { className: "pc-sec" },
-        (0, import_react25.createElement)("h3", null, t("Last activity")),
-        activityRows.length ? activityRows.map((row, index) => (0, import_react25.createElement)("p", { key: index }, row)) : (0, import_react25.createElement)("p", null, t("No recent activity"))
-      )
-    ),
+    (0, import_react25.createElement)("div", { className: "pc-drawer-body" }, sections),
     (0, import_react25.createElement)("div", { className: "pc-drawer-foot" }, (0, import_react25.createElement)("button", { type: "button", className: "pc-btn pc-btn-primary", onClick: onOpenConfig }, t("Open project settings")))
   );
 }
@@ -12095,6 +12085,7 @@ var PROJECT_CHAT_CSS = `
 header[class*="_header"]:has(.pc-head){position:absolute;top:0;left:0;right:0;z-index:8;display:flex;justify-content:center;padding:0;background:transparent;pointer-events:none;height:auto!important;overflow:visible!important}
 header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inset:0 0 auto;height:calc(100% + 26px);background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
 .pc-frame{position:relative;display:flex;flex-direction:column;width:100%;pointer-events:none}
+.pc-host-head{position:absolute;top:0;left:0;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .pc-page{--pc-main:var(--bt-main);--pc-ring:var(--bt-line-2);--pc-ink-3:var(--bt-ink-3);position:relative;display:flex;flex-direction:column;min-height:0;flex:1;background:var(--bt-main);color:var(--bt-ink);font-family:var(--bt-font)}
 .pc-page *{box-sizing:border-box}
 .pc-head-holder{position:absolute;inset:0 0 auto;z-index:8;pointer-events:none}
@@ -12175,11 +12166,49 @@ var projectOfRoom = (model, roomId) => {
   const projects = model.projects || [];
   const project = projects.find((item) => item.group_binding?.room_id === roomId || item.group_chat_ref === roomId);
   if (!project) return null;
-  const members = (model.members || []).filter((item) => item.project_id === project.id && item.membership_status !== "left");
-  const employees = model.employees || [];
-  const names = members.map((item) => employees.find((entry) => entry.id === item.employee_id)?.name).filter(Boolean);
-  return { project, members, names };
+  return { project };
 };
+var loadProjectMembers = async (projectId) => {
+  try {
+    const detail = await call("company-model", { project_id: projectId });
+    return Array.isArray(detail?.project?.members) ? detail.project.members : [];
+  } catch {
+    return [];
+  }
+};
+function ProjectChatSurface({ props, project, members, pendingCount, open, onOpenDetails, onClose, onOpenConfig }) {
+  return (0, import_react25.createElement)(
+    import_react25.Fragment,
+    null,
+    // The host pill stays mounted (hidden) for its effects: beginVisit/endVisit, the
+    // room flag and CSS variables, and the new-message pills. It must not draw a second
+    // header over the P04 one.
+    (0, import_react25.createElement)("div", { className: "pc-host-head", "aria-hidden": "true" }, (0, import_react25.createElement)(HeaderPill, props)),
+    (0, import_react25.createElement)(
+      "div",
+      { className: "pc-frame" },
+      (0, import_react25.createElement)(ProjectChatHeader, {
+        projectName: project.name,
+        stage: statusLabel(project.status),
+        faces: (members || []).map((member) => member.name),
+        goal: project.goal || "",
+        pendingCount,
+        onBack: () => props.actions.openCompanyPage("list"),
+        onOpenDetails,
+        expanded: open
+      }),
+      Number(pendingCount) > 0 ? (0, import_react25.createElement)("div", { className: "pc-pin-layer" }, (0, import_react25.createElement)(ProjectChatPinned, { count: pendingCount, items: project.pinned_decisions || [] })) : null,
+      open ? (0, import_react25.createElement)(ProjectChatDrawer, {
+        projectName: project.name,
+        goal: project.goal || "",
+        stage: statusLabel(project.status),
+        members,
+        onClose,
+        onOpenConfig
+      }) : null
+    )
+  );
+}
 function ProjectChatHeaderSlot(props) {
   const roster = props.useRoster((value) => value);
   const room2 = roster?.roomsById?.[props.sessionId];
@@ -12193,8 +12222,22 @@ function ProjectChatHeaderSlot(props) {
       return;
     }
     let live = true;
-    loadCompany().then((model) => {
-      if (live) setData(projectOfRoom(model, roomId));
+    loadCompany().then(async (model) => {
+      const found = projectOfRoom(model, roomId);
+      if (!live) return;
+      if (!found) {
+        setData(null);
+        return;
+      }
+      const rawMembers = await loadProjectMembers(found.project.id);
+      if (!live) return;
+      const employees = model.employees ?? [];
+      const members = rawMembers.map((member) => ({
+        id: member.id,
+        name: employees.find((entry) => entry.id === member.employee_id)?.name ?? "",
+        role: member.role ?? ""
+      })).filter((member) => member.name);
+      setData({ project: found.project, members });
     });
     return () => {
       live = false;
@@ -12219,37 +12262,22 @@ function ProjectChatHeaderSlot(props) {
     setOpen(false);
     opener.current?.focus?.();
   };
-  return (0, import_react25.createElement)(
-    "div",
-    { className: "pc-frame" },
-    (0, import_react25.createElement)(ProjectChatHeader, {
-      projectName: project.name,
-      stage: statusLabel(project.status),
-      faces: data.names,
-      goal: project.goal || "",
-      pendingCount: 0,
-      onBack: () => props.actions.openCompanyPage("list"),
-      onOpenDetails: (event) => {
-        opener.current = event?.currentTarget ?? null;
-        setOpen(true);
-      },
-      expanded: open
-    }),
-    pending > 0 ? (0, import_react25.createElement)("div", { className: "pc-pin-layer" }, (0, import_react25.createElement)(ProjectChatPinned, { count: pending, items: project.pinned_decisions || [] })) : null,
-    open ? (0, import_react25.createElement)(ProjectChatDrawer, {
-      projectName: project.name,
-      goal: project.goal || "",
-      stage: statusLabel(project.status),
-      members: data.names,
-      pending: [],
-      activity: [],
-      onClose: close,
-      onOpenConfig: () => {
-        props.actions.openCompanyPage("detail", project.id);
-        close();
-      }
-    }) : null
-  );
+  return (0, import_react25.createElement)(ProjectChatSurface, {
+    props,
+    project,
+    members: data.members,
+    pendingCount: pending,
+    open,
+    onOpenDetails: (event) => {
+      opener.current = event?.currentTarget ?? null;
+      setOpen(true);
+    },
+    onClose: close,
+    onOpenConfig: () => {
+      props.actions.openCompanyPage("detail", project.id);
+      close();
+    }
+  });
 }
 
 // src/client/composer.js

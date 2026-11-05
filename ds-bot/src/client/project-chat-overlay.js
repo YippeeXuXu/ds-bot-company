@@ -1,4 +1,4 @@
-import { createElement as h, useEffect, useRef, useState } from 'react'
+import { createElement as h, Fragment, useEffect, useRef, useState } from 'react'
 import { t } from './i18n.js'
 import { SPRING_SHAPE, SPRING_TAP } from './motion.js'
 import { statusLabel } from './projects-page.js'
@@ -129,6 +129,22 @@ export function ProjectChatDrawer({ projectName, goal, stage, members, pending, 
   const rows = Array.isArray(members) ? members : []
   const pendingRows = Array.isArray(pending) ? pending : []
   const activityRows = Array.isArray(activity) ? activity : []
+  // A section with no data source is left out rather than filled with a placeholder:
+  // "All clear" would claim there is nothing to decide when nobody asked the store.
+  const sections = [
+    h('section', { className: 'pc-sec' }, h('h3', null, t('Goal')), h('p', null, goal || t('No goal specified'))),
+  ]
+  if (rows.length) {
+    sections.push(h('section', { className: 'pc-sec' }, h('h3', null, t('Members')), rows.map((row, index) =>
+      h('button', { key: row.id ?? index, type: 'button', className: 'pc-member', onClick: row.onOpen ?? swallow }, h('span', null, row.name ?? ''), h('small', null, row.role ?? '')))))
+  }
+  if (pendingRows.length) {
+    sections.push(h('section', { className: 'pc-sec' }, h('h3', null, t('Waiting for you')), pendingRows.map((row, index) =>
+      h('button', { key: row.id ?? index, type: 'button', className: 'pc-wait', onClick: row.onOpen ?? swallow }, h('span', null, row.title ?? ''), h('small', null, row.who ?? '')))))
+  }
+  if (activityRows.length) {
+    sections.push(h('section', { className: 'pc-sec' }, h('h3', null, t('Last activity')), activityRows.map((row, index) => h('p', { key: index }, row))))
+  }
   return h(
     'aside',
     { className: 'pc-drawer', role: 'dialog', 'aria-label': t('Project details') },
@@ -139,29 +155,7 @@ export function ProjectChatDrawer({ projectName, goal, stage, members, pending, 
       h('span', { className: 'pc-drawer-name' }, projectName || t('Project details')),
       h('span', { className: 'pc-drawer-role' }, stage || statusLabel('setup'))
     ),
-    h(
-      'div',
-      { className: 'pc-drawer-body' },
-      h('section', { className: 'pc-sec' }, h('h3', null, t('Goal')), h('p', null, goal || t('No goal specified'))),
-      h(
-        'section',
-        { className: 'pc-sec' },
-        h('h3', null, t('Members')),
-        rows.length ? rows.map((row, index) => h('button', { key: index, type: 'button', className: 'pc-member', onClick: row.onOpen ?? swallow }, h('span', null, row.name ?? ''), h('small', null, row.role ?? ''))) : h('p', null, t('No members yet'))
-      ),
-      h(
-        'section',
-        { className: 'pc-sec' },
-        h('h3', null, t('Waiting for you')),
-        pendingRows.length ? pendingRows.map((row, index) => h('button', { key: index, type: 'button', className: 'pc-wait', onClick: row.onOpen ?? swallow }, h('span', null, row.title ?? ''), h('small', null, row.who ?? ''))) : h('p', null, t('All clear'))
-      ),
-      h(
-        'section',
-        { className: 'pc-sec' },
-        h('h3', null, t('Last activity')),
-        activityRows.length ? activityRows.map((row, index) => h('p', { key: index }, row)) : h('p', null, t('No recent activity'))
-      )
-    ),
+    h('div', { className: 'pc-drawer-body' }, sections),
     h('div', { className: 'pc-drawer-foot' }, h('button', { type: 'button', className: 'pc-btn pc-btn-primary', onClick: onOpenConfig }, t('Open project settings')))
   )
 }
@@ -266,6 +260,7 @@ export const PROJECT_CHAT_CSS = `
 header[class*="_header"]:has(.pc-head){position:absolute;top:0;left:0;right:0;z-index:8;display:flex;justify-content:center;padding:0;background:transparent;pointer-events:none;height:auto!important;overflow:visible!important}
 header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inset:0 0 auto;height:calc(100% + 26px);background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
 .pc-frame{position:relative;display:flex;flex-direction:column;width:100%;pointer-events:none}
+.pc-host-head{position:absolute;top:0;left:0;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .pc-page{--pc-main:var(--bt-main);--pc-ring:var(--bt-line-2);--pc-ink-3:var(--bt-ink-3);position:relative;display:flex;flex-direction:column;min-height:0;flex:1;background:var(--bt-main);color:var(--bt-ink);font-family:var(--bt-font)}
 .pc-page *{box-sizing:border-box}
 .pc-head-holder{position:absolute;inset:0 0 auto;z-index:8;pointer-events:none}
@@ -334,9 +329,9 @@ header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inse
 
 
 // ---- 宿主槽位接线（P04 运行态） -------------------------------------------
-// 群头槽由本仓整体替换成 HeaderPill；群会话里我们改画 P04 浮层，私聊与单聊
-// 仍回 HostPill。项目数据走 company-model 只读接口，按 group_binding.room_id
-// 或 group_chat_ref 对上当前会话房间。
+// 群头槽由本仓改成 P04 浮层，私聊与单聊仍回 HeaderPill。宿主 pill 在项目群里保持
+// 挂载但不可见，visit 追踪、房间样式与新消息提示继续生效。项目数据走 company-model
+// 只读接口，按 group_binding.room_id 或 group_chat_ref 对上当前会话房间。
 
 let companyPromise = null
 const loadCompany = () => {
@@ -352,10 +347,50 @@ export const projectOfRoom = (model, roomId) => {
   const projects = model.projects || []
   const project = projects.find(item => item.group_binding?.room_id === roomId || item.group_chat_ref === roomId)
   if (!project) return null
-  const members = (model.members || []).filter(item => item.project_id === project.id && item.membership_status !== 'left')
-  const employees = model.employees || []
-  const names = members.map(item => employees.find(entry => entry.id === item.employee_id)?.name).filter(Boolean)
-  return { project, members, names }
+  return { project }
+}
+
+// The company list read carries no project members; its detail read does. A failed
+// detail read leaves the member area out rather than claiming the project has none.
+const loadProjectMembers = async projectId => {
+  try {
+    const detail = await call('company-model', { project_id: projectId })
+    return Array.isArray(detail?.project?.members) ? detail.project.members : []
+  } catch {
+    return []
+  }
+}
+
+export function ProjectChatSurface({ props, project, members, pendingCount, open, onOpenDetails, onClose, onOpenConfig }) {
+  return h(Fragment, null,
+    // The host pill stays mounted (hidden) for its effects: beginVisit/endVisit, the
+    // room flag and CSS variables, and the new-message pills. It must not draw a second
+    // header over the P04 one.
+    h('div', { className: 'pc-host-head', 'aria-hidden': 'true' }, h(HeaderPill, props)),
+    h('div', { className: 'pc-frame' },
+      h(ProjectChatHeader, {
+        projectName: project.name,
+        stage: statusLabel(project.status),
+        faces: (members || []).map(member => member.name),
+        goal: project.goal || '',
+        pendingCount,
+        onBack: () => props.actions.openCompanyPage('list'),
+        onOpenDetails,
+        expanded: open,
+      }),
+      Number(pendingCount) > 0
+        ? h('div', { className: 'pc-pin-layer' }, h(ProjectChatPinned, { count: pendingCount, items: project.pinned_decisions || [] }))
+        : null,
+      open
+        ? h(ProjectChatDrawer, {
+          projectName: project.name,
+          goal: project.goal || '',
+          stage: statusLabel(project.status),
+          members,
+          onClose,
+          onOpenConfig,
+        })
+        : null))
 }
 
 export function ProjectChatHeaderSlot(props) {
@@ -368,7 +403,20 @@ export function ProjectChatHeaderSlot(props) {
   useEffect(() => {
     if (!roomId) { setData(null); return }
     let live = true
-    loadCompany().then(model => { if (live) setData(projectOfRoom(model, roomId)) })
+    loadCompany().then(async model => {
+      const found = projectOfRoom(model, roomId)
+      if (!live) return
+      if (!found) { setData(null); return }
+      const rawMembers = await loadProjectMembers(found.project.id)
+      if (!live) return
+      const employees = model.employees ?? []
+      const members = rawMembers.map(member => ({
+        id: member.id,
+        name: employees.find(entry => entry.id === member.employee_id)?.name ?? '',
+        role: member.role ?? '',
+      })).filter(member => member.name)
+      setData({ project: found.project, members })
+    })
     return () => { live = false }
   }, [roomId])
   useEffect(() => {
@@ -387,26 +435,14 @@ export function ProjectChatHeaderSlot(props) {
   const project = data.project
   const pending = Number.isFinite(project.pending_count) ? project.pending_count : 0
   const close = () => { setOpen(false); opener.current?.focus?.() }
-  return h('div', { className: 'pc-frame' },
-    h(ProjectChatHeader, {
-      projectName: project.name,
-      stage: statusLabel(project.status),
-      faces: data.names,
-      goal: project.goal || '',
-      pendingCount: 0,
-      onBack: () => props.actions.openCompanyPage('list'),
-      onOpenDetails: event => { opener.current = event?.currentTarget ?? null; setOpen(true) },
-      expanded: open,
-    }),
-    pending > 0 ? h('div', { className: 'pc-pin-layer' }, h(ProjectChatPinned, { count: pending, items: project.pinned_decisions || [] })) : null,
-    open ? h(ProjectChatDrawer, {
-      projectName: project.name,
-      goal: project.goal || '',
-      stage: statusLabel(project.status),
-      members: data.names,
-      pending: [],
-      activity: [],
-      onClose: close,
-      onOpenConfig: () => { props.actions.openCompanyPage('detail', project.id); close() },
-    }) : null)
+  return h(ProjectChatSurface, {
+    props,
+    project,
+    members: data.members,
+    pendingCount: pending,
+    open,
+    onOpenDetails: event => { opener.current = event?.currentTarget ?? null; setOpen(true) },
+    onClose: close,
+    onOpenConfig: () => { props.actions.openCompanyPage('detail', project.id); close() },
+  })
 }
