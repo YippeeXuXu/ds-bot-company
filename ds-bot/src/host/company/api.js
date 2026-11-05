@@ -135,15 +135,42 @@ export function createCompanyApi({ store, execute, groups = {}, now = Date.now, 
     return { status: 200, body }
   }
 
+  // Which project an event is about. The subject rides on the event itself: a project
+  // command names the project in `aggregate_id`, an acceptance submission carries
+  // `data.project_id`, and a decision journaled before that field existed is resolved
+  // through the acceptance record. An older line keeps its original text — the
+  // attribution is computed at read time, so an old journal reads like a new one.
+  const eventProject = event => {
+    const announced = event?.data?.project_id
+    if (typeof announced === 'string') return announced
+    if (typeof event?.aggregate_id === 'string' && store.state.projects?.[event.aggregate_id] !== undefined) return event.aggregate_id
+    const acceptanceId = event?.data?.acceptance_id
+    if (typeof acceptanceId !== 'string') return null
+    const acceptance = store.state.acceptances?.[acceptanceId]
+    return typeof acceptance?.project_id === 'string' ? acceptance.project_id : null
+  }
+
   // Events are appended once per committed command, so the file is already in cursor
   // order and a page is a slice. A torn last line (a write cut short) is skipped rather
   // than failing the read: the journal tolerates one missing audit line.
+  //
+  // `project_id` narrows the page to one project's own events. `order=desc` walks backwards:
+  // matches come newest first and its `cursor` is the oldest event on the page, so passing
+  // it back returns the ones before it — a recent-activity panel asks once for its window.
+  // The default stays the ascending cursor page the incremental readers poll.
   const events = async (input = {}) => {
     const query = input ?? {}
+    const wantedProject = query.project_id === undefined || query.project_id === null || query.project_id === ''
+      ? null
+      : String(query.project_id)
+    if (wantedProject !== null && store.state.projects?.[wantedProject] === undefined) {
+      return { status: 404, body: { code: 'project/not-found', message: `No project ${wantedProject}.`, details: { project_id: wantedProject } } }
+    }
     const since = Number.parseInt(String(query.cursor ?? '0'), 10)
     const from = Number.isInteger(since) && since > 0 ? since : 0
     const asked = Number.parseInt(String(query.limit ?? '200'), 10)
     const limit = clamp(Number.isInteger(asked) ? asked : 200, 1, 500)
+    const newestFirst = query.order === 'desc'
     let text = ''
     try {
       text = await readFile(store.eventsPath, 'utf8')
@@ -163,8 +190,17 @@ export function createCompanyApi({ store, execute, groups = {}, now = Date.now, 
         continue
       }
       const value = Number(event?.cursor)
-      if (!Number.isFinite(value) || value <= from) continue
+      if (!Number.isFinite(value)) continue
+      // Ascending pages walk forward from the cursor; descending pages walk back from it,
+      // so the same `cursor` request means "the page after this one" in both directions.
+      if (newestFirst ? from > 0 && value >= from : value <= from) continue
+      if (wantedProject !== null && eventProject(event) !== wantedProject) continue
       pending.push(event)
+    }
+    if (newestFirst) {
+      const page = pending.slice(Math.max(0, pending.length - limit)).reverse()
+      const cursor = page.length === 0 ? from : Number(page[page.length - 1].cursor)
+      return { status: 200, body: { cursor: String(cursor), events: page, has_more: pending.length > limit } }
     }
     const page = pending.slice(0, limit)
     const cursor = page.length === 0 ? from : Number(page[page.length - 1].cursor)
