@@ -617,6 +617,11 @@ export function createTodos({ store, approvals = () => [], sessionBot, home, now
     }
     for (const acceptance of Object.values(state.acceptances ?? {})) {
       if (!isObject(acceptance)) continue
+      // Closed by its project archive (M1c, contract §3.5 rule 9): the acceptance records why
+      // it ended, but the project is gone, so there is nothing left to answer. Skipped before
+      // the row is built, so `cancelled` does not show up as a handled card and no row field
+      // has to carry the reason. Other close reasons stay listed.
+      if (acceptance.close_reason === 'project_archived') continue
       const row = acceptanceRow({ state, acceptance, at })
       if (row === undefined) continue
       ;(row.handled ? handled : waiting).push(row)
