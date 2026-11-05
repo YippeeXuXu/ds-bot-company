@@ -1,6 +1,7 @@
 import { createElement as h, useState } from 'react'
 import { CheckIcon, ShieldIcon } from './icons.js'
 import { t } from './i18n.js'
+import { waitText } from './wait-text.js'
 
 // The decisions that wait for the owner: approvals first, then acceptances, then
 // what has already been handled. Rows come from `company-todos`; the first nine
@@ -14,15 +15,6 @@ import { t } from './i18n.js'
 //   session_id, room_id, request_id, tool, target, acceptance_id, task_id,
 //   submitted_version, acceptance_criteria, revision, owner_only,
 //   requester_bot_id, coordinator_bot_id }
-
-// Minutes read as "12 分钟" up to an hour, then "2 小时 5 分".
-const waitText = value => {
-  const total = Math.max(0, Math.round(Number(value) || 0))
-  if (total < 60) return `${total} ${t('min')}`
-  const hours = Math.floor(total / 60)
-  const rest = total % 60
-  return rest ? `${hours} ${t('h')} ${rest} ${t('min')}` : `${hours} ${t('h')}`
-}
 
 const stateLabel = item => {
   switch (item.state) {

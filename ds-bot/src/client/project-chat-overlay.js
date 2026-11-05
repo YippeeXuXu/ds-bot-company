@@ -4,6 +4,7 @@ import { SPRING_SHAPE, SPRING_TAP } from './motion.js'
 import { statusLabel } from './projects-page.js'
 import { call } from './api.js'
 import { HeaderPill } from './header.js'
+import { activityLines, pendingRows, pinnedRows, waitingTotal } from './project-activity.js'
 
 // P04 项目群聊叠加件（原型 v2.11 / 设计语言 v0.2.7 §4.6）。
 // 消息流与输入区由宿主会话 surface 提供，本模块只渲染浮动群头、状态条、
@@ -139,8 +140,13 @@ export function ProjectChatDrawer({ projectName, goal, stage, members, pending, 
       h('button', { key: row.id ?? index, type: 'button', className: 'pc-member', onClick: row.onOpen ?? swallow }, h('span', null, row.name ?? ''), h('small', null, row.role ?? '')))))
   }
   if (pendingRows.length) {
-    sections.push(h('section', { className: 'pc-sec' }, h('h3', null, t('Waiting for you')), pendingRows.map((row, index) =>
-      h('button', { key: row.id ?? index, type: 'button', className: 'pc-wait', onClick: row.onOpen ?? swallow }, h('span', null, row.title ?? ''), h('small', null, row.who ?? '')))))
+    sections.push(h('section', { className: 'pc-sec' }, h('h3', null, t('Waiting for you')), pendingRows.map((row, index) => {
+      const lines = [h('span', null, row.title ?? ''), h('small', null, row.who ?? '')]
+      // A row with no way in is text: an archived project keeps the record, not the
+      // button, the pointer or the click state (§3:60, K-07).
+      if (!row.onOpen) return h('div', { key: row.id ?? index, className: 'pc-wait is-readonly' }, ...lines)
+      return h('button', { key: row.id ?? index, type: 'button', className: 'pc-wait', onClick: row.onOpen }, ...lines)
+    })))
   }
   if (activityRows.length) {
     sections.push(h('section', { className: 'pc-sec' }, h('h3', null, t('Last activity')), activityRows.map((row, index) => h('p', { key: index }, row))))
@@ -288,7 +294,7 @@ header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inse
 .pc-stat-text{color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pc-stat-count{font-weight:700;color:var(--bt-ink)}
 .pc-pin-layer{position:absolute;left:0;right:0;top:calc(100% + 8px);z-index:9;display:flex;justify-content:center;padding:0 12px;pointer-events:none}
-.pc-pin{width:min(100%,var(--dsh-chat-content-width,960px));max-height:72px;overflow:hidden;margin:0;padding:10px 14px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-card);pointer-events:none}
+.pc-pin{width:min(100%,var(--dsh-chat-content-width,960px));overflow:hidden;margin:0;padding:10px 14px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-card);pointer-events:none}
 .pc-pin-head{display:flex;align-items:baseline;gap:6px;font-size:12px;line-height:16px}
 .pc-pin-title{font-weight:600;color:var(--bt-ink)}
 .pc-pin-sub{color:var(--pc-ink-3)}
@@ -314,6 +320,8 @@ header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inse
 .pc-sec p{margin:0;color:var(--bt-ink-2)}
 .pc-member,.pc-wait{display:flex;justify-content:space-between;align-items:baseline;gap:12px;width:100%;padding:8px 0;border:0;border-top:1px solid var(--bt-line);background:transparent;color:var(--bt-ink);font:13px/18px var(--bt-font);text-align:left;cursor:pointer}
 .pc-member:hover,.pc-wait:hover{color:var(--bt-accent)}
+.pc-wait.is-readonly{cursor:default}
+.pc-wait.is-readonly:hover{color:var(--bt-ink)}
 .pc-member small,.pc-wait small{font-size:11px;color:var(--pc-ink-3)}
 .pc-drawer-foot{padding:12px 16px 16px;border-top:1px solid var(--bt-line)}
 .pc-btn{width:100%;min-height:40px;border:0;border-radius:999px;background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));font:500 13px/18px var(--bt-font);cursor:pointer}
@@ -324,7 +332,7 @@ header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inse
 .pc-dock.is-out .pc-dock-pill{animation:pc-dock-out .16s cubic-bezier(.4,0,1,1) forwards;pointer-events:none}
 @keyframes pc-pane-in{from{transform:translateX(24px);opacity:0}to{transform:translateX(0);opacity:1}}
 @media (prefers-reduced-motion:reduce){.pc-dock-pill{animation:none}.pc-drawer{animation:none}}
-@media (max-width:640px){.pc-pill{max-width:78%}.pc-stat{padding:8px 12px 0}.pc-body{padding:12px 12px 56px}.pc-pin{max-height:56px;padding:8px 12px}.pc-pin-row{margin-top:4px}}
+@media (max-width:640px){.pc-pill{max-width:78%}.pc-stat{padding:8px 12px 0}.pc-body{padding:12px 12px 56px}.pc-pin{padding:8px 12px}.pc-pin-row{margin-top:4px}}
 `
 
 
@@ -361,7 +369,33 @@ const loadProjectMembers = async projectId => {
   }
 }
 
-export function ProjectChatSurface({ props, project, members, pendingCount, open, onOpenDetails, onClose, onOpenConfig }) {
+// C-02: the project's waiting decisions and events are read here, once per surface
+// (status bar + pinned card) and once per drawer opening; a failed read stays null and
+// its section is left out instead of showing a placeholder (spec v0.4.1 §3).
+const loadProjectTodos = async projectId => {
+  try {
+    return await call('company-todos', { project_id: projectId })
+  } catch {
+    return null
+  }
+}
+
+// An archived project still shows its remaining rows, but they lead nowhere (§3:60, K-07).
+export const drawerPendingRows = (project, todos, openTodos) =>
+  pendingRows(todos, project?.status === 'archived' ? null : openTodos)
+
+const loadProjectEvents = async projectId => {
+  try {
+    // Newest five of ten asked (§1.2:45, A5): the default order is oldest-first, so ask
+    // for descending explicitly instead of relying on the page order; the client keeps
+    // the newest five, so a later cap raise needs no client change.
+    return await call('company-events', { project_id: projectId, order: 'desc', limit: 10 })
+  } catch {
+    return null
+  }
+}
+
+export function ProjectChatSurface({ props, project, members, pendingCount, pinned, pending, activity, open, onOpenDetails, onClose, onOpenConfig }) {
   return h(Fragment, null,
     // The host pill stays mounted (hidden) for its effects: beginVisit/endVisit, the
     // room flag and CSS variables, and the new-message pills. It must not draw a second
@@ -379,7 +413,7 @@ export function ProjectChatSurface({ props, project, members, pendingCount, open
         expanded: open,
       }),
       Number(pendingCount) > 0
-        ? h('div', { className: 'pc-pin-layer' }, h(ProjectChatPinned, { count: pendingCount, items: project.pinned_decisions || [] }))
+        ? h('div', { className: 'pc-pin-layer' }, h(ProjectChatPinned, { count: pendingCount, items: Array.isArray(pinned) ? pinned : [] }))
         : null,
       open
         ? h(ProjectChatDrawer, {
@@ -387,6 +421,8 @@ export function ProjectChatSurface({ props, project, members, pendingCount, open
           goal: project.goal || '',
           stage: statusLabel(project.status),
           members,
+          pending,
+          activity,
           onClose,
           onOpenConfig,
         })
@@ -398,10 +434,12 @@ export function ProjectChatHeaderSlot(props) {
   const room = roster?.roomsById?.[props.sessionId]
   const roomId = room?.id ?? room?.sessionId
   const [data, setData] = useState(null)
+  const [todos, setTodos] = useState(null)
+  const [drawer, setDrawer] = useState(null)
   const [open, setOpen] = useState(false)
   const opener = useRef(null)
   useEffect(() => {
-    if (!roomId) { setData(null); return }
+    if (!roomId) { setData(null); setTodos(null); return }
     let live = true
     loadCompany().then(async model => {
       const found = projectOfRoom(model, roomId)
@@ -410,15 +448,31 @@ export function ProjectChatHeaderSlot(props) {
       const rawMembers = await loadProjectMembers(found.project.id)
       if (!live) return
       const employees = model.employees ?? []
+      const names = new Map(employees.filter(entry => typeof entry?.id === 'string').map(entry => [entry.id, entry.name ?? '']))
       const members = rawMembers.map(member => ({
         id: member.id,
         name: employees.find(entry => entry.id === member.employee_id)?.name ?? '',
         role: member.role ?? '',
       })).filter(member => member.name)
-      setData({ project: found.project, members })
+      setData({ project: found.project, members, names })
+      loadProjectTodos(found.project.id).then(result => { if (live) setTodos(result) })
     })
     return () => { live = false }
   }, [roomId])
+  // One read per opening: the drawer drops its rows when it closes (§4).
+  useEffect(() => {
+    if (!open || !data) return
+    let live = true
+    setDrawer(null)
+    Promise.all([loadProjectTodos(data.project.id), loadProjectEvents(data.project.id)]).then(([todosResult, eventsResult]) => {
+      if (!live) return
+      setDrawer({
+        pending: drawerPendingRows(data.project, todosResult, () => { setOpen(false); props.actions.openCompanyPage('todos') }),
+        activity: activityLines(eventsResult, { names: data.names }),
+      })
+    })
+    return () => { live = false }
+  }, [open, data])
   useEffect(() => {
     if (!open) return
     const onKey = event => {
@@ -433,13 +487,15 @@ export function ProjectChatHeaderSlot(props) {
   }, [open])
   if (!data) return h(HeaderPill, props)
   const project = data.project
-  const pending = Number.isFinite(project.pending_count) ? project.pending_count : 0
-  const close = () => { setOpen(false); opener.current?.focus?.() }
+  const close = () => { setOpen(false); setDrawer(null); opener.current?.focus?.() }
   return h(ProjectChatSurface, {
     props,
     project,
     members: data.members,
-    pendingCount: pending,
+    pendingCount: waitingTotal(todos),
+    pinned: pinnedRows(todos),
+    pending: drawer?.pending,
+    activity: drawer?.activity,
     open,
     onOpenDetails: event => { opener.current = event?.currentTarget ?? null; setOpen(true) },
     onClose: close,

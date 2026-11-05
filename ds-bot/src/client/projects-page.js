@@ -1,5 +1,6 @@
 import { createElement as h, useEffect, useRef, useState } from 'react'
 import { call } from './api.js'
+import { CompanyPage, COMPANY_PAGE_CSS, botOpenable } from './company-page.js'
 import { t } from './i18n.js'
 import { ProjectPage } from './project-page.js'
 import { ProjectWizard } from './project-wizard.js'
@@ -65,6 +66,9 @@ export function CompanySurface({ page, actions, roster }) {
   // the owner leaves it through the sidebar, not by pressing Escape.
   const kindRef = useRef(kind)
   kindRef.current = kind
+  // A page inside the panel may claim Escape for one level before the panel closes;
+  // the company page uses it to step back from a department to the chart.
+  const escapeGuard = useRef(null)
   const close = () => actions.closeCompanyPage()
 
   useEffect(() => {
@@ -82,7 +86,9 @@ export function CompanySurface({ page, actions, roster }) {
       if (event.key !== 'Escape' || event.target instanceof HTMLSelectElement) return
       event.preventDefault()
       event.stopPropagation()
-      if (kindRef.current !== 'todos') close()
+      if (kindRef.current === 'todos') return
+      if (kindRef.current === 'company' && escapeGuard.current?.()) return
+      close()
     }
     document.addEventListener('keydown', onKey, true)
     return () => { document.removeEventListener('keydown', onKey, true); opener.current?.focus?.() }
@@ -118,7 +124,7 @@ export function CompanySurface({ page, actions, roster }) {
   }
   useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort() }, [])
   useEffect(() => {
-    if (kind !== 'todos') return
+    if (kind !== 'todos' && kind !== 'company') return
     const controller = new AbortController()
     void loadTodos(controller.signal)
     return () => controller.abort()
@@ -293,18 +299,46 @@ export function CompanySurface({ page, actions, roster }) {
     .filter(item => filter === 'all' || (item.status ?? 'setup') === filter)
     .filter(item => !wanted || [item.name, item.goal].filter(Boolean).some(value => String(value).toLowerCase().includes(wanted)))
   const onTodos = kind === 'todos'
-  return h('div', { className: 'bc-surface', role: 'dialog', 'aria-modal': true, 'aria-label': onTodos ? t('Todos') : t('Projects'), tabIndex: -1, ref: box },
+  const onCompany = kind === 'company'
+  const surfaceLabel = onTodos ? t('Todos') : onCompany ? t('Company') : t('Projects')
+  const closeLabel = onTodos ? t('Close todos') : onCompany ? t('Close company page') : t('Close projects')
+  const brandTarget = onTodos ? 'todos' : onCompany ? 'company' : 'list'
+  // A Bot id is only openable while the roster still resolves it; a stale id would
+  // otherwise switch the panel to a chat that cannot render. A roster that has not
+  // been assembled yet is not a verdict on the Bot, so it opens the chat.
+  const openEmployeeChat = employee => {
+    const id = employee?.bot_id
+    if (!botOpenable(employee, roster)) return
+    // The panel and the chat are different views of the same right-hand space: close
+    // first, then hand the id to the session opener, exactly as group settings does.
+    close()
+    actions.openSession(id)
+  }
+  return h('div', { className: 'bc-surface', role: 'dialog', 'aria-modal': true, 'aria-label': surfaceLabel, tabIndex: -1, ref: box },
     h('div', { className: 'bc-shell' },
       h('header', { className: 'bc-header' },
-        h('button', { type: 'button', className: 'bc-brand', onClick: () => actions.openCompanyPage(onTodos ? 'todos' : 'list') }, onTodos ? t('Todos') : t('Projects')),
+        h('button', { type: 'button', className: 'bc-brand', onClick: () => actions.openCompanyPage(brandTarget) }, surfaceLabel),
         h('span', { className: 'bc-header-context' }, data.company?.name ?? t('Company workspace')),
-        h('button', { type: 'button', className: 'bc-icon', 'aria-label': onTodos ? t('Close todos') : t('Close projects'), onClick: close }, '×')),
+        h('button', { type: 'button', className: 'bc-icon', 'aria-label': closeLabel, onClick: close }, '×')),
       preview ? h('div', { className: 'bc-preview', role: 'status' }, t('Preview · Local sample data. Nothing has been saved.')) : null,
       notice ? h('div', { className: 'bc-notice', role: 'status' }, notice, h('button', { type: 'button', 'aria-label': t('Dismiss notice'), onClick: () => setNotice('') }, '×')) : null,
       h('main', { className: 'bc-content' },
         kind === 'wizard' ? h(ProjectWizard, { data, roster, preview, loading, error, mutate, onBack: () => actions.openCompanyPage('list'), onCreated: result => actions.openCompanyPage('detail', result.body?.project?.id) })
           : kind === 'detail' ? h(ProjectPage, { project, data, preview, loading: loading || detailLoading, error: detailError || error, onBack: () => actions.openCompanyPage('list'), onChat: () => project && openChat(project), onRetry: () => setDetailAttempt(value => value + 1), onCommand: async (command, fields) => { const result = await mutate(command, fields); setDetailAttempt(value => value + 1); return result } })
-            : onTodos ? h(TodoPage, {
+            : onCompany ? h(CompanyPage, {
+              data,
+              loading,
+              error,
+              todos: todosData,
+              todoLoading,
+              todoError,
+              escapeGuard,
+              onRetry: () => void load(),
+              onRetryTodos: () => setTodoAttempt(value => value + 1),
+              onOpenEmployee: openEmployeeChat,
+              roster,
+            })
+              : onTodos ? h(TodoPage, {
               todos: todosData?.todos ?? [],
               counts: todosData?.counts ?? null,
               read_at: todosData?.read_at ?? null,
@@ -344,7 +378,7 @@ export function CompanySurface({ page, actions, roster }) {
 
 export const statusLabel = status => ({ setup: t('Setup'), active: t('In progress'), paused: t('Paused'), archived: t('Archived') })[status] ?? t('Unknown status')
 
-export const COMPANY_CSS = `
+export const COMPANY_CSS = COMPANY_PAGE_CSS + `
 .bc-surface{--bc-small:11px;--bc-label:12px;--bc-body:13px;--bc-title:17px;--bc-radius:12px;position:fixed;inset:0;z-index:1100;background:var(--bt-main);color:var(--bt-ink);font-family:var(--bt-font);overflow:auto;overscroll-behavior:contain}.bc-surface *{box-sizing:border-box}.bc-shell{min-height:100vh;display:flex;flex-direction:column}.bc-header{height:52px;flex:none;display:flex;gap:12px;align-items:center;padding:0 max(20px,calc((100vw - 960px)/2));border-bottom:1px solid var(--bt-line);background:var(--bt-card)}.bc-brand{background:none;border:0;color:var(--bt-ink);font-size:15px;font-weight:700;cursor:pointer}.bc-header-context{color:var(--bt-ink-2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bc-icon{margin-left:auto;width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:var(--bt-ink);font-size:24px;cursor:pointer}.bc-content{width:min(100%,1000px);margin:0 auto;padding:32px 24px 64px}.bc-page{max-width:940px;margin:auto}.bc-kicker{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--bt-ink-2)}.bc-lead{display:flex;justify-content:space-between;align-items:end;gap:20px;margin:0 0 28px}.bc-lead h1{font-size:var(--bc-title);line-height:24px;margin:8px 0}.bc-lead p,.bc-muted{color:var(--bt-ink-2);line-height:1.5}.bc-lead p{margin:0;font-size:13px}.bc-button{border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);padding:9px 13px;min-height:36px;font:600 13px var(--bt-font);cursor:pointer}.bc-button:hover,.bc-icon:hover,.bc-filter:hover{background:var(--bt-hover)}.bc-primary{min-height:40px;border-radius:999px;background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));border-color:var(--bt-accent)}.bc-primary:hover{filter:brightness(.94);background:var(--bt-accent)}.bc-button:disabled{opacity:.45;cursor:not-allowed}.bc-surface :is(button,input,textarea,select,summary):focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}.bc-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.bc-filters{display:flex;gap:4px;border:1px solid var(--bt-line);border-radius:8px;padding:3px}.bc-filter{border:0;border-radius:6px;background:transparent;color:var(--bt-ink-2);padding:7px 11px;font-size:12px;cursor:pointer}.bc-selected{background:var(--bt-active);color:var(--bt-ink);font-weight:600}.bc-search,.bc-field :is(input,textarea,select){border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);padding:9px 11px;font:13px var(--bt-font)}.bc-search{width:210px}.bc-list{border:1px solid var(--bt-line);border-radius:12px;overflow:hidden;background:var(--bt-card)}.bc-project-row{display:flex;width:100%;gap:20px;align-items:center;text-align:left;padding:17px 20px;border:0;border-bottom:1px solid var(--bt-line);background:transparent;color:var(--bt-ink);cursor:pointer}.bc-project-row:last-child{border:0}.bc-project-row:hover{background:var(--bt-hover)}.bc-project-main{min-width:0;flex:1;display:grid;gap:5px}.bc-project-main strong{font-size:14px}.bc-project-main span,.bc-project-main small,.bc-project-meta small{font-size:12px;color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bc-project-meta{min-width:140px;display:grid;justify-items:end;gap:5px}.bc-status{display:inline-flex;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);font-size:11px;font-weight:700;padding:4px 7px}.bc-status.bc-active{color:var(--bt-green)}.bc-status.bc-paused,.bc-status.bc-pending{color:var(--bt-star)}.bc-status.bc-archived{color:var(--bt-ink-2)}.bc-state{border:1px dashed var(--bt-line-2);border-radius:12px;padding:32px;text-align:center;color:var(--bt-ink-2);font-size:13px}.bc-state strong{color:var(--bt-ink);font-size:15px}.bc-state .bc-button{margin:5px}.bc-error{border-color:var(--bt-danger)}.bc-preview{padding:8px 24px;background:var(--bt-tag-bg);text-align:center;color:var(--bt-ink);font-size:12px;font-weight:700}.bc-notice{display:flex;gap:12px;align-items:center;justify-content:center;padding:8px 20px;background:var(--bt-tag-bg);font-size:12px}.bc-notice button{border:0;background:transparent;color:var(--bt-ink);cursor:pointer}.bc-back{background:none;border:0;color:var(--bt-ink-2);font:600 12px var(--bt-font);padding:6px 0;cursor:pointer}.bc-back:hover{color:var(--bt-ink)}.bc-section{background:var(--bt-card);border:1px solid var(--bt-line);border-radius:12px;padding:20px;margin:16px 0}.bc-section h2{font-size:14px;margin:0 0 14px}.bc-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.bc-field{display:grid;gap:6px;font-size:12px;font-weight:600}.bc-field :is(input,textarea,select){width:100%}.bc-field textarea{resize:vertical;min-height:72px}.bc-field small{font-weight:400;color:var(--bt-ink-2)}.bc-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.bc-detail-title{font-size:var(--bc-title);line-height:24px;margin:10px 0}.bc-detail-label{color:var(--bt-ink-2);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}.bc-detail-value{font-size:13px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}.bc-member{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--bt-line);font-size:13px}.bc-member small{font-size:11px;color:var(--bt-ink-2)}.bc-steps{display:flex;flex-wrap:wrap;gap:6px;margin:24px 0}.bc-step{font-size:11px;color:var(--bt-ink-2);padding:7px 10px;border:1px solid var(--bt-line);border-radius:6px}.bc-step[aria-current=step]{color:var(--bt-ink);border-color:var(--bt-accent);font-weight:700}.bc-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.bc-choice{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px}.bc-choice input{accent-color:var(--bt-accent)}.bc-exception{border-left:3px solid var(--bt-danger);padding:10px 12px;background:var(--bt-tag-bg);font-size:12px;line-height:1.5}.bc-exception strong{display:block}.bc-optional{margin-top:16px;border-top:1px solid var(--bt-line);padding-top:14px}.bc-optional summary{cursor:pointer;color:var(--bt-ink);font-size:13px;font-weight:600}.bc-optional[open] summary{margin-bottom:16px}.bc-start-reason{text-align:right;color:var(--bt-ink-2);font-size:12px;line-height:1.5}.bc-surface button{touch-action:manipulation}@media(max-width:620px){.bc-header{height:48px;padding:0 14px}.bc-content{padding:22px 14px 48px}.bc-lead{align-items:flex-start}.bc-lead h1{font-size:var(--bc-title)}.bc-toolbar{align-items:stretch;flex-direction:column}.bc-search{width:100%}.bc-project-row{padding:14px;gap:8px}.bc-project-meta{min-width:88px}.bc-grid{grid-template-columns:1fr}.bc-section{padding:16px}}
 .bc-surface{--bc-text-xs:11px;--bc-text-sm:12px;--bc-text-content:14px;--bc-text-heading:15px;--bc-text-title:17px;--bc-control-sm:28px;--bc-control-md:36px;--bc-control-lg:40px;--bc-radius-tag:4px;--bc-radius-field:8px;--bc-radius-row:10px;--bc-radius-card:12px;--bc-shadow-raised:0 2px 8px -1px color-mix(in srgb,var(--bt-ink) 6%,transparent),0 1px 2px color-mix(in srgb,var(--bt-ink) 4%,transparent);--bc-shadow-dock:0 0 0 .5px var(--bt-line-2),0 2px 8px -2px color-mix(in srgb,var(--bt-ink) 12%,transparent);--bc-mask-header:60px}
 .bc-head{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:0 0 14px}.bc-head .bc-grow{flex:1;min-width:200px}.bc-head h1{font-size:var(--bc-text-title);line-height:24px;font-weight:600;margin:4px 0 0}.bc-crumb{font-size:var(--bc-text-xs);line-height:16px;color:var(--bt-ink-3)}.bc-chips{display:flex;gap:6px;flex-wrap:wrap}.bc-chip{height:var(--bc-control-sm);padding:0 10px;border-radius:999px;border:1px solid var(--bt-line-2);background:var(--bt-card);font-size:var(--bc-text-sm);line-height:16px;color:var(--bt-ink-2);cursor:pointer}.bc-chip:hover{background:var(--bt-hover)}.bc-chip[aria-pressed="true"]{background:var(--bt-accent);border-color:transparent;color:var(--bt-accent-ink);font-weight:500}.bc-search{height:36px;width:220px;max-width:100%;margin-left:auto;border:1px solid var(--bt-line-2);border-radius:var(--bc-radius-field);background:var(--bt-card);padding:0 10px;font-size:13px;color:var(--bt-ink)}.bc-plist{display:flex;flex-direction:column;gap:10px}.bc-pcard{display:block;width:100%;text-align:left;font:inherit;cursor:pointer;background:var(--bt-card);border:1px solid var(--bt-line);border-radius:var(--bc-radius-card);padding:14px 16px;box-shadow:var(--bc-shadow-raised)}.bc-pcard:hover{border-color:var(--bt-line-2)}.bc-pcard-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.bc-pcard-top strong{font-size:var(--bc-text-heading);line-height:22px;font-weight:600;color:var(--bt-ink)}.bc-tag{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:var(--bc-radius-tag);background:var(--bt-tag-bg);color:var(--bt-tag-ink);font-size:var(--bc-text-xs);line-height:16px;white-space:nowrap}.bc-pcard-goal{display:block;font-size:13px;line-height:18px;color:var(--bt-ink-2);margin:4px 0 8px}.bc-pcard-meta{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:var(--bc-text-sm);line-height:16px;color:var(--bt-ink-2)}.bc-skeleton{cursor:default}.bc-skel{display:block;height:12px;border-radius:6px;background:var(--bt-tag-bg);position:relative;overflow:hidden}.bc-skel::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,var(--bt-hover),transparent);transform:translateX(-100%);animation:bc-sh 1.2s infinite}.bc-skel-title{width:40%;height:16px;margin-bottom:8px}.bc-skel-line{width:70%;margin-bottom:6px}.bc-skel-line.short{width:45%}@keyframes bc-sh{to{transform:translateX(100%)}}`
