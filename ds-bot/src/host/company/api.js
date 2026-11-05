@@ -13,6 +13,7 @@
 import { readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { projectDetailOf } from './projects.js'
+import { projectViewOf, projectViewsOf } from './project-view.js'
 import { createTodos, TODOS_ANSWER_PATH, TODOS_PATH } from './todos.js'
 
 export const COMMAND_PATH = '/api/company/command'
@@ -117,6 +118,19 @@ export function createCompanyApi({ store, execute, groups = {}, now = Date.now, 
     const company = Object.values(state.companies).find(entry => entry.status !== 'archived') ?? null
     const byCreated = (left, right) => (left.created_at ?? 0) - (right.created_at ?? 0)
     const mine = entry => company === null || entry.company_id === company.id
+    // The chat header, the pinned card and the project details read three fields off the
+    // project that the store does not keep: how many decisions wait for the owner, which
+    // ones the card pins, and what happened recently. The waiting rows are the to-do
+    // read's own rows — deriving them a second time here would let the header disagree
+    // with the to-do page about the same card. A damaged to-do view is reported as
+    // nothing waiting rather than taking the whole company screen down.
+    let views = new Map()
+    try {
+      views = projectViewsOf({ state, waiting: todos.read({}).waiting })
+    } catch {
+      views = new Map()
+    }
+    const withView = project => ({ ...project, ...projectViewOf(views, project.id) })
     const body = {
       revision: state.revision,
       activity_cursor: String(state.revision),
@@ -124,13 +138,13 @@ export function createCompanyApi({ store, execute, groups = {}, now = Date.now, 
       company,
       departments: Object.values(state.departments).filter(mine).sort(byCreated),
       employees: Object.values(state.employees).filter(mine).sort(byCreated),
-      projects: Object.values(state.projects).filter(mine).sort(byCreated),
+      projects: Object.values(state.projects).filter(mine).sort(byCreated).map(withView),
     }
     if (query.project_id !== undefined && query.project_id !== '') {
       const project = state.projects[query.project_id]
       if (project === undefined) return { status: 404, body: { code: 'project/not-found', message: `No project ${query.project_id}.`, details: { project_id: query.project_id } } }
       const detail = projectDetailOf(state, project, roomMembers)
-      body.project = { ...detail.project, members: detail.members, group: detail.group }
+      body.project = { ...detail.project, ...projectViewOf(views, project.id), members: detail.members, group: detail.group }
     }
     return { status: 200, body }
   }
