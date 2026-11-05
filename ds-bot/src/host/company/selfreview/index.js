@@ -138,25 +138,47 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
    * Approvals that are about to be asked, in the order they were asked: the card's call,
    * remembered until its row arrives. The host's `approval/request` event names the call but no
    * card, and the `approval/asked` session event may name neither, so the two are joined here.
+   * The Session is part of the entry: two Sessions can wait on the same tool at the same time, and
+   * a call id from one must never be bound to the other's card.
    */
   const pendingAsks = []
-  const noteAsk = (callId, tool) => {
+  const noteAsk = (callId, tool, sessionId) => {
     if (typeof callId !== 'string' || callId === '') return
     if (pendingAsks.some(entry => entry.callId === callId)) return
-    pendingAsks.push({ callId, tool, at: now() })
+    pendingAsks.push({
+      callId,
+      tool,
+      sessionId: typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined,
+      at: now(),
+    })
     while (pendingAsks.length > 8) pendingAsks.shift()
   }
-  const answerWith = (answer, exec) => {
-    if (answer?.kind === 'ask') noteAsk(exec?.callId, exec?.name)
+  const answerWith = (answer, exec, sessionId) => {
+    if (answer?.kind === 'ask') {
+      const known = typeof sessionId === 'string' && sessionId !== ''
+        ? sessionId
+        : exec?.agent?.session?.header?.id ?? exec?.agent?.id
+      noteAsk(exec?.callId, exec?.name, known)
+    }
     return answer
   }
-  /** The call an approval card belongs to: the oldest pending ask for the same tool. */
-  const bindPending = (event) => {
+  /**
+   * The call an approval card belongs to: the oldest pending ask for the same tool in the same
+   * Session. An ask that names its own call needs no binding, and its queue entry is dropped here
+   * so a later card cannot inherit it.
+   */
+  const bindPending = (event, sessionId) => {
     if (event?.type !== 'approval/asked') return undefined
     const data = event.data ?? {}
-    if (typeof data.callId === 'string') return undefined
+    const named = typeof data.callId === 'string' && data.callId !== '' ? data.callId : undefined
+    if (named !== undefined) {
+      const queued = pendingAsks.findIndex(entry => entry.callId === named)
+      if (queued !== -1) pendingAsks.splice(queued, 1)
+      return undefined
+    }
     const tool = typeof data.toolName === 'string' ? data.toolName : undefined
-    const at = pendingAsks.findIndex(entry => tool === undefined || entry.tool === undefined || entry.tool === tool)
+    const at = pendingAsks.findIndex(entry => (tool === undefined || entry.tool === undefined || entry.tool === tool)
+      && (entry.sessionId === undefined || entry.sessionId === sessionId))
     if (at === -1) return undefined
     return pendingAsks.splice(at, 1)[0].callId
   }
@@ -183,7 +205,7 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
   }
 
   /** Turn the product answer into the gate value, and write the line for it. */
-  const settle = ({ exec, host, local, request, verdict = {}, status, final, started }) => {
+  const settle = ({ exec, scope, host, local, request, verdict = {}, status, final, started }) => {
     counters.judged += 1
     if (status !== 'ok' && status !== 'auto-session' && status !== 'host-unknown') counters.failed += 1
     const latency = now() - started
@@ -201,7 +223,7 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
       host,
       call: { callId: exec?.callId, rootCallId: exec?.rootCallId },
     }))
-    return answerWith(applyDecision({ exec, local, request, final }), exec)
+    return answerWith(applyDecision({ exec, local, request, final }), exec, scope.sessionId)
   }
 
   // Item 3: one key for "the same operation in the same place". The fingerprint names the call;
@@ -294,7 +316,7 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
     const cached = cachedDecision(key)
     if (cached !== undefined) {
       counters.deduped += 1
-      return answerWith(applyDecision({ exec, local, request, final: cached.decision }), exec)
+      return answerWith(applyDecision({ exec, local, request, final: cached.decision }), exec, scope.sessionId)
     }
 
     const answer = await judge({ endpoint: config.endpoint, token: tokenOf(), timeoutMs: config.timeoutMs, request, fetchImpl })
@@ -358,7 +380,7 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
   const hostEvent = (session, event) => {
     const sessionId = session?.id ?? session?.sessionId
     if (typeof sessionId !== 'string' || isCompanySession(sessionId) === false) return
-    hostLog.append(session, event, bindPending(event))
+    hostLog.append(session, event, bindPending(event, sessionId))
     counters.host_events += 1
   }
 
@@ -368,7 +390,15 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
     gate,
     listener,
     hostEvent,
-    noteApprovalRequest: (request) => noteAsk(request?.callId, request?.toolName),
+    /**
+     * A host ask for one call. The request carries the asking agent, so the queue entry knows its
+     * Session; a request from outside the company record is not a company card and is not queued.
+     */
+    noteApprovalRequest: (request) => {
+      const sessionId = request?.agent?.session?.id
+      if (typeof sessionId === 'string' && isCompanySession(sessionId) === false) return
+      noteAsk(request?.callId, request?.toolName, sessionId)
+    },
     hostLogPath: hostLogPath(rt.home),
     stats: () => ({ mode: config.mode, ...counters, records: recorder.stats(), host_log: hostLog.stats() }),
     /** Pure projection of one Session's events, exposed for 0d/0e and for tests. */

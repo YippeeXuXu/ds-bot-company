@@ -110,6 +110,17 @@ const VALUE_LETTERS = new Set(
     .map(name => name[1]),
 )
 
+/**
+ * The letters of short flags whose next word is a command line (`-c`). A cluster ending in one of
+ * them (`-lc`) carries a body in the word after it, so that word is dropped and the call reports
+ * shortened facts.
+ */
+const BODY_LETTERS = new Set(
+  [...COMMAND_FLAGS]
+    .filter(name => name.length === 2 && name.startsWith('-'))
+    .map(name => name[1]),
+)
+
 const MAX_FIELDS = 16
 const MAX_FLAGS = 8
 const MAX_PATHS = 4
@@ -157,6 +168,10 @@ const flagName = (word) => {
     // A one-letter word has no tail to hide a value in; a longer one that starts with a
     // value-taking letter does, and only the letter is kept.
     if (word.length > 2 && VALUE_LETTERS.has(word[1])) return { name: word.slice(0, 2), cut: true }
+    // `bash -lc "…"` is `-l -c`: the cluster ends in a flag whose word is a command line, so the
+    // cluster keeps its name and the caller drops the body. The alternative, keeping the cluster
+    // as a plain flag, would let a body stand where the facts say nothing was left out.
+    if (word.length > 2 && BODY_LETTERS.has(word[word.length - 1])) return { name: word, cut: true, body: true }
     return { name: word, cut: false }
   }
   return { name: word.slice(0, 2), cut: true }
@@ -280,6 +295,8 @@ export function callFeatures({ tool, args, base, scope = {}, home, redact } = {}
           if (flags.length < MAX_FLAGS) flags.push(flag.name)
           else cut = true
           if (flag.cut) cut = true
+          // `-lc "…"`: the cluster ends in a command flag, so the next word is a body, not a path.
+          if (flag.body === true) at += 1
           continue
         }
         // A URL is an endpoint, not a path: it leaves the machine, which is the judge's call.
