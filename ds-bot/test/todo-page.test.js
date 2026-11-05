@@ -47,6 +47,9 @@ const button = (tree, label) => buttons(tree).find(item => text(item) === label)
 const click = node => node.props.onClick?.({ preventDefault() {}, stopPropagation() {} })
 const headings = tree => collect(tree, node => node.type === 'h2').map(heading => text(heading))
 const page = (props = {}) => TodoPage({ todos: [], loading: false, error: '', actions: {}, ...props })
+const approval = (patch = {}) => ({ id: 'a1', card_kind: 'approval', state: 'pending', ready: true, title: 'Deploy', project_id: 'p1', project_name: 'Project A', risk_text: 'High risk', wait_minutes: 90, ...patch })
+const acceptance = (patch = {}) => ({ id: 'k1', card_kind: 'acceptance', state: 'pending', ready: true, title: 'Accept', project_id: 'p2', project_name: 'Project B', requester: 'Keyboard', wait_minutes: 12, ...patch })
+const handled = (patch = {}) => ({ id: 'a0', card_kind: 'approval', state: 'approved-human', handled: true, ready: false, title: 'Archive', project_id: 'p1', project_name: 'Project A', wait_minutes: 5, ...patch })
 
 test('the page announces loading once before any decision arrives', () => {
   const tree = page({ loading: true })
@@ -69,7 +72,7 @@ test('a failed read offers a retry', () => {
 
 test('no decision reads as the page-level empty state with one way out', () => {
   let opened = 0
-  const tree = page({ actions: { onOpenProjects: () => { opened += 1 } } })
+  const tree = page({ counts: { waiting_approvals: 0, waiting_acceptances: 0, handled_total: 0 }, actions: { onOpenProjects: () => { opened += 1 } } })
   assert.match(text(tree), /No decisions waiting for you\./)
   assert.deepEqual(headings(tree), [])
   click(button(tree, 'Look at projects'))
@@ -77,26 +80,30 @@ test('no decision reads as the page-level empty state with one way out', () => {
 })
 
 test('approvals, acceptances and handled rows each land in their own section', () => {
-  const approval = { id: 'a1', card_kind: 'approval', state: 'pending', title: 'Deploy to production', project_name: 'Project A', risk_text: 'High risk', wait_minutes: 90 }
-  const acceptance = { id: 'k1', card_kind: 'acceptance', state: 'pending', title: 'Accept the report', project_name: 'Project B', requester: 'Keyboard', wait_minutes: 12 }
-  const handled = { id: 'a0', card_kind: 'approval', state: 'approved', title: 'Archive the old room', project_name: 'Project A', wait_minutes: 5 }
-  const tree = page({ todos: [approval, acceptance, handled] })
+  const tree = page({ todos: [approval(), acceptance(), handled()] })
   assert.deepEqual(headings(tree), ['Approvals to confirm 1', 'Acceptances to confirm 1', 'Handled 1'])
   assert.match(text(tree), /Project A · Approval · High risk · Waiting 1 h 30 min/)
   assert.match(text(tree), /Project B · Acceptance review · Submitted by Keyboard · Waiting 12 min/)
   assert.match(text(tree), /Project A · Approval · Approved/)
 })
 
-test('a pending card carries the four ways to decide', () => {
+test('counts drive the headings, and a truncated handled group says so', () => {
+  const tree = page({
+    todos: [approval(), handled()],
+    counts: { waiting_approvals: 3, waiting_acceptances: 0, handled_total: 7 },
+  })
+  assert.deepEqual(headings(tree), ['Approvals to confirm 3', 'Handled 7'])
+  assert.match(text(tree), /Only the most recent 1 are shown\./)
+})
+
+test('a ready card carries the four ways to decide', () => {
   const calls = []
-  const approval = { id: 'a1', card_kind: 'approval', state: 'pending', title: 'Deploy', project_name: 'Project A', risk_text: 'High risk', wait_minutes: 1 }
-  const acceptance = { id: 'k1', card_kind: 'acceptance', state: 'pending', title: 'Accept', project_name: 'Project B', requester: 'Writer', wait_minutes: 2 }
   const actions = {
-    onDecide: (item, decision) => { calls.push(['decide', item.id, decision]) },
+    onDecide: (item, decision, options) => { calls.push(['decide', item.id, decision, options?.opinion]) },
     onInvestigate: item => { calls.push(['investigate', item.id]) },
     onOpenProject: item => { calls.push(['open', item.id]) },
   }
-  const tree = page({ todos: [approval, acceptance], actions })
+  const tree = page({ todos: [approval(), acceptance()], actions })
   const labels = buttons(tree).map(text)
   for (const label of ['Agree', 'Pass', 'Return', 'Look into it', 'Add a note', 'View project']) assert.ok(labels.includes(label), `${label} missing`)
   const primary = buttons(tree).filter(item => item.props.className?.includes('td-action-primary'))
@@ -108,41 +115,80 @@ test('a pending card carries the four ways to decide', () => {
   const viewProject = buttons(tree).filter(item => text(item) === 'View project')
   click(viewProject[0])
   assert.deepEqual(calls, [
-    ['decide', 'a1', 'approve'],
-    ['decide', 'a1', 'return'],
-    ['decide', 'k1', 'approve'],
+    ['decide', 'a1', 'approve', ''],
+    ['decide', 'a1', 'return', ''],
+    ['decide', 'k1', 'approve', ''],
     ['investigate', 'a1'],
     ['open', 'a1'],
   ])
 })
 
-test('a handled card keeps the way back but loses its decision actions', () => {
-  const handled = { id: 'a0', card_kind: 'approval', state: 'returned', title: 'Deploy', project_name: 'Project A', wait_minutes: 5, opinion: 'Needs a rollback plan' }
-  const tree = page({ todos: [handled] })
-  // No pending rows: the empty sentence still names the state of waiting, and the
-  // handled section below carries what happened.
+test('a card that cannot be answered keeps its reason but loses the decisions', () => {
+  const tree = page({ todos: [approval({ ready: false, suspended: true, reason: '已挂起 · 等待中' })] })
+  const labels = buttons(tree).map(text)
+  for (const label of ['Agree', 'Return', 'Add a note']) assert.equal(labels.includes(label), false)
+  assert.ok(labels.includes('Look into it'))
+  assert.match(text(tree), /已挂起 · 等待中/)
+  assert.equal(collect(tree, node => node.props?.className === 'td-suspended').length, 1)
+})
+
+test('a stale row reads as handled elsewhere instead of offering a decision', () => {
+  const tree = page({ todos: [approval({ stale: true })] })
+  const labels = buttons(tree).map(text)
+  assert.equal(labels.includes('Agree'), false)
+  assert.ok(labels.includes('Look into it'))
+  assert.match(text(tree), /Handled elsewhere\./)
+})
+
+test('a handled card keeps one way back and loses its decision actions', () => {
+  const tree = page({ todos: [handled({ state: 'returned', opinion: 'Needs a rollback plan' })] })
   assert.match(text(tree), /No decisions waiting for you\./)
   assert.deepEqual(headings(tree), ['Handled 1'])
   const labels = buttons(tree).map(text)
-  assert.equal(labels.includes('Agree'), false)
-  assert.equal(labels.includes('Return'), false)
-  assert.equal(labels.includes('Add a note'), false)
+  for (const label of ['Agree', 'Return', 'Add a note']) assert.equal(labels.includes(label), false)
   assert.ok(labels.includes('Look into it'))
   assert.match(text(tree), /Sent back/)
   assert.match(text(tree), /Note: Needs a rollback plan/)
+  // View project lives on the card head only, never in the action row.
+  assert.equal(buttons(tree).filter(item => text(item) === 'View project').length, 1)
+})
+
+test('handled rows keep the order the service returned', () => {
+  const tree = page({ todos: [handled({ id: 'h1', title: 'Newer', wait_minutes: 5, handled_at: '2026-11-05T10:00:00Z' }), handled({ id: 'h2', title: 'Older', wait_minutes: 900, handled_at: '2026-11-04T10:00:00Z' })] })
+  const titles = collect(tree, node => node.props?.className === 'td-title').map(text)
+  assert.deepEqual(titles, ['Newer', 'Older'])
 })
 
 test('the longest wait leads its section', () => {
-  const short = { id: 'a1', card_kind: 'approval', state: 'pending', title: 'Short wait', wait_minutes: 5 }
-  const long = { id: 'a2', card_kind: 'approval', state: 'pending', title: 'Long wait', wait_minutes: 600 }
+  const short = approval({ id: 'a1', title: 'Short wait', wait_minutes: 5 })
+  const long = approval({ id: 'a2', title: 'Long wait', wait_minutes: 600 })
   const tree = page({ todos: [short, long] })
   const titles = collect(tree, node => node.props?.className === 'td-title').map(text)
   assert.deepEqual(titles, ['Long wait', 'Short wait'])
 })
 
+test('a row without a project home gives no project link', () => {
+  const calls = []
+  const tree = page({
+    todos: [approval({ project_id: null, project_name: '私聊', ready: false, reason: '请在私聊中处理', reason_code: 'private-chat', session_id: 'session-1', requester_bot_id: null, coordinator_bot_id: null })],
+    actions: { onInvestigate: item => { calls.push(['investigate', item.id]) } },
+  })
+  assert.equal(button(tree, 'View project'), undefined)
+  assert.match(text(tree), /请在私聊中处理/)
+  // The source session is the way back into a private-chat row.
+  const look = button(tree, 'Look into it')
+  assert.equal(look.props.disabled, false)
+  click(look)
+  assert.deepEqual(calls, [['investigate', 'a1']])
+})
+
+test('a row with nowhere to look into keeps the action disabled', () => {
+  const tree = page({ todos: [approval({ project_id: null, project_name: '私聊', ready: false, reason: '请在私聊中处理', session_id: null, requester_bot_id: null, coordinator_bot_id: null })] })
+  assert.equal(button(tree, 'Look into it').props.disabled, true)
+})
+
 test('the whole card is not one big button', () => {
-  const item = { id: 'a1', card_kind: 'approval', state: 'pending', title: 'Deploy', wait_minutes: 1 }
-  const tree = page({ todos: [item] })
+  const tree = page({ todos: [approval()] })
   const cards = collect(tree, node => node.props?.className === 'td-card')
   assert.equal(cards.length, 1)
   assert.equal(cards[0].props.onClick, undefined)
@@ -150,8 +196,9 @@ test('the whole card is not one big button', () => {
 })
 
 test('the copy avoids internal words and the sheet keeps the theme tokens', () => {
-  const item = { id: 'a1', card_kind: 'approval', state: 'pending', title: 'Deploy', project_name: 'Project A', risk_text: 'High risk', wait_minutes: 61 }
-  assert.doesNotMatch(text(page({ todos: [item] })), /\b(M1|M2|M3|PRD)\b|蓝图|本原型|演示|样例|四态|宿主|blockers/)
+  const tree = page({ todos: [approval({ wait_minutes: 61 })] })
+  assert.match(text(tree), /Waiting 1 h 1 min/)
+  assert.doesNotMatch(text(tree), /\b(M1|M2|M3|PRD)\b|蓝图|本原型|演示|样例|四态|宿主|blockers/)
   assert.match(TODO_CSS, /\.td-card\{/)
   assert.match(TODO_CSS, /var\(--bt-/)
   assert.doesNotMatch(TODO_CSS, /#[0-9a-fA-F]{3,8}\b/)

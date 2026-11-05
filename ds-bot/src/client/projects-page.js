@@ -50,6 +50,10 @@ export function CompanySurface({ page, actions, roster }) {
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState('')
   const [detailAttempt, setDetailAttempt] = useState(0)
+  const [todosData, setTodosData] = useState(null)
+  const [todoLoading, setTodoLoading] = useState(false)
+  const [todoError, setTodoError] = useState('')
+  const [todoAttempt, setTodoAttempt] = useState(0)
   const writeKeys = useRef(new Map())
   const box = useRef(null)
   const opener = useRef(null)
@@ -97,7 +101,28 @@ export function CompanySurface({ page, actions, roster }) {
     } catch (failure) { if (!signal?.aborted) { if (quiet) setNotice(message(failure)); else setError(message(failure)) } }
     finally { if (!signal?.aborted && !quiet) setLoading(false) }
   }
+  // The company read does not carry decision rows: they have their own route and
+  // refresh rhythm, and the task/approval stores are scanned only when asked.
+  const loadTodos = async (signal, quiet = false) => {
+    if (!quiet) { setTodoLoading(true); setTodoError('') }
+    try {
+      const result = await call('company-todos', {}, signal)
+      if (signal?.aborted) return
+      setTodosData({
+        todos: [...(result.waiting ?? []), ...(result.handled ?? [])],
+        counts: result.counts ?? {},
+        read_at: result.read_at ?? null,
+      })
+    } catch (failure) { if (!signal?.aborted) setTodoError(message(failure)) }
+    finally { if (!signal?.aborted && !quiet) setTodoLoading(false) }
+  }
   useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort() }, [])
+  useEffect(() => {
+    if (kind !== 'todos') return
+    const controller = new AbortController()
+    void loadTodos(controller.signal)
+    return () => controller.abort()
+  }, [kind, todoAttempt])
 
   useEffect(() => {
     if (!selected || preview) return
@@ -178,6 +203,91 @@ export function CompanySurface({ page, actions, roster }) {
   const coordinatorOf = item => data.employees.find(employee => employee.project_id === item.id && employee.acceptance_role === 'coordinator') ?? data.employees.find(employee => employee.id === data.members.find(member => member.id === item.coordinator_assignment_id)?.employee_id)
   const groupReady = item => !preview && item.group_binding?.status === 'bound' && Boolean(item.group_chat_ref) && Boolean(roster.roomsById?.[item.group_chat_ref])
   const openProject = item => (groupReady(item) ? openChat(item) : actions.openCompanyPage('detail', item.id))
+  // A decision row answered elsewhere turns read-only instead of staying clickable.
+  const markStale = item => setTodosData(current => (current
+    ? { ...current, todos: current.todos.map(row => (row.id === item.id ? { ...row, stale: true, ready: false, reason: null, reason_code: null } : row)) }
+    : current))
+  // The answer came back from the host, so the row moves now; the next read is
+  // still the authority on its final state and position.
+  const applyDecided = (item, action, opinion) => setTodosData(current => {
+    if (!current) return current
+    const approval = item.card_kind === 'approval'
+    const decided = {
+      ...item,
+      state: action === 'approve' ? (approval ? 'approved-human' : 'accepted') : (approval ? 'rejected' : 'returned'),
+      handled: true,
+      ready: false,
+      suspended: false,
+      stale: false,
+      reason: null,
+      reason_code: null,
+      opinion: opinion || item.opinion || null,
+      handled_at: new Date().toISOString(),
+    }
+    const counts = { ...current.counts }
+    const waitingKey = approval ? 'waiting_approvals' : 'waiting_acceptances'
+    if (Number.isInteger(counts.waiting_total)) counts.waiting_total = Math.max(0, counts.waiting_total - 1)
+    if (Number.isInteger(counts[waitingKey])) counts[waitingKey] = Math.max(0, counts[waitingKey] - 1)
+    if (Number.isInteger(counts.handled_total)) counts.handled_total += 1
+    if (Number.isInteger(counts.handled_returned)) counts.handled_returned += 1
+    return { ...current, counts, todos: [decided, ...current.todos.filter(row => row.id !== item.id)] }
+  })
+  const answerTodo = async (item, action, options = {}) => {
+    const opinion = String(options.opinion ?? '').trim()
+    try {
+      if (item.card_kind === 'approval') {
+        // Approvals are answered through the host's own card: a local "agree"
+        // without that round trip would never reach the employee's tool call.
+        await call('company-todo-answer', {
+          todo_id: item.id,
+          answer_ref: item.answer_ref ?? null,
+          decision: action === 'approve' ? 'allow' : 'reject',
+          opinion,
+          operation_key: freshKey(),
+        })
+      } else {
+        // Acceptances are a company command and carry the row's revision so a
+        // request changed underneath the owner is refused, not silently applied.
+        await call('company-command', {
+          command: 'acceptance.decide',
+          payload: {
+            operation_key: freshKey(),
+            expected_revision: item.revision ?? null,
+            acceptance_id: item.acceptance_id ?? null,
+            decision: action === 'approve' ? 'accept' : 'return',
+            opinion,
+          },
+        })
+      }
+    } catch (failure) {
+      const code = failure?.code
+      if (code === 'todo/changed' || code === 'todo/unknown' || code === 'todo/stale') {
+        markStale(item)
+        return { stale: true }
+      }
+      if (code === 'company/revision-conflict') {
+        await loadTodos(undefined, true)
+        throw Object.assign(new Error(t('The request changed. Refreshed.')), { code })
+      }
+      throw failure
+    }
+    applyDecided(item, action, opinion)
+    return { stale: false }
+  }
+  // Look into it opens the coordinator's private chat; a project without one
+  // falls back to the employee who asked. A row with no project home came from
+  // a private chat, so its source session is the place to return to.
+  const investigateTodo = item => {
+    const botId = (!item.project_id && item.session_id) || item.coordinator_bot_id || item.requester_bot_id
+    if (!botId) return
+    actions.openSession(botId)
+    close()
+  }
+  const openTodoProject = item => {
+    const target = data.projects.find(project => project.id === item.project_id)
+    if (target) openProject(target)
+    else actions.openCompanyPage('detail', item.project_id)
+  }
   const wanted = query.trim().toLowerCase()
   const visible = data.projects
     .filter(item => filter === 'all' || (item.status ?? 'setup') === filter)
@@ -194,9 +304,20 @@ export function CompanySurface({ page, actions, roster }) {
       h('main', { className: 'bc-content' },
         kind === 'wizard' ? h(ProjectWizard, { data, roster, preview, loading, error, mutate, onBack: () => actions.openCompanyPage('list'), onCreated: result => actions.openCompanyPage('detail', result.body?.project?.id) })
           : kind === 'detail' ? h(ProjectPage, { project, data, preview, loading: loading || detailLoading, error: detailError || error, onBack: () => actions.openCompanyPage('list'), onChat: () => project && openChat(project), onRetry: () => setDetailAttempt(value => value + 1), onCommand: async (command, fields) => { const result = await mutate(command, fields); setDetailAttempt(value => value + 1); return result } })
-            // No decision rows exist until the company task model lands; the page
-            // then rests on its empty state instead of inventing entries.
-            : onTodos ? h(TodoPage, { todos: [], loading, error, onRetry: () => void load(), actions: { onOpenProjects: () => actions.openCompanyPage('list') } })
+            : onTodos ? h(TodoPage, {
+              todos: todosData?.todos ?? [],
+              counts: todosData?.counts ?? null,
+              read_at: todosData?.read_at ?? null,
+              loading: todoLoading,
+              error: todoError,
+              onRetry: () => setTodoAttempt(value => value + 1),
+              actions: {
+                onOpenProjects: () => actions.openCompanyPage('list'),
+                onOpenProject: openTodoProject,
+                onDecide: answerTodo,
+                onInvestigate: investigateTodo,
+              },
+            })
               : h('section', { className: 'bc-page', 'aria-label': t('Project list') },
               h('div', { className: 'bc-head' },
                 h('div', { className: 'bc-grow' },

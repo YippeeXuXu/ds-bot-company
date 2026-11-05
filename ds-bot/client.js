@@ -1287,7 +1287,7 @@ Object.assign(ZH, HOST_ZH, {
   Approved: "已批准",
   "Allowed automatically": "自动允许 · 未拦截",
   "Sent back": "已退回",
-  Rejected: "已拒绝 · 未执行",
+  Rejected: "已拒绝",
   Agree: "同意",
   Pass: "通过",
   Return: "退回",
@@ -1297,6 +1297,21 @@ Object.assign(ZH, HOST_ZH, {
   Note: "意见",
   "Actions for {title}": "{title} 的操作",
   "View project": "查看项目",
+  // P09 待办接读接口后新增：状态词、不可答原因、答复反馈
+  "Suspended · waiting": "已挂起 · 等待中",
+  "Host offline": "宿主失联",
+  "Awaiting receipt": "待回执",
+  "Technical failure · retry later": "技术失败 · 待重试",
+  "Policy unknown · manual approval": "模式未知 · 按人工审批",
+  "Authorizer pending": "授权人待核实",
+  "Request changed · decide again": "请求已变化 · 需重新判定",
+  "Only the owner can answer": "仅老板可答",
+  "Not synced · reconcile later": "未同步 · 待对账",
+  "Please handle it in the private chat": "请在私聊中处理",
+  "Cannot be answered here": "暂时不可答复",
+  "Handled elsewhere.": "已在别处处理",
+  "The request changed. Refreshed.": "请求已变化，已刷新",
+  "Only the most recent {n} are shown.": "仅显示最近 {n} 条",
   "Create a project to bring employees together around one goal.": "新建项目组，让员工围绕一个目标协作。",
   "No goal specified": "暂无目标",
   "No source departments": "暂无来源部门",
@@ -10874,8 +10889,6 @@ function ProjectWizard({ data, roster, preview, loading, error: loadError, mutat
 
 // src/client/todo-page.js
 var import_react22 = require("react");
-var PENDING = "pending";
-var isPending = (item) => (item.state ?? PENDING) === PENDING;
 var waitText = (value) => {
   const total = Math.max(0, Math.round(Number(value) || 0));
   if (total < 60) return `${total} ${t("min")}`;
@@ -10887,7 +10900,6 @@ var stateLabel = (item) => {
   switch (item.state) {
     case "accepted":
       return t("Passed");
-    case "approved":
     case "approved-human":
       return t("Approved");
     case "approved-auto":
@@ -10898,46 +10910,135 @@ var stateLabel = (item) => {
       return t("Rejected");
     case "expired":
       return t("Expired");
+    case "cancelled":
+      return t("Cancelled");
+    case "unavailable":
+      return t("Host offline");
+    case "unobservable":
+      return t("Awaiting receipt");
+    case "error":
+      return t("Technical failure · retry later");
     default:
       return t("Handled");
   }
 };
+var resultWord = (item) => item.card_kind === "approval" && item.host_reject_reason ? item.host_reject_reason : stateLabel(item);
 var metaOf = (item, handled) => {
   const approval = item.card_kind === "approval";
   const parts = [];
   if (item.project_name) parts.push(item.project_name);
   parts.push(approval ? t("Approval") : t("Acceptance review"));
-  if (handled) parts.push(stateLabel(item));
+  if (handled) parts.push(resultWord(item));
   else if (approval) {
-    parts.push(item.risk_text || t("Needs your approval"));
+    if (item.risk_text) parts.push(item.risk_text);
     parts.push(`${t("Waiting")} ${waitText(item.wait_minutes)}`);
   } else {
     if (item.requester) parts.push(t("Submitted by {name}", { name: item.requester }));
+    if (item.risk_text) parts.push(item.risk_text);
     parts.push(`${t("Waiting")} ${waitText(item.wait_minutes)}`);
   }
   return parts.join(" · ");
 };
 var badgeOf = (item, handled) => {
-  if (handled) return stateLabel(item);
+  if (handled) return resultWord(item);
   if (item.card_kind === "approval") return item.risk_text || t("Needs your approval");
   return t("Pending");
 };
-function TodoPage({ todos = [], loading = false, error = "", onRetry, actions = {} }) {
+var REASON_KEYS = {
+  suspended: "Suspended · waiting",
+  "host-pending": "Awaiting receipt",
+  "host-offline": "Host offline",
+  "error-retry": "Technical failure · retry later",
+  "private-chat": "Please handle it in the private chat",
+  expired: "Expired",
+  "policy-unknown": "Policy unknown · manual approval",
+  "authorizer-pending": "Authorizer pending",
+  "request-changed": "Request changed · decide again",
+  "owner-only": "Only the owner can answer",
+  unsynced: "Not synced · reconcile later"
+};
+var reasonOf = (item) => {
+  if (item.reason) return item.reason;
+  const key = REASON_KEYS[item.reason_code];
+  return t(key ?? "Cannot be answered here");
+};
+var byWait = (a, b) => (Number(b.wait_minutes) || 0) - (Number(a.wait_minutes) || 0) || String(a.created_at ?? "").localeCompare(String(b.created_at ?? ""));
+function TodoPage({ todos = [], counts: counts2 = null, read_at = null, loading = false, error = "", onRetry, actions = {} }) {
   const [noteFor, setNoteFor] = (0, import_react22.useState)(null);
   const [draft, setDraft] = (0, import_react22.useState)("");
+  const [notes, setNotes] = (0, import_react22.useState)({});
+  const [busy, setBusy] = (0, import_react22.useState)("");
+  const [notice, setNotice] = (0, import_react22.useState)("");
   const openNote = (item) => {
     setNoteFor(item.id);
-    setDraft("");
+    setDraft(notes[item.id] ?? "");
   };
-  const submitNote = (item) => {
+  const saveNote = (item) => {
     const text = draft.trim();
     setNoteFor(null);
-    setDraft("");
-    if (text) actions.onNote?.(item, text);
+    setNotes((current) => {
+      const next = { ...current };
+      if (text) next[item.id] = text;
+      else delete next[item.id];
+      return next;
+    });
+    actions.onNote?.(item, text);
+  };
+  const decide = async (item, action) => {
+    if (busy) return;
+    const opinion = notes[item.id] ?? "";
+    setBusy(item.id);
+    setNotice("");
+    try {
+      const result = await actions.onDecide?.(item, action, { opinion });
+      if (!result?.stale) {
+        setNotes((current) => {
+          const next = { ...current };
+          delete next[item.id];
+          return next;
+        });
+      }
+    } catch (failure2) {
+      setNotice(failure2?.message ?? String(failure2));
+    } finally {
+      setBusy("");
+    }
   };
   const card = (item, handled2 = false) => {
     const approval = item.card_kind === "approval";
     const title = item.title || "";
+    const waiting2 = !handled2;
+    const canDecide = waiting2 && item.ready === true && !item.stale;
+    const reasonRow = waiting2 && !item.stale && !item.ready ? item.suspended ? (0, import_react22.createElement)("div", { className: "td-suspended" }, reasonOf(item)) : (0, import_react22.createElement)("p", { className: "td-reason" }, reasonOf(item)) : null;
+    const investigate = (0, import_react22.createElement)("button", {
+      type: "button",
+      className: "td-action",
+      disabled: Boolean(busy) || !item.coordinator_bot_id && !item.requester_bot_id && !item.session_id,
+      onClick: () => actions.onInvestigate?.(item)
+    }, t("Look into it"));
+    const actionsRow = (0, import_react22.createElement)(
+      "div",
+      { className: "td-actions", role: "group", "aria-label": t("Actions for {title}", { title }) },
+      canDecide ? (0, import_react22.createElement)("button", {
+        type: "button",
+        className: "td-action td-action-primary",
+        disabled: busy === item.id,
+        onClick: () => void decide(item, "approve")
+      }, approval ? t("Agree") : t("Pass")) : null,
+      canDecide ? (0, import_react22.createElement)("button", {
+        type: "button",
+        className: "td-action",
+        disabled: busy === item.id,
+        onClick: () => void decide(item, "return")
+      }, t("Return")) : null,
+      investigate,
+      canDecide ? (0, import_react22.createElement)("button", {
+        type: "button",
+        className: "td-action td-action-text",
+        disabled: busy === item.id,
+        onClick: () => openNote(item)
+      }, t("Add a note")) : null
+    );
     return (0, import_react22.createElement)(
       "article",
       { key: item.id, className: handled2 ? "td-card td-card-done" : "td-card" },
@@ -10952,18 +11053,13 @@ function TodoPage({ todos = [], loading = false, error = "", onRetry, actions = 
           (0, import_react22.createElement)("div", { className: "td-meta" }, metaOf(item, handled2))
         ),
         (0, import_react22.createElement)("span", { className: "bc-tag" }, badgeOf(item, handled2)),
-        (0, import_react22.createElement)("button", { type: "button", className: "td-link", onClick: () => actions.onOpenProject?.(item) }, t("View project"))
+        // The only way into the project: the actions row never repeats it.
+        item.project_id ? (0, import_react22.createElement)("button", { type: "button", className: "td-link", onClick: () => actions.onOpenProject?.(item) }, t("View project")) : null
       ),
-      // A result row replaces the actions once decided; a handled card keeps the
-      // way back to its project through the coordinator.
-      (0, import_react22.createElement)(
-        "div",
-        { className: "td-actions", role: "group", "aria-label": t("Actions for {title}", { title }) },
-        handled2 ? null : (0, import_react22.createElement)("button", { type: "button", className: "td-action td-action-primary", onClick: () => actions.onDecide?.(item, "approve") }, approval ? t("Agree") : t("Pass")),
-        handled2 ? null : (0, import_react22.createElement)("button", { type: "button", className: "td-action", onClick: () => actions.onDecide?.(item, "return") }, t("Return")),
-        (0, import_react22.createElement)("button", { type: "button", className: "td-action", onClick: () => actions.onInvestigate?.(item) }, t("Look into it")),
-        handled2 ? null : (0, import_react22.createElement)("button", { type: "button", className: "td-action td-action-text", onClick: () => openNote(item) }, t("Add a note"))
-      ),
+      reasonRow,
+      item.stale ? (0, import_react22.createElement)("p", { className: "td-reason" }, t("Handled elsewhere.")) : null,
+      notes[item.id] && noteFor !== item.id ? (0, import_react22.createElement)("p", { className: "td-pending-note" }, `${t("Note")}: ${notes[item.id]}`) : null,
+      actionsRow,
       item.opinion ? (0, import_react22.createElement)("p", { className: "td-opinion" }, `${t("Note")}: ${item.opinion}`) : null,
       noteFor === item.id ? (0, import_react22.createElement)("div", { className: "td-note" }, (0, import_react22.createElement)("input", {
         type: "text",
@@ -10976,7 +11072,7 @@ function TodoPage({ todos = [], loading = false, error = "", onRetry, actions = 
           if (event.nativeEvent?.isComposing) return;
           if (event.key === "Enter") {
             event.preventDefault();
-            submitNote(item);
+            saveNote(item);
           }
           if (event.key === "Escape") {
             event.preventDefault();
@@ -10987,12 +11083,12 @@ function TodoPage({ todos = [], loading = false, error = "", onRetry, actions = 
       })) : null
     );
   };
-  const section = (key, label2, items, handled2 = false) => (0, import_react22.createElement)(
+  const section = (key, label2, count2, items, handled2 = false, extra = null) => (0, import_react22.createElement)(
     "section",
     { key, className: "td-section" },
-    (0, import_react22.createElement)("h2", null, `${t(label2)} ${items.length}`),
-    // Sorted by the longest wait first: the one blocking work the longest leads.
-    items.slice().sort((a, b) => (Number(b.wait_minutes) || 0) - (Number(a.wait_minutes) || 0)).map((item) => card(item, handled2))
+    (0, import_react22.createElement)("h2", null, `${t(label2)} ${count2}`),
+    extra,
+    items.map((item) => card(item, handled2))
   );
   const skeleton = (0, import_react22.createElement)(
     "div",
@@ -11031,17 +11127,34 @@ function TodoPage({ todos = [], loading = false, error = "", onRetry, actions = 
     (0, import_react22.createElement)("strong", null, t("No decisions waiting for you.")),
     (0, import_react22.createElement)("button", { type: "button", className: "bc-button", onClick: () => actions.onOpenProjects?.() }, t("Look at projects"))
   );
-  const pending = todos.filter(isPending);
-  const handled = todos.filter((item) => !isPending(item));
-  const body = pending.length === 0 ? empty2 : (0, import_react22.createElement)(
+  const rows2 = Array.isArray(todos) ? todos : [];
+  const waiting = rows2.filter((item) => !item.handled);
+  const handled = rows2.filter((item) => item.handled);
+  const count = (key, fallback) => Number.isInteger(counts2?.[key]) ? counts2[key] : fallback;
+  const approvals = waiting.filter((item) => item.card_kind === "approval").sort(byWait);
+  const acceptances = waiting.filter((item) => item.card_kind === "acceptance").sort(byWait);
+  const approvalsCount = count("waiting_approvals", approvals.length);
+  const acceptancesCount = count("waiting_acceptances", acceptances.length);
+  const handledCount = count("handled_total", handled.length);
+  const hasMore = handledCount > handled.length;
+  const nothingWaiting = approvalsCount === 0 && acceptancesCount === 0;
+  const body = nothingWaiting ? empty2 : (0, import_react22.createElement)(
     "div",
     { className: "td-sections" },
-    section("approvals", "Approvals to confirm", pending.filter((item) => item.card_kind === "approval")),
-    section("acceptances", "Acceptances to confirm", pending.filter((item) => item.card_kind === "acceptance"))
+    approvalsCount ? section("approvals", "Approvals to confirm", approvalsCount, approvals) : null,
+    acceptancesCount ? section("acceptances", "Acceptances to confirm", acceptancesCount, acceptances) : null
   );
+  const handledSection = handledCount > 0 || handled.length > 0 ? section(
+    "handled",
+    "Handled",
+    handledCount,
+    handled,
+    true,
+    hasMore ? (0, import_react22.createElement)("p", { className: "td-note-more" }, t("Only the most recent {n} are shown.", { n: handled.length })) : null
+  ) : null;
   return (0, import_react22.createElement)(
     "section",
-    { className: "bc-page td-page", "aria-label": t("Todos") },
+    { className: "bc-page td-page", "aria-label": t("Todos"), "data-read-at": read_at ?? void 0 },
     (0, import_react22.createElement)(
       "div",
       { className: "bc-head" },
@@ -11055,8 +11168,9 @@ function TodoPage({ todos = [], loading = false, error = "", onRetry, actions = 
     loading ? skeleton : error ? failure : (0, import_react22.createElement)(
       "div",
       null,
+      notice ? (0, import_react22.createElement)("p", { className: "td-notice", role: "alert" }, notice) : null,
       body,
-      handled.length ? section("handled", "Handled", handled, true) : null
+      handledSection
     )
   );
 }
@@ -11064,6 +11178,7 @@ var TODO_CSS = `
 .td-page{max-width:760px}
 .td-sections{display:flex;flex-direction:column;gap:18px}
 .td-section h2{font-size:var(--bc-text-heading);line-height:22px;font-weight:600;margin:0 0 8px}
+.td-note-more{font-size:var(--bc-text-sm);line-height:16px;color:var(--bt-ink-3);margin:-4px 0 8px}
 .td-card{background:var(--bt-card);border:1px solid var(--bt-line);border-radius:var(--bc-radius-card);margin:0 0 8px;overflow:hidden}
 .td-card:hover{border-color:var(--bt-line-2)}
 .td-card-done{background:var(--bt-sidebar)}
@@ -11074,6 +11189,8 @@ var TODO_CSS = `
 .td-meta{font-size:var(--bc-text-xs);line-height:16px;color:var(--bt-ink-3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .td-link{flex:none;border:0;background:none;padding:6px 0;font:inherit;font-size:var(--bc-text-sm);color:var(--bt-ink-2);cursor:pointer}
 .td-link:hover{color:var(--bt-accent);text-decoration:underline}
+.td-suspended{margin:0 14px 10px;padding:8px 10px;border-radius:var(--bc-radius-field);background:var(--bt-tag-bg);color:var(--bt-ink-2);font-size:var(--bc-text-sm);line-height:16px}
+.td-reason{font-size:var(--bc-text-sm);line-height:16px;color:var(--bt-ink-3);margin:0 14px 10px}
 .td-actions{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin:0 14px 12px}
 .td-action{position:relative;height:var(--bc-control-md);padding:0 16px;border:1px solid var(--bt-line-2);border-radius:999px;background:transparent;color:var(--bt-ink);font:inherit;font-size:var(--bc-text-content);cursor:pointer}
 .td-action:hover{background:var(--bt-hover)}
@@ -11084,8 +11201,10 @@ var TODO_CSS = `
 .td-action-text:hover{background:transparent;color:var(--bt-ink)}
 .td-action:disabled{opacity:.35;cursor:default}
 .td-opinion{margin:0 14px 12px;font-size:var(--bc-text-sm);line-height:18px;color:var(--bt-ink-2)}
+.td-pending-note{margin:0 14px 10px;font-size:var(--bc-text-sm);line-height:18px;color:var(--bt-ink-2)}
 .td-note{margin:0 14px 12px}
 .td-note input{width:100%;height:var(--bc-control-md);padding:0 11px;border:1px solid var(--bt-line-2);border-radius:var(--bc-radius-field);background:var(--bt-card);color:var(--bt-ink);font:inherit;font-size:var(--bc-text-content)}
+.td-notice{margin:0 0 12px;padding:8px 10px;border-radius:var(--bc-radius-field);background:var(--bt-tag-bg);color:var(--bt-ink);font-size:var(--bc-text-sm);line-height:16px}
 .td-skel-heading{width:30%;height:18px;margin-bottom:10px}
 .td-skeleton .td-card-top{padding:12px 14px}
 .td-skeleton .td-grow{display:grid;gap:8px}
@@ -11093,7 +11212,7 @@ var TODO_CSS = `
   .td-card-top{flex-wrap:wrap;padding:10px}
   .td-title,.td-meta{white-space:normal}
   .td-actions{margin:0 10px 10px}
-  .td-opinion,.td-note{margin:0 10px 10px}
+  .td-suspended,.td-reason,.td-opinion,.td-pending-note,.td-note{margin:0 10px 10px}
 }
 `;
 
@@ -11142,6 +11261,10 @@ function CompanySurface({ page, actions, roster }) {
   const [detailLoading, setDetailLoading] = (0, import_react23.useState)(false);
   const [detailError, setDetailError] = (0, import_react23.useState)("");
   const [detailAttempt, setDetailAttempt] = (0, import_react23.useState)(0);
+  const [todosData, setTodosData] = (0, import_react23.useState)(null);
+  const [todoLoading, setTodoLoading] = (0, import_react23.useState)(false);
+  const [todoError, setTodoError] = (0, import_react23.useState)("");
+  const [todoAttempt, setTodoAttempt] = (0, import_react23.useState)(0);
   const writeKeys = (0, import_react23.useRef)(/* @__PURE__ */ new Map());
   const box = (0, import_react23.useRef)(null);
   const opener = (0, import_react23.useRef)(null);
@@ -11203,11 +11326,36 @@ function CompanySurface({ page, actions, roster }) {
       if (!signal?.aborted && !quiet) setLoading(false);
     }
   };
+  const loadTodos = async (signal, quiet = false) => {
+    if (!quiet) {
+      setTodoLoading(true);
+      setTodoError("");
+    }
+    try {
+      const result = await call("company-todos", {}, signal);
+      if (signal?.aborted) return;
+      setTodosData({
+        todos: [...result.waiting ?? [], ...result.handled ?? []],
+        counts: result.counts ?? {},
+        read_at: result.read_at ?? null
+      });
+    } catch (failure) {
+      if (!signal?.aborted) setTodoError(message(failure));
+    } finally {
+      if (!signal?.aborted && !quiet) setTodoLoading(false);
+    }
+  };
   (0, import_react23.useEffect)(() => {
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
   }, []);
+  (0, import_react23.useEffect)(() => {
+    if (kind !== "todos") return;
+    const controller = new AbortController();
+    void loadTodos(controller.signal);
+    return () => controller.abort();
+  }, [kind, todoAttempt]);
   (0, import_react23.useEffect)(() => {
     if (!selected || preview) return;
     const controller = new AbortController();
@@ -11301,6 +11449,79 @@ function CompanySurface({ page, actions, roster }) {
   const coordinatorOf = (item) => data.employees.find((employee) => employee.project_id === item.id && employee.acceptance_role === "coordinator") ?? data.employees.find((employee) => employee.id === data.members.find((member) => member.id === item.coordinator_assignment_id)?.employee_id);
   const groupReady = (item) => !preview && item.group_binding?.status === "bound" && Boolean(item.group_chat_ref) && Boolean(roster.roomsById?.[item.group_chat_ref]);
   const openProject = (item) => groupReady(item) ? openChat(item) : actions.openCompanyPage("detail", item.id);
+  const markStale = (item) => setTodosData((current) => current ? { ...current, todos: current.todos.map((row) => row.id === item.id ? { ...row, stale: true, ready: false, reason: null, reason_code: null } : row) } : current);
+  const applyDecided = (item, action, opinion) => setTodosData((current) => {
+    if (!current) return current;
+    const approval = item.card_kind === "approval";
+    const decided = {
+      ...item,
+      state: action === "approve" ? approval ? "approved-human" : "accepted" : approval ? "rejected" : "returned",
+      handled: true,
+      ready: false,
+      suspended: false,
+      stale: false,
+      reason: null,
+      reason_code: null,
+      opinion: opinion || item.opinion || null,
+      handled_at: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    const counts2 = { ...current.counts };
+    const waitingKey = approval ? "waiting_approvals" : "waiting_acceptances";
+    if (Number.isInteger(counts2.waiting_total)) counts2.waiting_total = Math.max(0, counts2.waiting_total - 1);
+    if (Number.isInteger(counts2[waitingKey])) counts2[waitingKey] = Math.max(0, counts2[waitingKey] - 1);
+    if (Number.isInteger(counts2.handled_total)) counts2.handled_total += 1;
+    if (Number.isInteger(counts2.handled_returned)) counts2.handled_returned += 1;
+    return { ...current, counts: counts2, todos: [decided, ...current.todos.filter((row) => row.id !== item.id)] };
+  });
+  const answerTodo = async (item, action, options = {}) => {
+    const opinion = String(options.opinion ?? "").trim();
+    try {
+      if (item.card_kind === "approval") {
+        await call("company-todo-answer", {
+          todo_id: item.id,
+          answer_ref: item.answer_ref ?? null,
+          decision: action === "approve" ? "allow" : "reject",
+          opinion,
+          operation_key: freshKey()
+        });
+      } else {
+        await call("company-command", {
+          command: "acceptance.decide",
+          payload: {
+            operation_key: freshKey(),
+            expected_revision: item.revision ?? null,
+            acceptance_id: item.acceptance_id ?? null,
+            decision: action === "approve" ? "accept" : "return",
+            opinion
+          }
+        });
+      }
+    } catch (failure) {
+      const code = failure?.code;
+      if (code === "todo/changed" || code === "todo/unknown" || code === "todo/stale") {
+        markStale(item);
+        return { stale: true };
+      }
+      if (code === "company/revision-conflict") {
+        await loadTodos(void 0, true);
+        throw Object.assign(new Error(t("The request changed. Refreshed.")), { code });
+      }
+      throw failure;
+    }
+    applyDecided(item, action, opinion);
+    return { stale: false };
+  };
+  const investigateTodo = (item) => {
+    const botId = !item.project_id && item.session_id || item.coordinator_bot_id || item.requester_bot_id;
+    if (!botId) return;
+    actions.openSession(botId);
+    close();
+  };
+  const openTodoProject = (item) => {
+    const target = data.projects.find((project2) => project2.id === item.project_id);
+    if (target) openProject(target);
+    else actions.openCompanyPage("detail", item.project_id);
+  };
   const wanted = query.trim().toLowerCase();
   const visible = data.projects.filter((item) => filter === "all" || (item.status ?? "setup") === filter).filter((item) => !wanted || [item.name, item.goal].filter(Boolean).some((value) => String(value).toLowerCase().includes(wanted)));
   const onTodos = kind === "todos";
@@ -11326,7 +11547,20 @@ function CompanySurface({ page, actions, roster }) {
           const result = await mutate(command, fields);
           setDetailAttempt((value) => value + 1);
           return result;
-        } }) : onTodos ? (0, import_react23.createElement)(TodoPage, { todos: [], loading, error, onRetry: () => void load(), actions: { onOpenProjects: () => actions.openCompanyPage("list") } }) : (0, import_react23.createElement)(
+        } }) : onTodos ? (0, import_react23.createElement)(TodoPage, {
+          todos: todosData?.todos ?? [],
+          counts: todosData?.counts ?? null,
+          read_at: todosData?.read_at ?? null,
+          loading: todoLoading,
+          error: todoError,
+          onRetry: () => setTodoAttempt((value) => value + 1),
+          actions: {
+            onOpenProjects: () => actions.openCompanyPage("list"),
+            onOpenProject: openTodoProject,
+            onDecide: answerTodo,
+            onInvestigate: investigateTodo
+          }
+        }) : (0, import_react23.createElement)(
           "section",
           { className: "bc-page", "aria-label": t("Project list") },
           (0, import_react23.createElement)(
