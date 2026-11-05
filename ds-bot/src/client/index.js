@@ -24,6 +24,7 @@ import { installHeaderNavigation } from './header-navigation.js'
 import { AssistantCell, TriggerCell, TurnProcessCell, Nothing, CellEmpty, TurnTailCell, ToolCell } from './cells.js'
 import { Overlays } from './overlays.js'
 import { COMPANY_CSS } from './projects-page.js'
+import { TODO_CSS } from './todo-page.js'
 import { PROJECT_CHAT_CSS } from './project-chat-overlay.js'
 import { createBotBrowsers, serveBrowserReads } from './bot-browsers.js'
 import { BROWSER_CSS } from './browser-pane.js'
@@ -907,6 +908,7 @@ export function apply(ctx) {
     () => installCompiledStyles(SHELL_CSS, 'shell'),
     () => installCompiledStyles(SIDEBAR_CSS, 'sidebar'),
     () => installCompiledStyles(COMPANY_CSS, 'company'),
+    () => installCompiledStyles(TODO_CSS, 'todos'),
     () => installCompiledStyles(PROJECT_CHAT_CSS, 'project-chat'),
     () => installCompiledStyles(SECRET_CSS, 'secrets'),
     () => installCompiledStyles(LEARNING_CSS, 'learning'),

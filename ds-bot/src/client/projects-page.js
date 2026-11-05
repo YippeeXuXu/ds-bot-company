@@ -3,6 +3,7 @@ import { call } from './api.js'
 import { t } from './i18n.js'
 import { ProjectPage } from './project-page.js'
 import { ProjectWizard } from './project-wizard.js'
+import { TodoPage } from './todo-page.js'
 
 const sample = () => ({
   company: { id: 'demo-company', name: 'DS Bot Company', status: 'active' },
@@ -55,6 +56,11 @@ export function CompanySurface({ page, actions, roster }) {
   const revision = useRef(null)
   const selected = page?.id
   const kind = page?.kind ?? 'list'
+  // The surface stays mounted while the page changes, so the once-bound key
+  // handler reads the current kind from a ref. A top-level page keeps Esc inert:
+  // the owner leaves it through the sidebar, not by pressing Escape.
+  const kindRef = useRef(kind)
+  kindRef.current = kind
   const close = () => actions.closeCompanyPage()
 
   useEffect(() => {
@@ -72,7 +78,7 @@ export function CompanySurface({ page, actions, roster }) {
       if (event.key !== 'Escape' || event.target instanceof HTMLSelectElement) return
       event.preventDefault()
       event.stopPropagation()
-      close()
+      if (kindRef.current !== 'todos') close()
     }
     document.addEventListener('keydown', onKey, true)
     return () => { document.removeEventListener('keydown', onKey, true); opener.current?.focus?.() }
@@ -176,18 +182,22 @@ export function CompanySurface({ page, actions, roster }) {
   const visible = data.projects
     .filter(item => filter === 'all' || (item.status ?? 'setup') === filter)
     .filter(item => !wanted || [item.name, item.goal].filter(Boolean).some(value => String(value).toLowerCase().includes(wanted)))
-  return h('div', { className: 'bc-surface', role: 'dialog', 'aria-modal': true, 'aria-label': t('Projects'), tabIndex: -1, ref: box },
+  const onTodos = kind === 'todos'
+  return h('div', { className: 'bc-surface', role: 'dialog', 'aria-modal': true, 'aria-label': onTodos ? t('Todos') : t('Projects'), tabIndex: -1, ref: box },
     h('div', { className: 'bc-shell' },
       h('header', { className: 'bc-header' },
-        h('button', { type: 'button', className: 'bc-brand', onClick: () => actions.openCompanyPage('list') }, t('Projects')),
+        h('button', { type: 'button', className: 'bc-brand', onClick: () => actions.openCompanyPage(onTodos ? 'todos' : 'list') }, onTodos ? t('Todos') : t('Projects')),
         h('span', { className: 'bc-header-context' }, data.company?.name ?? t('Company workspace')),
-        h('button', { type: 'button', className: 'bc-icon', 'aria-label': t('Close projects'), onClick: close }, '×')),
+        h('button', { type: 'button', className: 'bc-icon', 'aria-label': onTodos ? t('Close todos') : t('Close projects'), onClick: close }, '×')),
       preview ? h('div', { className: 'bc-preview', role: 'status' }, t('Preview · Local sample data. Nothing has been saved.')) : null,
       notice ? h('div', { className: 'bc-notice', role: 'status' }, notice, h('button', { type: 'button', 'aria-label': t('Dismiss notice'), onClick: () => setNotice('') }, '×')) : null,
       h('main', { className: 'bc-content' },
         kind === 'wizard' ? h(ProjectWizard, { data, roster, preview, loading, error, mutate, onBack: () => actions.openCompanyPage('list'), onCreated: result => actions.openCompanyPage('detail', result.body?.project?.id) })
           : kind === 'detail' ? h(ProjectPage, { project, data, preview, loading: loading || detailLoading, error: detailError || error, onBack: () => actions.openCompanyPage('list'), onChat: () => project && openChat(project), onRetry: () => setDetailAttempt(value => value + 1), onCommand: async (command, fields) => { const result = await mutate(command, fields); setDetailAttempt(value => value + 1); return result } })
-            : h('section', { className: 'bc-page', 'aria-label': t('Project list') },
+            // No decision rows exist until the company task model lands; the page
+            // then rests on its empty state instead of inventing entries.
+            : onTodos ? h(TodoPage, { todos: [], loading, error, onRetry: () => void load(), actions: { onOpenProjects: () => actions.openCompanyPage('list') } })
+              : h('section', { className: 'bc-page', 'aria-label': t('Project list') },
               h('div', { className: 'bc-head' },
                 h('div', { className: 'bc-grow' },
                   h('span', { className: 'bc-crumb' }, t('Workspace / Projects')),
