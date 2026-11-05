@@ -113,11 +113,14 @@ export function hostApprovalMode({ rt, exec }) {
 // so the identity and the request always survive; `state_truncated` says that happened.
 // It describes the call and the authorization only: the verdict this process already took
 // stays local, because telling a judge the answer first would anchor the judgement.
-const renderState = ({ scope, tool, target, digest, mode }) => {
+const renderState = ({ scope, tool, target, digest, mode, host }) => {
   const lines = [
     `policy_version: ${mode.policyVersion}`,
     'Three answers: allow runs the call, human-needed asks the human through the host, deny is final.',
     'A failed or unreadable judgement fails closed to human-needed.',
+    // §3.3: the judge needs the host's own approval mode to read the call, and `unknown` is a
+    // fact worth saying out loud — it is what makes the adaptor fail closed before judging.
+    `host_approval_mode: preset=${host?.preset ?? 'unknown'} policy=${host?.policy ?? 'unknown'} source=${host?.source ?? 'unknown'}`,
     `company: ${scope.company?.id ?? 'unknown'} department: ${scope.department?.id ?? 'unknown'} project: ${scope.project.id} (${scope.project.status}) revision: ${scope.project.revision ?? 'unknown'}`,
     `actor: bot=${scope.botId} employee=${scope.employee.id} role=${scope.employee.role ?? scope.employee.acceptance_role ?? 'unknown'} session=${scope.sessionKind}${scope.roomId === undefined ? '' : ` room=${scope.roomId}`}`,
     `tool: ${tool} call: ${target === undefined ? 'unknown' : target}`,
@@ -135,17 +138,20 @@ const renderState = ({ scope, tool, target, digest, mode }) => {
  * request — the target and the high-risk flag the local pass found; its rule id and its
  * decision do not, so the judge answers from the call itself rather than from a hint.
  */
-export function buildRequest({ exec, scope, local, host, config, now = Date.now, home }) {
+export function buildRequest({ exec, scope, local, host, config, now = Date.now, home, redact }) {
   const args = exec.arguments
   // The judge reads facts, not text: `features.js` projects the call into the shape §3.3 asks
   // for and redacts the host home. `home` is the DSH home, so paths under it become `<dsh-home>`.
-  const features = callFeatures({ tool: exec.name, args, base: scope.base, scope, home })
+  const features = callFeatures({ tool: exec.name, args, base: scope.base, scope, home, redact })
   const callId = typeof exec.callId === 'string' ? exec.callId : 'unknown'
   // The digest identifies the call for dedupe and for the record without carrying its arguments;
   // it is computed here and never sent as text.
   const digest = sha256(canonical(args ?? {}))
-  const target = local.target ?? exec.name
-  const state = renderState({ scope, tool: exec.name, target, digest, mode: config })
+  // The target is a fact, not a value: if it happens to spell out a secret the store knows, the
+  // store's redactor scrubs it here too, so no field of the request can carry a credential.
+  const raw = local.target ?? exec.name
+  const target = typeof redact === 'function' ? redact(String(raw)) : raw
+  const state = renderState({ scope, tool: exec.name, target, digest, mode: config, host })
   return {
     schema_version: '1',
     request_id: `sr_${callId}`,

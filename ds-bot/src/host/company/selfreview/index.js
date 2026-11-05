@@ -135,6 +135,33 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
   const record = (entry) => recorder.write(entry)
 
   /**
+   * Approvals that are about to be asked, in the order they were asked: the card's call,
+   * remembered until its row arrives. The host's `approval/request` event names the call but no
+   * card, and the `approval/asked` session event may name neither, so the two are joined here.
+   */
+  const pendingAsks = []
+  const noteAsk = (callId, tool) => {
+    if (typeof callId !== 'string' || callId === '') return
+    if (pendingAsks.some(entry => entry.callId === callId)) return
+    pendingAsks.push({ callId, tool, at: now() })
+    while (pendingAsks.length > 8) pendingAsks.shift()
+  }
+  const answerWith = (answer, exec) => {
+    if (answer?.kind === 'ask') noteAsk(exec?.callId, exec?.name)
+    return answer
+  }
+  /** The call an approval card belongs to: the oldest pending ask for the same tool. */
+  const bindPending = (event) => {
+    if (event?.type !== 'approval/asked') return undefined
+    const data = event.data ?? {}
+    if (typeof data.callId === 'string') return undefined
+    const tool = typeof data.toolName === 'string' ? data.toolName : undefined
+    const at = pendingAsks.findIndex(entry => tool === undefined || entry.tool === undefined || entry.tool === tool)
+    if (at === -1) return undefined
+    return pendingAsks.splice(at, 1)[0].callId
+  }
+
+  /**
    * What the gate does with a decision: `shadow` records and lets the host run, `enforce`
    * applies it. Split from `settle` because a deduped call replays this answer without writing
    * a second record — the judgement is the same, so the file keeps one line per call.
@@ -174,10 +201,25 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
       host,
       call: { callId: exec?.callId, rootCallId: exec?.rootCallId },
     }))
-    return applyDecision({ exec, local, request, final })
+    return answerWith(applyDecision({ exec, local, request, final }), exec)
   }
 
-  const dedupeKey = (request, host) => `${request?.operation_fingerprint ?? ''}|${host?.preset ?? ''}|${host?.policy ?? ''}`
+  // Item 3: one key for "the same operation in the same place". The fingerprint names the call;
+  // the scope ids and revisions name where it ran, so two projects asking the same thing are two
+  // judgements rather than one; and the local verdict is part of the key, so a cached answer
+  // never replaces a rule the rules layer would have refused.
+  const dedupeKey = (request, host, local) => [
+    request?.operation_fingerprint ?? '',
+    host?.preset ?? '',
+    host?.policy ?? '',
+    request?.company_id ?? '',
+    request?.project_id ?? '',
+    request?.company_revision ?? '',
+    request?.project_revision ?? '',
+    request?.effective_authorization_scope?.workspace_ref ?? '',
+    local?.rule_id ?? '',
+    local?.decision ?? '',
+  ].join('|')
 
   const cachedDecision = (key) => {
     if (config.dedupeWindowMs <= 0) return undefined
@@ -219,7 +261,7 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
     let request
     try {
       local = classify({ tool: exec.name, args: exec.arguments, scope, base: scope.base })
-      request = buildRequest({ exec, scope, local, host, config, now, home: rt.home })
+      request = buildRequest({ exec, scope, local, host, config, now, home: rt.home, redact: typeof rt.redactSecrets === 'function' ? rt.redactSecrets : undefined })
     } catch {
       // Without a rule verdict there is nothing to send; fail closed with the record intact.
       return settle({ exec, scope, host, local, request, status: 'error', final: 'human-needed', started })
@@ -248,11 +290,11 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
 
     // Item 3: the same call inside the window reuses the first answer instead of asking the
     // engine twice, and writes no second record — a repeat is one judgement, one line.
-    const key = dedupeKey(request, host)
+    const key = dedupeKey(request, host, local)
     const cached = cachedDecision(key)
     if (cached !== undefined) {
       counters.deduped += 1
-      return applyDecision({ exec, local, request, final: cached.decision })
+      return answerWith(applyDecision({ exec, local, request, final: cached.decision }), exec)
     }
 
     const answer = await judge({ endpoint: config.endpoint, token: tokenOf(), timeoutMs: config.timeoutMs, request, fetchImpl })
@@ -316,7 +358,7 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
   const hostEvent = (session, event) => {
     const sessionId = session?.id ?? session?.sessionId
     if (typeof sessionId !== 'string' || isCompanySession(sessionId) === false) return
-    hostLog.append(session, event)
+    hostLog.append(session, event, bindPending(event))
     counters.host_events += 1
   }
 
@@ -326,6 +368,7 @@ export function createAdaptor({ rt, config: raw, warn, now = Date.now, fetchImpl
     gate,
     listener,
     hostEvent,
+    noteApprovalRequest: (request) => noteAsk(request?.callId, request?.toolName),
     hostLogPath: hostLogPath(rt.home),
     stats: () => ({ mode: config.mode, ...counters, records: recorder.stats(), host_log: hostLog.stats() }),
     /** Pure projection of one Session's events, exposed for 0d/0e and for tests. */
@@ -357,6 +400,12 @@ export function install(rt) {
   const adaptor = createAdaptor({ rt, config, warn: message => rt.ctx?.logger?.warn?.(`[selfreview] ${message}`) })
   rt.selfReview = adaptor
   rt.ctx.on('tools/pre-execute', adaptor.listener, { prepend: true })
+  // The host's approval hook names the call but not the card. This listener only observes: it
+  // hands the hook straight on, so the host's own answerers still decide the approval.
+  rt.ctx.on('approval/request', (request, next) => {
+    try { adaptor.noteApprovalRequest(request) } catch {}
+    return typeof next === 'function' ? next() : undefined
+  })
   rt.ctx.on('session/event', (session, event) => adaptor.hostEvent(session, event))
   rt.ctx.effect(() => () => adaptor.close(), 'ds-bot: company self-review records')
 }

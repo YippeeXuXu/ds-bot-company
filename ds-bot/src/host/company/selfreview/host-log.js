@@ -41,7 +41,7 @@ const denialWords = (text) => {
  * `tool/result` carries the tool's output in `data.message`; only its error flag and the host's
  * denial words are read, never the output.
  */
-export function hostFact(sessionId, event, at = new Date().toISOString()) {
+export function hostFact(sessionId, event, at = new Date().toISOString(), boundCallId) {
   const type = event?.type
   const data = event?.data ?? {}
   const base = { schema: HOST_LOG_SCHEMA, at, session_id: typeof sessionId === 'string' ? sessionId : null, type }
@@ -61,10 +61,12 @@ export function hostFact(sessionId, event, at = new Date().toISOString()) {
     }
   }
   if (type === 'approval/asked') {
+    // The card may name its call or not; when it does not, the writer's binding says which call
+    // was waiting for an answer, so the row still joins the call it belongs to (§6.2).
     return {
       ...base,
       approval_id: typeof data.id === 'string' ? data.id : null,
-      call_id: typeof data.callId === 'string' ? data.callId : null,
+      call_id: typeof data.callId === 'string' ? data.callId : (typeof boundCallId === 'string' ? boundCallId : null),
       tool: typeof data.toolName === 'string' ? data.toolName : null,
     }
   }
@@ -89,8 +91,8 @@ export function createHostLog({ dir, maxBytes, keep, warn, now = Date.now } = {}
   return {
     file: HOST_LOG_FILE,
     path: recorder.path,
-    append(session, event) {
-      const row = hostFact(session?.id ?? session?.sessionId, event, new Date(now()).toISOString())
+    append(session, event, boundCallId) {
+      const row = hostFact(session?.id ?? session?.sessionId, event, new Date(now()).toISOString(), boundCallId)
       if (row !== undefined) recorder.write(row)
     },
     async flush() {
@@ -217,7 +219,10 @@ export function rebuildHostOutcomes({ rows = [], records = [], isolated = false 
 export function whyOf({ rows = [], records = [], callId, isolated = false } = {}) {
   const callOf = callBinder(rows)
   const owned = rows.filter(row => callOf(row) === callId)
-  const sessionRows = sessionRowsOf(rows, owned[0]?.session_id)
+  // A call the file does not know has no Session either: reading the whole file here would put
+  // another Session's policy lines in this call's timeline.
+  const sessionId = owned[0]?.session_id
+  const sessionRows = sessionId === undefined ? [] : sessionRowsOf(rows, sessionId)
   const record = records.find(entry => entry?.call_id === callId) ?? null
   const projection = projectHostOutcome({
     callId,
