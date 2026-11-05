@@ -13,7 +13,8 @@
 import { randomUUID } from 'node:crypto'
 import { companyFail } from './store.js'
 
-const newId = prefix => `${prefix}_${randomUUID().replaceAll('-', '').slice(0, 12)}`
+// Shared with the acceptance objects (acceptances.js): one id shape for the whole company.
+export const newId = prefix => `${prefix}_${randomUUID().replaceAll('-', '').slice(0, 12)}`
 
 const text = (value, field, { max = 120, min = 1 } = {}) => {
   const trimmed = typeof value === 'string' ? value.trim() : ''

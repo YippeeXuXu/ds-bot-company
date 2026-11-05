@@ -18,6 +18,7 @@
 // in the to-do view even though they are answered where they were asked (B-1, v1.0).
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { newId } from './projects.js'
 import { companyFail } from './store.js'
 import { hostLogPath, rebuildHostOutcomes } from './selfreview/host-log.js'
 
@@ -92,6 +93,24 @@ const waitMinutes = (createdAt, at) => {
 const shorten = (text, max = 80) => {
   const value = String(text).replace(/\s+/g, ' ').trim()
   return value.length > max ? `${value.slice(0, max - 1)}…` : value
+}
+
+// Answer payloads: an answer names a card that must exist and a decision that this build can
+// carry out. Absent optional text stays null rather than becoming the string "undefined".
+const requiredText = (value, field, max) => {
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  if (trimmed === '') throw companyFail('todo/invalid', `${field} is required.`, { field })
+  if (trimmed.length > max) throw companyFail('todo/invalid', `${field} is longer than ${max} characters.`, { field, max })
+  return trimmed
+}
+
+const optionalText = (value, field, max) => {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'string') throw companyFail('todo/invalid', `${field} must be text.`, { field })
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  if (trimmed.length > max) throw companyFail('todo/invalid', `${field} is longer than ${max} characters.`, { field, max })
+  return trimmed
 }
 
 const verbOf = tool => {
@@ -272,6 +291,23 @@ const indexCalls = rows => {
   return byCall
 }
 
+// What an answer note needs from the same history the read joins against: the project the
+// call belonged to (its review record) and the host's own card id (the `approval/asked`
+// fact line). Both are optional by contract; a rotated-away log leaves null, not a guess.
+const factsOfCall = (home, callId) => {
+  const history = scanHistory(home)
+  const record = history.records.get(callId)
+  let approvalId = null
+  for (const row of history.rows) {
+    if (!isObject(row)) continue
+    if (row.call_id === callId && typeof row.approval_id === 'string') approvalId = row.approval_id
+  }
+  return {
+    approvalId,
+    projectId: typeof record?.project_id === 'string' ? record.project_id : null,
+  }
+}
+
 const readJsonRows = path => {
   let text
   try {
@@ -359,8 +395,10 @@ const byHandledAt = (left, right) => {
  * @param {string} input.home             the DS Bot home (`<home>/company/` holds the logs)
  * @param {Function} [input.now]          clock, for tests
  * @param {Function} [input.redact]       the host's secret redactor through `rt.redactSecrets`
+ * @param {Function} [input.answerApproval] `rt.answerApproval`: relays an answer to the host
+ * @param {Function} [input.warn]         where a lost answer note is reported
  */
-export function createTodos({ store, approvals = () => [], sessionBot, home, now = Date.now, redact = value => value }) {
+export function createTodos({ store, approvals = () => [], sessionBot, home, now = Date.now, redact = value => value, answerApproval, warn = () => {} }) {
   const clean = value => {
     const text = typeof value === 'string' ? value : String(value ?? '')
     return typeof redact === 'function' ? String(redact(text)) : text
@@ -590,5 +628,80 @@ export function createTodos({ store, approvals = () => [], sessionBot, home, now
     }
   }
 
-  return { read }
+  // Answer one waiting approval from the to-do view: hand the decision to the host, then
+  // note what was said. The host owns the card — a company-level "allow" the host never
+  // received would leave the Bot waiting forever — so the relay is the answer itself and
+  // the `todo_log` row only records it (contract §5.1).
+  const answer = async (input = {}) => {
+    const body = isObject(input) ? input : {}
+    const todoId = requiredText(body.todo_id, 'todo_id', 200)
+    // An acceptance row is answered through `acceptance.decide`; allow/reject does not
+    // describe it, so this endpoint refuses the combination rather than deciding wrongly.
+    if (todoId.startsWith('ac_')) {
+      throw companyFail('todo/unsupported', 'Acceptance rows are answered by acceptance.decide, not by allow/reject.', { todo_id: todoId, card_kind: 'acceptance' })
+    }
+    const decision = body.decision
+    if (decision !== 'allow' && decision !== 'reject') {
+      throw companyFail('todo/invalid', 'decision is allow or reject.', { field: 'decision', allowed: ['allow', 'reject'] })
+    }
+    // Named by the contract for the call, although the host card itself is what makes a
+    // repeated answer land on `todo/unknown` rather than applying twice.
+    requiredText(body.operation_key, 'operation_key', 200)
+    const opinion = optionalText(body.opinion, 'opinion', 500)
+    // An unassigned row has no card here: the host keeps it in the private chat (B-1), so
+    // answering it is the same as answering a card that is no longer open.
+    const answerRef = typeof body.answer_ref === 'string' ? body.answer_ref.trim() : ''
+    if (answerRef === '') {
+      throw companyFail('todo/unknown', 'This row has no card to answer here.', { todo_id: todoId })
+    }
+    store.assertWritable()
+    const entry = (typeof approvals === 'function' ? approvals() : []).filter(isObject).find(item => item.id === answerRef)
+    if (entry === undefined) {
+      throw companyFail('todo/unknown', 'The approval card is no longer open.', { todo_id: todoId })
+    }
+    if (`ap_${entry.id}` !== todoId) {
+      throw companyFail('todo/stale', 'The to-do row no longer names this card.', { todo_id: todoId, answer_ref: answerRef })
+    }
+    if (entry.answerable !== true || typeof answerApproval !== 'function') {
+      throw companyFail('todo/unsupported', 'This card cannot be answered from the to-do view.', { todo_id: todoId })
+    }
+    try {
+      await answerApproval(entry.id, decision)
+    } catch (error) {
+      // The two host refusals have different meanings on screen: a card answered elsewhere
+      // moves group, a request this build could not carry out does not (contract §5.1/§4.6).
+      if (error?.code === 'bot/stale') throw companyFail('todo/changed', 'The card was answered elsewhere.', { todo_id: todoId })
+      if (error?.code === 'bot/invalid') throw companyFail('todo/unsupported', error.message ?? 'The host refused this answer.', { todo_id: todoId })
+      throw error
+    }
+    // The host already has the answer. The note is best effort: losing it must not turn the
+    // card back into waiting, so a failed save is a warning and not a failure (§5.1 step 4).
+    const callId = typeof entry.callId === 'string' && entry.callId !== '' ? entry.callId : null
+    if (callId === null) {
+      warn('ds-bot: answered approval %s without a call id, so the answer was not recorded', entry.id)
+    } else {
+      const facts = factsOfCall(home, callId)
+      const row = {
+        id: newId('tdl'),
+        card_kind: 'approval',
+        call_id: callId,
+        answer_ref: entry.id,
+        approval_id: facts.approvalId,
+        project_id: facts.projectId,
+        decision,
+        opinion,
+        at: now(),
+      }
+      const next = structuredClone(store.state)
+      next.todo_log[row.id] = row
+      try {
+        await store.commit(next)
+      } catch (error) {
+        warn('ds-bot: could not record the answer to %s: %s', callId, error?.message ?? String(error))
+      }
+    }
+    return { ok: true, todo_id: todoId, host_outcome: decision === 'allow' ? 'allowed-once' : 'rejected', handled: true }
+  }
+
+  return { read, answer }
 }

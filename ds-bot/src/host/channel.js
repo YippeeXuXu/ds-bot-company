@@ -593,6 +593,12 @@ export function install(rt) {
           const result = await rt.companyApi.todos(body)
           return result.status === 200 ? ok(result.body) : { ok: false, error: result.body }
         }
+        // Answering a waiting card: the same call as POST /api/company/todos/answer. A write,
+        // so it is not in READS and a read-only host refuses it before this switch runs.
+        case 'company-todo-answer': {
+          const result = await rt.companyApi.answer(body)
+          return result.status === 200 ? ok(result.body) : { ok: false, error: result.body }
+        }
         default:
           return fail(`Unknown endpoint ${endpoint}`, 'bot/not-found')
       }

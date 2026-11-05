@@ -13,7 +13,7 @@
 import { readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { projectDetailOf } from './projects.js'
-import { createTodos, TODOS_PATH } from './todos.js'
+import { createTodos, TODOS_ANSWER_PATH, TODOS_PATH } from './todos.js'
 
 export const COMMAND_PATH = '/api/company/command'
 export const MODEL_PATH = '/api/company/model'
@@ -48,6 +48,9 @@ const STATUS = new Map([
   ['project/invalid', 422],
   ['project/owner-required', 422],
   ['project/missing-input', 422],
+  // Acceptance objects: answering one that is not there, or that was decided already.
+  ['acceptance/not-found', 404],
+  ['acceptance/state-conflict', 409],
   // The to-do view's own refusals: a bad window, a card that is gone, a card that changed
   // under the caller, an answer this build cannot give, and the D7 acceptance refusal.
   ['todo/invalid', 422],
@@ -76,7 +79,7 @@ export const queryOf = url => {
   return query
 }
 
-export function createCompanyApi({ store, execute, groups = {}, now = Date.now, approvals = () => [], sessionBot, home, redact = value => value }) {
+export function createCompanyApi({ store, execute, groups = {}, now = Date.now, approvals = () => [], sessionBot, home, redact = value => value, answerApproval, warn = () => {} }) {
   const roomMembers = project => {
     if (typeof groups.members !== 'function' || project.group_chat_ref == null) return undefined
     return groups.members(project.group_chat_ref)
@@ -84,10 +87,19 @@ export function createCompanyApi({ store, execute, groups = {}, now = Date.now, 
 
   // The to-do read is the one answer assembled from several sources rather than projected
   // from one table. It is created once so the route and the client channel cannot drift.
-  const todos = createTodos({ store, approvals, sessionBot, home: home ?? dirname(store.dir), now, redact })
+  const todos = createTodos({ store, approvals, sessionBot, home: home ?? dirname(store.dir), now, redact, answerApproval, warn })
   const todosRead = (input = {}) => {
     try {
       return { status: 200, body: todos.read(input ?? {}) }
+    } catch (error) {
+      return { status: statusOf(error?.code), body: failureBody(error) }
+    }
+  }
+  // Answering is a write: the card is relayed to the host and the answer is noted. It is
+  // async because the note is saved, where the read never writes anything.
+  const todosAnswer = async (input = {}) => {
+    try {
+      return { status: 200, body: await todos.answer(input ?? {}) }
     } catch (error) {
       return { status: statusOf(error?.code), body: failureBody(error) }
     }
@@ -208,11 +220,28 @@ export function createCompanyApi({ store, execute, groups = {}, now = Date.now, 
       ctx.connection.fetch.register({ path: MODEL_PATH, methods: ['GET'], requestBody: 'buffered', fetch: read(model) }),
       ctx.connection.fetch.register({ path: EVENTS_PATH, methods: ['GET'], requestBody: 'buffered', fetch: read(events) }),
       ctx.connection.fetch.register({ path: TODOS_PATH, methods: ['GET'], requestBody: 'buffered', fetch: read(todosRead) }),
+      // The answer to one waiting card: the write half of the to-do view. A POST body is
+      // read the same way the command entry reads its own, so a malformed request is a 400
+      // and never reaches the card.
+      ctx.connection.fetch.register({
+        path: TODOS_ANSWER_PATH,
+        methods: ['POST'],
+        requestBody: 'buffered',
+        fetch: async (request) => {
+          let body
+          try {
+            body = await request.json()
+          } catch {
+            return respond({ status: 400, body: { code: 'todo/invalid', message: 'The answer body is not JSON.', details: {} } })
+          }
+          return respond(await todosAnswer(body))
+        },
+      }),
     ]
     return () => {
       for (const dispose of disposers) dispose?.()
     }
   }
 
-  return { command, model, events, todos: todosRead, register }
+  return { command, model, events, todos: todosRead, answer: todosAnswer, register }
 }

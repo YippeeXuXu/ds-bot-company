@@ -52,6 +52,7 @@ test('apply registers listeners and effects in a fixed order', (t) => {
     'route GET /api/company/model',
     'route GET /api/company/events',
     'route GET /api/company/todos',
+    'route POST /api/company/todos/answer',
     'effect ds-bot: company store',
     'on tools/execute',
     'effect ds-bot: identity section',

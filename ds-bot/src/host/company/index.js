@@ -7,11 +7,12 @@
 // group is made, read and re-membered. A project group is allowed to hold a single Bot
 // (Q1); no other group is.
 import { join } from 'node:path'
+import { ROW_REVISION_COMMANDS, acceptanceHandlers } from './acceptances.js'
 import { createCompanyApi } from './api.js'
 import { createCommands } from './commands.js'
 import { orgHandlers } from './org.js'
 import { projectHandlers } from './projects.js'
-import { createCompanyStore } from './store.js'
+import { companyFail, createCompanyStore } from './store.js'
 
 // The roster side of a project group. `members` returns undefined when the group is gone,
 // which is how the project commands tell "missing" from "drifted".
@@ -43,9 +44,13 @@ export function install(rt) {
   const commands = createCommands({
     store,
     now,
+    // `acceptance.decide` is answered with the revision of the acceptance itself (the to-do
+    // row carries it, contract A12), so the envelope leaves that comparison to its handler.
+    rowRevisionCommands: ROW_REVISION_COMMANDS,
     handlers: {
       ...orgHandlers({ botOf: id => rt.botOf?.(id), isPrivate: id => rt.isPrivate?.(id) === true }),
       ...projectHandlers({ groups: groupAdapter(rt) }),
+      ...acceptanceHandlers(),
     },
   })
   const execute = commands.execute
@@ -64,6 +69,14 @@ export function install(rt) {
     sessionBot: id => rt.selfOf?.(id),
     home: rt.home,
     redact: text => (typeof rt.redactSecrets === 'function' ? rt.redactSecrets(text) : text),
+    // Answering a card is relaying to the host, never a company-level decision of its own
+    // (contract §5.1). A lookup, because the approvals module installs before or after this
+    // one depending on load order.
+    answerApproval: (id, choice) => {
+      if (typeof rt.answerApproval !== 'function') throw companyFail('todo/unsupported', 'This dsh cannot answer approval cards.', {})
+      return rt.answerApproval(id, choice)
+    },
+    warn,
   })
   // A company file written by an older plugin is read as the current version in memory; the
   // upgrade is saved back once, with the one event that records it, so the file stops being

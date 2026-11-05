@@ -28,7 +28,7 @@ const text = (value, field, max = KEY_MAX) => {
   return value
 }
 
-export function createCommands({ store, handlers = {}, now = Date.now, logKept = LOG_KEPT }) {
+export function createCommands({ store, handlers = {}, now = Date.now, logKept = LOG_KEPT, rowRevisionCommands = new Set() }) {
   // Commands run one at a time: the state is read, changed and saved as a whole, so a
   // second command that started during the first would save over its result.
   let queue = Promise.resolve()
@@ -74,7 +74,11 @@ export function createCommands({ store, handlers = {}, now = Date.now, logKept =
       }
 
       const expected = body.expected_revision
-      if (expected !== undefined && (!Number.isInteger(expected) || expected !== store.state.revision)) {
+      // Usually `expected_revision` names the company revision. A few commands instead carry
+      // the revision of the object they change — the to-do row of an acceptance carries that
+      // acceptance's own revision (contract A12) — so their handler compares it and the
+      // envelope must not compare it to the company's.
+      if (!rowRevisionCommands.has(command) && expected !== undefined && (!Number.isInteger(expected) || expected !== store.state.revision)) {
         throw companyFail('company/revision-conflict', `The company is at revision ${store.state.revision}, not ${expected}.`, { expected_revision: expected, revision: store.state.revision })
       }
 
