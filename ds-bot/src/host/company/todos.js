@@ -399,9 +399,10 @@ const byHandledAt = (left, right) => {
  * @param {Function} [input.now]          clock, for tests
  * @param {Function} [input.redact]       the host's secret redactor through `rt.redactSecrets`
  * @param {Function} [input.answerApproval] `rt.answerApproval`: relays an answer to the host
+ * @param {Function} [input.runExclusive] the command queue, so a note never races a command
  * @param {Function} [input.warn]         where a lost answer note is reported
  */
-export function createTodos({ store, approvals = () => [], sessionBot, home, now = Date.now, redact = value => value, answerApproval, warn = () => {} }) {
+export function createTodos({ store, approvals = () => [], sessionBot, home, now = Date.now, redact = value => value, answerApproval, runExclusive = task => task(), warn = () => {} }) {
   const clean = value => {
     const text = typeof value === 'string' ? value : String(value ?? '')
     return typeof redact === 'function' ? String(redact(text)) : text
@@ -490,7 +491,9 @@ export function createTodos({ store, approvals = () => [], sessionBot, home, now
     row.host_preset = typeof (projection.host_preset ?? record?.host_preset) === 'string' ? (projection.host_preset ?? record?.host_preset) : null
     row.host_outcome = typeof projection.outcome === 'string' ? projection.outcome : null
     // The host names who authorized a decided call; nothing else may fill this in (B-2).
-    row.authorizer = typeof projection.authorizer === 'string' ? projection.authorizer : null
+    // A fact log rotated past the answer leaves the name unknown, which the contract spells
+    // `'unknown'` rather than an empty field (§4.4).
+    row.authorizer = typeof projection.authorizer === 'string' ? projection.authorizer : 'unknown'
     row.host_reject_reason = mapped.hostRejectReason ?? null
     row.answer_ref = null
     row.revision = null
@@ -687,29 +690,36 @@ export function createTodos({ store, approvals = () => [], sessionBot, home, now
     }
     // The host already has the answer. The note is best effort: losing it must not turn the
     // card back into waiting, so a failed save is a warning and not a failure (§5.1 step 4).
-    const callId = typeof entry.callId === 'string' && entry.callId !== '' ? entry.callId : null
-    if (callId === null) {
-      warn('ds-bot: answered approval %s without a call id, so the answer was not recorded', entry.id)
-    } else {
-      const facts = factsOfCall(home, callId)
-      const row = {
-        id: newId('tdl'),
-        card_kind: 'approval',
-        call_id: callId,
-        answer_ref: entry.id,
-        approval_id: facts.approvalId,
-        project_id: facts.projectId,
-        decision,
-        opinion,
-        at: now(),
-      }
-      const next = structuredClone(store.state)
-      next.todo_log[row.id] = row
-      try {
+    // The note saves in the command queue, after every command already waiting: a note
+    // committed over a command's draft would lose that command's write. The whole note —
+    // history lookup, clone and save — sits inside the guard too, because an exception here
+    // would report a failure for an answer the host already took.
+    try {
+      await runExclusive(async () => {
+        const callId = typeof entry.callId === 'string' && entry.callId !== '' ? entry.callId : null
+        if (callId === null) {
+          warn('ds-bot: answered approval %s without a call id, so the answer was not recorded', entry.id)
+          return
+        }
+        const facts = factsOfCall(home, callId)
+        const row = {
+          id: newId('tdl'),
+          card_kind: 'approval',
+          call_id: callId,
+          answer_ref: entry.id,
+          approval_id: facts.approvalId,
+          project_id: facts.projectId,
+          decision,
+          opinion,
+          at: now(),
+        }
+        // Cloned inside the queue, so the note builds on the state the last command saved.
+        const next = structuredClone(store.state)
+        next.todo_log[row.id] = row
         await store.commit(next)
-      } catch (error) {
-        warn('ds-bot: could not record the answer to %s: %s', callId, error?.message ?? String(error))
-      }
+      })
+    } catch (error) {
+      warn('ds-bot: could not record the answer to %s: %s', entry.id, error?.message ?? String(error))
     }
     return { ok: true, todo_id: todoId, host_outcome: decision === 'allow' ? 'allowed-once' : 'rejected', handled: true }
   }

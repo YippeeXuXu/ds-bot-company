@@ -64,6 +64,9 @@ export function install(rt) {
   const api = createCompanyApi({
     store,
     execute,
+    // The answer note saves outside the command envelope, so it borrows the command queue:
+    // a note committed over a command's half-written state would lose that command's write.
+    runExclusive: commands.runExclusive,
     groups: groupAdapter(rt),
     now,
     approvals: () => rt.approvalsView?.() ?? [],

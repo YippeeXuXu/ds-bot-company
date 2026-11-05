@@ -125,5 +125,10 @@ export function createCommands({ store, handlers = {}, now = Date.now, logKept =
     })
   }
 
-  return { execute, commands: Object.keys(handlers) }
+  // Some writes are not commands but still must not race one: the to-do answer notes what
+  // the host already decided, and saving that note over a half-written command would lose
+  // the command's write. `runExclusive` puts such a task behind the same queue.
+  const runExclusive = task => enqueue(task)
+
+  return { execute, runExclusive, commands: Object.keys(handlers) }
 }

@@ -377,3 +377,66 @@ test('a submitted acceptance appears in the to-do view, and leaves it after the 
   assert.equal(handled.opinion, '补测试')
   assert.equal(after.body.counts.handled_returned, 1)
 })
+
+test('S-4: a note waits for the command in the queue and neither write is lost', async () => {
+  const home = await openHome()
+  seed(home, { projects: [project('prj_1', 'Alpha', 'room_1')], employees: [employee('emp_1', '小蓝', 'bot_1')], members: [member('mem_1', 'prj_1', 'emp_1')] })
+  writeJsonl(home, 'selfreview-host.jsonl', [
+    { schema: 1, at: AT_ISO, session_id: 'sess_1', type: 'approval/asked', call_id: 'call_1', approval_id: 'appr_host_1', tool: 'bash' },
+  ])
+  const store = storeOf(home)
+  // A gate instead of a race: the command parks inside the queue, the answer is sent while the
+  // queue is occupied, and only then the command is let through. Without the shared queue the
+  // note would commit immediately, over the command's unfinished state.
+  let openGate
+  const gate = new Promise(resolve => { openGate = resolve })
+  let parked
+  const entered = new Promise(resolve => { parked = resolve })
+  const commands = createCommands({
+    store,
+    now: () => AT,
+    handlers: {
+      'company/hire': async ({ state, payload }) => {
+        parked()
+        await gate
+        state.employees[payload.id] = employee(payload.id, '新同事', 'bot_9')
+        return { events: [] }
+      },
+    },
+  })
+  const api = createCompanyApi({
+    store,
+    execute: (command, payload) => commands.execute(command, payload),
+    groups: {},
+    now: () => AT,
+    approvals: () => [liveCard()],
+    sessionBot: () => undefined,
+    home,
+    answerApproval: () => {},
+    runExclusive: commands.runExclusive,
+    warn: () => {},
+  })
+
+  const hired = commands.execute('company/hire', { operation_key: 'hire-1', id: 'emp_9' })
+  await entered
+  let answered = false
+  const answering = api.answer({ todo_id: 'ap_row_1', answer_ref: 'row_1', decision: 'allow', operation_key: 'answer-1' })
+  answering.then(() => { answered = true })
+
+  // The queue is still occupied, so the note has neither saved nor returned.
+  await new Promise(resolve => setTimeout(resolve, 25))
+  assert.equal(answered, false, 'the note waits for the command in the queue')
+  assert.equal(Object.values(stateOf(home).todo_log).length, 0, 'nothing is saved while the command holds the queue')
+
+  openGate()
+  const [commandResult, answerResult] = await Promise.all([hired, answering])
+  assert.equal(commandResult.status, 'committed')
+  assert.equal(answerResult.status, 200)
+  assert.equal(answerResult.body.handled, true)
+
+  const saved = stateOf(home)
+  assert.ok(saved.employees.emp_9, 'the command write survived the answer note')
+  assert.equal(Object.values(saved.todo_log).length, 1, 'the note survived the command write')
+  // The note is a note, not a command: it neither takes a revision nor records an operation.
+  assert.equal(saved.operation_log['answer-1'], undefined)
+})
