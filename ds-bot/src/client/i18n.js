@@ -1194,10 +1194,6 @@ Object.assign(ZH, HOST_ZH, {
   All: '全部', 'Clear search': '清除搜索', 'Last activity': '最近活动', 'No recent activity': '暂无最近活动', 'All clear': '暂无待办',
   'Project details': '项目详情', 'Open project details': '打开项目详情', 'Open project settings': '打开项目配置', 'No members yet': '暂无成员', 'No projects in this view.': '当前没有项目组。', 'Try another status, or view all projects.': '换个状态看看，或查看全部项目组。', 'Show all projects': '查看全部项目组',
   'Just now': '刚刚', 'minutes ago': '分钟前', 'hours ago': '小时前', 'days ago': '天前',
-  // P04 项目群聊：company-model 的视图字段（最近活动）
-  'Project created': '项目已创建', 'Project updated': '项目信息已更新',
-  '{name} joined the project': '{name} 加入项目', '{name} left the project': '{name} 离开项目',
-  '{name} submitted an acceptance': '{name} 提交验收', 'Acceptance accepted': '验收通过', 'Acceptance returned': '验收退回', 'A member': '成员',
   'No matching projects': '没有匹配的项目', 'No projects here yet': '暂无项目组',
   'Try another name or status.': '试试其他名称或状态。',
   // P09 待办

@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { COMMAND_PATH, EVENTS_PATH, MODEL_PATH, createCompanyApi } from '../src/host/company/api.js'
 import { TODOS_ANSWER_PATH, TODOS_PATH } from '../src/host/company/todos.js'
-import { ROW_REVISION_COMMANDS, acceptanceHandlers } from '../src/host/company/acceptances.js'
 import { createCommands } from '../src/host/company/commands.js'
 import { orgHandlers } from '../src/host/company/org.js'
 import { projectHandlers } from '../src/host/company/projects.js'
@@ -51,13 +50,9 @@ function open(home, { failSetMembers = false } = {}) {
   const store = createCompanyStore({ dir: join(home, 'company'), useLock: false, warn: () => {} })
   const commands = createCommands({
     store,
-    // `acceptance.decide` carries the acceptance's own revision, as production wires it
-    // (index.js) — without this the envelope would compare it to the company revision.
-    rowRevisionCommands: ROW_REVISION_COMMANDS,
     handlers: {
       ...orgHandlers({ botOf, isPrivate: () => false }),
       ...projectHandlers({ groups }),
-      ...acceptanceHandlers(),
     },
   })
   const api = createCompanyApi({ store, execute: commands.execute, groups, now: () => 1_700_000_000_000 })
@@ -152,13 +147,10 @@ test('a command over HTTP returns the same envelope the tools get', async () => 
 
   const read = await command(api, 'project.get', { project_id: project.id })
   assert.equal(read.status, 200)
-  // The read model lifts members and group next to the project for a screen, and adds the
-  // chat page's view fields (waiting decisions, recent activity); project.get keeps the
-  // record itself with the two siblings. Same three pieces, one shape each.
-  const record = { ...model.body.projects[0] }
-  for (const field of ['pending_count', 'pending_decisions', 'pinned_decisions', 'activity']) delete record[field]
+  // The read model lifts members and group next to the project for a screen; project.get
+  // keeps them as siblings of the record. Same three pieces, one shape each.
   assert.deepEqual(read.body.body, {
-    project: record,
+    project: model.body.projects[0],
     members: model.body.project.members,
     group: model.body.project.group,
   })
@@ -258,6 +250,41 @@ test('the events page follows its cursor and never repeats an event', async () =
   rmSync(home, { recursive: true, force: true })
 })
 
+test('the events read narrows to one project and can walk backwards from the newest', async () => {
+  const home = tempHome()
+  const { api, rooms } = open(home)
+  const seed_ = await seed(api, rooms)
+  const created = await command(api, 'project.create', draft(seed_))
+  const projectId = created.body.body.project.id
+  await command(api, 'project.update', { project_id: projectId, goal: '换一个目标' })
+  await command(api, 'project.member.add', { project_id: projectId, employee_id: seed_.beta })
+
+  // A project names its own events through `aggregate_id`. The company and department
+  // events stay out of this page, and the order stays the journal's.
+  const own = await api.events({ project_id: projectId })
+  assert.equal(own.status, 200)
+  assert.deepEqual(own.body.events.map(event => event.type), ['project.created', 'project.group.bound', 'project.updated', 'project.member.added'])
+  assert.deepEqual(own.body.events.map(event => event.cursor), [6, 6, 7, 8])
+  assert.equal(own.body.has_more, false)
+
+  // `order=desc` is what a recent-activity panel asks for: newest first, bounded, and its
+  // `cursor` is the oldest event on the page, so passing it back walks further back.
+  const newest = await api.events({ project_id: projectId, order: 'desc', limit: '2' })
+  assert.deepEqual(newest.body.events.map(event => event.type), ['project.member.added', 'project.updated'])
+  assert.equal(newest.body.cursor, '7')
+  assert.equal(newest.body.has_more, true)
+
+  const older = await api.events({ project_id: projectId, order: 'desc', limit: '2', cursor: newest.body.cursor })
+  assert.deepEqual(older.body.events.map(event => event.type), ['project.group.bound', 'project.created'])
+  assert.equal(older.body.cursor, '6')
+  assert.equal(older.body.has_more, false)
+
+  const missing = await api.events({ project_id: 'prj_missing' })
+  assert.equal(missing.status, 404)
+  assert.equal(missing.body.code, 'project/not-found')
+  rmSync(home, { recursive: true, force: true })
+})
+
 test('a null query is read as an empty one instead of failing the screen', async () => {
   const home = tempHome()
   const { api, rooms } = open(home)
@@ -343,51 +370,5 @@ test('the routes are registered on the host carrier and disposed with the plugin
 
   dispose()
   assert.deepEqual(disposed, [COMMAND_PATH, MODEL_PATH, EVENTS_PATH, TODOS_PATH, TODOS_ANSWER_PATH])
-  rmSync(home, { recursive: true, force: true })
-})
-
-test('the model carries the view fields the project screens read', async () => {
-  const home = tempHome()
-  const { api, rooms } = open(home)
-  const seed_ = await seed(api, rooms)
-  const created = await command(api, 'project.create', draft(seed_))
-  const project = created.body.body.project
-
-  // Only decisions the owner makes reach the owner's list: a Bot-decided acceptance stays
-  // out of the pinned card even while it is pending (todos.js acceptanceRow).
-  const submitted = await command(api, 'acceptance.submit', {
-    project_id: project.id,
-    requester_employee_id: seed_.alpha,
-    acceptance_actor: 'user',
-    title: '交付项目页',
-  })
-  assert.equal(submitted.status, 200)
-
-  // The header count, the pinned card and the drawer read these three fields off the
-  // project; the waiting row is the to-do read's own row, so the card text is the same
-  // one the to-do page shows.
-  const model = api.model({})
-  const row = model.body.projects[0]
-  assert.equal(row.pending_count, 1)
-  assert.deepEqual(row.pinned_decisions, [{ id: row.pending_decisions[0].id, title: '交付项目页', who: '小蓝' }])
-  assert.deepEqual(row.pending_decisions, row.pinned_decisions)
-  assert.deepEqual(row.activity.map(item => item.kind), ['acceptance.submitted', 'member.joined', 'project.created'])
-
-  // Opening one project answers the same fields, so a screen does not join two shapes.
-  const detail = api.model({ project_id: project.id })
-  assert.equal(detail.body.project.pending_count, 1)
-  assert.deepEqual(detail.body.project.pinned_decisions, row.pinned_decisions)
-
-  // Answering the decision empties the card and leaves the answer as the latest activity.
-  const answer = await command(api, 'acceptance.decide', {
-    acceptance_id: submitted.body.body.acceptance.id,
-    decision: 'accept',
-    expected_revision: 1,
-  })
-  assert.equal(answer.status, 200)
-  const after = api.model({ project_id: project.id }).body.project
-  assert.equal(after.pending_count, 0)
-  assert.deepEqual(after.pinned_decisions, [])
-  assert.equal(after.activity[0].kind, 'acceptance.accepted')
   rmSync(home, { recursive: true, force: true })
 })

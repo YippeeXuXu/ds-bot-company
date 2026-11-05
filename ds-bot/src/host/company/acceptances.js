@@ -142,8 +142,10 @@ export function acceptanceHandlers() {
         aggregate_id: acceptance.id,
         body: { acceptance },
         // The journal records the decision and not the owner's words: the opinion is
-        // business text and stays in the object (contract §5.2).
-        events: [{ type: 'acceptance.decided', data: { acceptance_id: acceptance.id, decision } }],
+        // business text and stays in the object (contract §5.2). The project id rides on
+        // the event itself, so a project's activity is readable without walking every
+        // acceptance; older decisions that lack it are resolved from the acceptance record.
+        events: [{ type: 'acceptance.decided', data: { acceptance_id: acceptance.id, project_id: acceptance.project_id, decision } }],
       }
     },
   }

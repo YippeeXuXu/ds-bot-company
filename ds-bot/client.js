@@ -1261,15 +1261,6 @@ Object.assign(ZH, HOST_ZH, {
   "minutes ago": "分钟前",
   "hours ago": "小时前",
   "days ago": "天前",
-  // P04 项目群聊：company-model 的视图字段（最近活动）
-  "Project created": "项目已创建",
-  "Project updated": "项目信息已更新",
-  "{name} joined the project": "{name} 加入项目",
-  "{name} left the project": "{name} 离开项目",
-  "{name} submitted an acceptance": "{name} 提交验收",
-  "Acceptance accepted": "验收通过",
-  "Acceptance returned": "验收退回",
-  "A member": "成员",
   "No matching projects": "没有匹配的项目",
   "No projects here yet": "暂无项目组",
   "Try another name or status.": "试试其他名称或状态。",
@@ -11861,37 +11852,6 @@ var import_react25 = require("react");
 var initial = (name) => typeof name === "string" && name.trim() ? name.trim().slice(0, 1).toUpperCase() : "·";
 var swallow = () => {
 };
-var MINUTE2 = 60 * 1e3;
-var HOUR2 = 60 * MINUTE2;
-var DAY2 = 24 * HOUR2;
-var timeOf = (value) => {
-  const time = typeof value === "number" ? value : Date.parse(String(value ?? ""));
-  return Number.isFinite(time) ? time : null;
-};
-var agoText = (time) => {
-  const ago2 = Date.now() - time;
-  if (ago2 < MINUTE2) return t("Just now");
-  if (ago2 < HOUR2) return `${Math.max(1, Math.round(ago2 / MINUTE2))} ${t("minutes ago")}`;
-  if (ago2 < DAY2) return `${Math.max(1, Math.round(ago2 / HOUR2))} ${t("hours ago")}`;
-  if (ago2 < 7 * DAY2) return `${Math.max(1, Math.floor(ago2 / DAY2))} ${t("days ago")}`;
-  const date = new Date(time);
-  return `${date.getMonth() + 1}/${date.getDate()}`;
-};
-var ACTIVITY_KINDS = {
-  "project.created": () => t("Project created"),
-  "project.updated": () => t("Project updated"),
-  "member.joined": (row) => t("{name} joined the project", { name: row.name || t("A member") }),
-  "member.left": (row) => t("{name} left the project", { name: row.name || t("A member") }),
-  "acceptance.submitted": (row) => t("{name} submitted an acceptance", { name: row.name || t("A member") }),
-  "acceptance.accepted": () => t("Acceptance accepted"),
-  "acceptance.returned": () => t("Acceptance returned")
-};
-var formatActivityRow = (row) => {
-  if (typeof row === "string") return row;
-  const phrase = ACTIVITY_KINDS[row?.kind]?.(row) ?? String(row?.kind ?? "");
-  const time = timeOf(row?.at);
-  return time === null ? phrase : `${phrase} · ${agoText(time)}`;
-};
 function ProjectChatHeader({ projectName, stage, faces, goal, pendingCount, nextStep, onBack, onOpenDetails, expanded }) {
   const hasCount = Number.isFinite(pendingCount) && pendingCount > 0;
   const statRows = [];
@@ -12243,10 +12203,6 @@ function ProjectChatSurface({ props, project, members, pendingCount, open, onOpe
         goal: project.goal || "",
         stage: statusLabel(project.status),
         members,
-        // 视图字段来自 company-model；旧宿主没有这两个字段时传空数组，抽屉按「无数据
-        // 就不渲染这一节」处理，不拿占位文案假装已经问过存储。
-        pending: Array.isArray(project.pending_decisions) ? project.pending_decisions : [],
-        activity: Array.isArray(project.activity) ? project.activity.map(formatActivityRow) : [],
         onClose,
         onOpenConfig
       }) : null
@@ -16652,7 +16608,7 @@ function KeptPrivateSection({ roster, actions, run: run2, Section, Row: Row3 }) 
 }
 
 // src/client/usage-data.js
-var HOUR3 = 0;
+var HOUR2 = 0;
 var OWNER = 1;
 var MODEL = 2;
 var KIND = 3;
@@ -16748,7 +16704,7 @@ function summarize(view, range, keep = () => true, seriesOf = () => "all") {
   const current = buckets.map((bucket) => ({ ...bucket, sum: blank2(), stacks: /* @__PURE__ */ new Map() }));
   const result = { buckets: current, total: blank2(), previous: 0, owners: /* @__PURE__ */ new Map(), models: /* @__PURE__ */ new Map(), kinds: /* @__PURE__ */ new Map() };
   for (const row of view.rows) {
-    const hour = row[HOUR3];
+    const hour = row[HOUR2];
     if (hour < before || hour > to || !keep(row)) continue;
     if (hour < from) {
       result.previous += tokensOf(row);
@@ -17190,7 +17146,7 @@ function Heat({ view, keep, paint, index }) {
   const from = dayKey(first);
   const daily = /* @__PURE__ */ new Map();
   for (const row of view.rows) {
-    const day = row[HOUR3].slice(0, 10);
+    const day = row[HOUR2].slice(0, 10);
     if (day >= from && keep(row)) daily.set(day, (daily.get(day) ?? 0) + tokensOf(row));
   }
   const most = Math.max(0, ...daily.values());
@@ -17322,8 +17278,8 @@ function UsagePage({ roster, actions, focusId }) {
     const activeDays2 = /* @__PURE__ */ new Set();
     let first = view.now;
     for (const row of view.rows) {
-      if (row[HOUR3] < first) first = row[HOUR3];
-      if (keep2(row) && tokensOf(row) > 0) activeDays2.add(row[HOUR3].slice(0, 10));
+      if (row[HOUR2] < first) first = row[HOUR2];
+      if (keep2(row) && tokensOf(row) > 0) activeDays2.add(row[HOUR2].slice(0, 10));
     }
     const oldest2 = Math.min(monthOf(hourMs(first)), addMonths(monthOf(hourMs(view.now)), -12));
     const ranked2 = (map) => [...map].filter(([, sum]) => sum.total > 0).sort((a, b) => b[1].total - a[1].total);

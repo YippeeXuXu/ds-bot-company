@@ -288,12 +288,61 @@ test('A12: a stale row revision is refused and the acceptance keeps its pending 
 
   const events = eventsOf(home)
   const decidedEvent = events.find(event => event.type === 'acceptance.decided')
-  assert.deepEqual(decidedEvent.data, { acceptance_id: 'acc_1', decision: 'accept' })
+  assert.deepEqual(decidedEvent.data, { acceptance_id: 'acc_1', project_id: 'prj_1', decision: 'accept' })
 
   const twice = await api.command({ command: 'acceptance.decide', operation_key: 'decide-4', expected_revision: 4, payload: { acceptance_id: 'acc_1', decision: 'return' } })
   assert.equal(twice.status, 409)
   assert.equal(twice.body.code, 'acceptance/state-conflict')
   assert.equal(stateOf(home).acceptances.acc_1.state, 'accepted')
+})
+
+test('a decision writes the project onto its event, so the project page can find it', async () => {
+  const home = await openHome()
+  seed(home, {
+    projects: [project('prj_1', 'Alpha', 'room_1')],
+    employees: [employee('emp_1', '小蓝', 'bot_1')],
+    acceptances: { acc_1: acceptance({ revision: 3 }) },
+  })
+  const store = storeOf(home)
+  const api = createCompanyApi({ store, execute: commandsFor(store).execute, groups: {}, now: () => AT, approvals: () => [], home })
+
+  const decided = await api.command({ command: 'acceptance.decide', operation_key: 'decide-project', expected_revision: 3, payload: { acceptance_id: 'acc_1', decision: 'return', opinion: '补测试' } })
+  assert.equal(decided.status, 200)
+  const event = eventsOf(home).findLast(entry => entry.type === 'acceptance.decided')
+  assert.deepEqual(event.data, { acceptance_id: 'acc_1', project_id: 'prj_1', decision: 'return' })
+
+  const page = await api.events({ project_id: 'prj_1' })
+  assert.deepEqual(page.body.events.map(entry => entry.type), ['acceptance.decided'])
+})
+
+test('A13: an older decision without a project on it still counts as that project activity', async () => {
+  const home = await openHome()
+  seed(home, {
+    projects: [project('prj_1', 'Alpha', 'room_1'), project('prj_2', 'Beta', 'room_2')],
+    acceptances: {
+      acc_1: acceptance({ id: 'acc_1', project_id: 'prj_1', state: 'accepted', revision: 4 }),
+      acc_2: acceptance({ id: 'acc_2', project_id: 'prj_2', state: 'returned', revision: 2 }),
+    },
+  })
+  const store = storeOf(home)
+  const api = createCompanyApi({ store, execute: commandsFor(store).execute, groups: {}, now: () => AT, approvals: () => [], home })
+  // A journal written before decisions carried a project id: the line names only the
+  // acceptance. The read resolves the project from the acceptance record, and the line
+  // itself keeps its original text — the attribution is computed, not rewritten.
+  const legacy = [
+    { id: 'evt_1_0', cursor: 1, at: AT_ISO, operation_key: 'old-1', command: 'acceptance.decide', aggregate_id: 'acc_1', type: 'acceptance.decided', data: { acceptance_id: 'acc_1', decision: 'accept' } },
+    { id: 'evt_2_0', cursor: 2, at: AT_ISO, operation_key: 'old-2', command: 'acceptance.decide', aggregate_id: 'acc_2', type: 'acceptance.decided', data: { acceptance_id: 'acc_2', decision: 'return' } },
+  ]
+  writeFileSync(join(home, 'company', 'events.jsonl'), legacy.map(entry => JSON.stringify(entry)).join('\n') + '\n')
+
+  const first = await api.events({ project_id: 'prj_1' })
+  assert.deepEqual(first.body.events.map(entry => entry.cursor), [1])
+  assert.deepEqual(first.body.events[0].data, { acceptance_id: 'acc_1', decision: 'accept' })
+  const second = await api.events({ project_id: 'prj_2' })
+  assert.deepEqual(second.body.events.map(entry => entry.cursor), [2])
+  const none = await api.events({ project_id: 'prj_1', order: 'desc', limit: '5' })
+  assert.deepEqual(none.body.events.map(entry => entry.cursor), [1])
+  assert.equal(none.body.has_more, false)
 })
 
 test('A14: an owner_only project refuses an employee actor before anything is written', async () => {

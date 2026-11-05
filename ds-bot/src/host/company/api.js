@@ -13,7 +13,6 @@
 import { readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { projectDetailOf } from './projects.js'
-import { projectViewOf, projectViewsOf } from './project-view.js'
 import { createTodos, TODOS_ANSWER_PATH, TODOS_PATH } from './todos.js'
 
 export const COMMAND_PATH = '/api/company/command'
@@ -118,19 +117,6 @@ export function createCompanyApi({ store, execute, groups = {}, now = Date.now, 
     const company = Object.values(state.companies).find(entry => entry.status !== 'archived') ?? null
     const byCreated = (left, right) => (left.created_at ?? 0) - (right.created_at ?? 0)
     const mine = entry => company === null || entry.company_id === company.id
-    // The chat header, the pinned card and the project details read three fields off the
-    // project that the store does not keep: how many decisions wait for the owner, which
-    // ones the card pins, and what happened recently. The waiting rows are the to-do
-    // read's own rows — deriving them a second time here would let the header disagree
-    // with the to-do page about the same card. A damaged to-do view is reported as
-    // nothing waiting rather than taking the whole company screen down.
-    let views = new Map()
-    try {
-      views = projectViewsOf({ state, waiting: todos.read({}).waiting })
-    } catch {
-      views = new Map()
-    }
-    const withView = project => ({ ...project, ...projectViewOf(views, project.id) })
     const body = {
       revision: state.revision,
       activity_cursor: String(state.revision),
@@ -138,26 +124,53 @@ export function createCompanyApi({ store, execute, groups = {}, now = Date.now, 
       company,
       departments: Object.values(state.departments).filter(mine).sort(byCreated),
       employees: Object.values(state.employees).filter(mine).sort(byCreated),
-      projects: Object.values(state.projects).filter(mine).sort(byCreated).map(withView),
+      projects: Object.values(state.projects).filter(mine).sort(byCreated),
     }
     if (query.project_id !== undefined && query.project_id !== '') {
       const project = state.projects[query.project_id]
       if (project === undefined) return { status: 404, body: { code: 'project/not-found', message: `No project ${query.project_id}.`, details: { project_id: query.project_id } } }
       const detail = projectDetailOf(state, project, roomMembers)
-      body.project = { ...detail.project, ...projectViewOf(views, project.id), members: detail.members, group: detail.group }
+      body.project = { ...detail.project, members: detail.members, group: detail.group }
     }
     return { status: 200, body }
+  }
+
+  // Which project an event is about. The subject rides on the event itself: a project
+  // command names the project in `aggregate_id`, an acceptance submission carries
+  // `data.project_id`, and a decision journaled before that field existed is resolved
+  // through the acceptance record. An older line keeps its original text — the
+  // attribution is computed at read time, so an old journal reads like a new one.
+  const eventProject = event => {
+    const announced = event?.data?.project_id
+    if (typeof announced === 'string') return announced
+    if (typeof event?.aggregate_id === 'string' && store.state.projects?.[event.aggregate_id] !== undefined) return event.aggregate_id
+    const acceptanceId = event?.data?.acceptance_id
+    if (typeof acceptanceId !== 'string') return null
+    const acceptance = store.state.acceptances?.[acceptanceId]
+    return typeof acceptance?.project_id === 'string' ? acceptance.project_id : null
   }
 
   // Events are appended once per committed command, so the file is already in cursor
   // order and a page is a slice. A torn last line (a write cut short) is skipped rather
   // than failing the read: the journal tolerates one missing audit line.
+  //
+  // `project_id` narrows the page to one project's own events. `order=desc` walks backwards:
+  // matches come newest first and its `cursor` is the oldest event on the page, so passing
+  // it back returns the ones before it — a recent-activity panel asks once for its window.
+  // The default stays the ascending cursor page the incremental readers poll.
   const events = async (input = {}) => {
     const query = input ?? {}
+    const wantedProject = query.project_id === undefined || query.project_id === null || query.project_id === ''
+      ? null
+      : String(query.project_id)
+    if (wantedProject !== null && store.state.projects?.[wantedProject] === undefined) {
+      return { status: 404, body: { code: 'project/not-found', message: `No project ${wantedProject}.`, details: { project_id: wantedProject } } }
+    }
     const since = Number.parseInt(String(query.cursor ?? '0'), 10)
     const from = Number.isInteger(since) && since > 0 ? since : 0
     const asked = Number.parseInt(String(query.limit ?? '200'), 10)
     const limit = clamp(Number.isInteger(asked) ? asked : 200, 1, 500)
+    const newestFirst = query.order === 'desc'
     let text = ''
     try {
       text = await readFile(store.eventsPath, 'utf8')
@@ -177,8 +190,17 @@ export function createCompanyApi({ store, execute, groups = {}, now = Date.now, 
         continue
       }
       const value = Number(event?.cursor)
-      if (!Number.isFinite(value) || value <= from) continue
+      if (!Number.isFinite(value)) continue
+      // Ascending pages walk forward from the cursor; descending pages walk back from it,
+      // so the same `cursor` request means "the page after this one" in both directions.
+      if (newestFirst ? from > 0 && value >= from : value <= from) continue
+      if (wantedProject !== null && eventProject(event) !== wantedProject) continue
       pending.push(event)
+    }
+    if (newestFirst) {
+      const page = pending.slice(Math.max(0, pending.length - limit)).reverse()
+      const cursor = page.length === 0 ? from : Number(page[page.length - 1].cursor)
+      return { status: 200, body: { cursor: String(cursor), events: page, has_more: pending.length > limit } }
     }
     const page = pending.slice(0, limit)
     const cursor = page.length === 0 ? from : Number(page[page.length - 1].cursor)

@@ -14,45 +14,6 @@ const initial = name => (typeof name === 'string' && name.trim() ? name.trim().s
 
 const swallow = () => {}
 
-const MINUTE = 60 * 1000
-const HOUR = 60 * MINUTE
-const DAY = 24 * HOUR
-
-const timeOf = value => {
-  const time = typeof value === 'number' ? value : Date.parse(String(value ?? ''))
-  return Number.isFinite(time) ? time : null
-}
-
-// 与项目列表的「最近活动」同一套相对时间用词，同一时间戳在两个入口读起来一致。
-const agoText = time => {
-  const ago = Date.now() - time
-  if (ago < MINUTE) return t('Just now')
-  if (ago < HOUR) return `${Math.max(1, Math.round(ago / MINUTE))} ${t('minutes ago')}`
-  if (ago < DAY) return `${Math.max(1, Math.round(ago / HOUR))} ${t('hours ago')}`
-  if (ago < 7 * DAY) return `${Math.max(1, Math.floor(ago / DAY))} ${t('days ago')}`
-  const date = new Date(time)
-  return `${date.getMonth() + 1}/${date.getDate()}`
-}
-
-// 宿主只给出事实（kind / at / name），不决定用哪种语言说话；界面语言在客户端这一侧选词。
-const ACTIVITY_KINDS = {
-  'project.created': () => t('Project created'),
-  'project.updated': () => t('Project updated'),
-  'member.joined': row => t('{name} joined the project', { name: row.name || t('A member') }),
-  'member.left': row => t('{name} left the project', { name: row.name || t('A member') }),
-  'acceptance.submitted': row => t('{name} submitted an acceptance', { name: row.name || t('A member') }),
-  'acceptance.accepted': () => t('Acceptance accepted'),
-  'acceptance.returned': () => t('Acceptance returned'),
-}
-
-export const formatActivityRow = row => {
-  // A row that already carries words (older host, or a caller passing text) passes through.
-  if (typeof row === 'string') return row
-  const phrase = ACTIVITY_KINDS[row?.kind]?.(row) ?? String(row?.kind ?? '')
-  const time = timeOf(row?.at)
-  return time === null ? phrase : `${phrase} \u00b7 ${agoText(time)}`
-}
-
 export function ProjectChatHeader({ projectName, stage, faces, goal, pendingCount, nextStep, onBack, onOpenDetails, expanded }) {
   const hasCount = Number.isFinite(pendingCount) && pendingCount > 0
   const statRows = []
@@ -426,10 +387,6 @@ export function ProjectChatSurface({ props, project, members, pendingCount, open
           goal: project.goal || '',
           stage: statusLabel(project.status),
           members,
-          // 视图字段来自 company-model；旧宿主没有这两个字段时传空数组，抽屉按「无数据
-          // 就不渲染这一节」处理，不拿占位文案假装已经问过存储。
-          pending: Array.isArray(project.pending_decisions) ? project.pending_decisions : [],
-          activity: Array.isArray(project.activity) ? project.activity.map(formatActivityRow) : [],
           onClose,
           onOpenConfig,
         })
