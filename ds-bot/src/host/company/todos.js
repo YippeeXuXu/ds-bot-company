@@ -483,7 +483,6 @@ export function createTodos({ store, approvals = () => [], sessionBot, home, now
     row.requester_bot_id = typeof requesterBotId === 'string' ? requesterBotId : null
     row.requester = requesterBotId === undefined ? UNKNOWN_REQUESTER : requesterName(state, requesterBotId)
     row.session_id = sessionId
-    row.room_id = null
     row.request_id = typeof record?.request_id === 'string' ? record.request_id : null
     row.created_at = isoOf(record?.created_at) ?? meta?.firstAt ?? null
     row.approval_id = typeof projection.approval_id === 'string' ? projection.approval_id : null
@@ -502,10 +501,16 @@ export function createTodos({ store, approvals = () => [], sessionBot, home, now
       row.project_id = null
       row.project_name = PRIVATE_CHAT_NAME
       row.coordinator_bot_id = null
+      // A decided card whose callsite is unknown stays unassigned: there is no project group
+      // to send a renderer to, so the field is empty rather than guessed (§4.4:380).
+      row.room_id = null
     } else {
       row.project_id = project.id ?? null
       row.project_name = typeof project.name === 'string' ? project.name : ''
       row.coordinator_bot_id = coordinatorBotId(state, project)
+      // The field names the project group, and a decided row knows its project, so it carries
+      // the same room a waiting row in that group would (§4.4:380).
+      row.room_id = typeof project.group_chat_ref === 'string' ? project.group_chat_ref : null
     }
     if (handled) {
       row.ready = false

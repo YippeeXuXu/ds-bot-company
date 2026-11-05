@@ -369,6 +369,8 @@ test('B-2/B-3/B-4: a waiting row has no outcome, and a decided row waits until i
   assert.equal(approval.wait_minutes, 9)
   assert.equal(approval.authorizer, 'unknown')
   assert.equal(approval.host_outcome, 'approved-by-human')
+  // A decided row still names the project group it belongs to (§4.4:380).
+  assert.equal(approval.room_id, 'room_1')
   const acc = handled.get('ac_acc_done')
   assert.equal(acc.wait_minutes, 28)
   assert.equal(acc.authorizer, 'unknown')
