@@ -10,6 +10,7 @@ import { createCompanyApi } from '../src/host/company/api.js'
 import { install } from '../src/host/company/index.js'
 import { pathRedactor } from '../src/host/company/selfreview/features.js'
 import { createCompanyStore } from '../src/host/company/store.js'
+import { projectHandlers } from '../src/host/company/projects.js'
 import { createTodos } from '../src/host/company/todos.js'
 
 const AT = 1_700_000_000_000
@@ -536,6 +537,67 @@ test('the channel and the route share one answer', async () => {
   const direct = createTodos({ store: storeOf(home), approvals: () => [liveCard({ roomId: 'room_1' })], sessionBot: () => 'bot_1', home, now: () => AT })
   assert.deepEqual(Object.keys(direct.read({})).sort(), Object.keys(routed.body).sort())
   assert.equal(direct.read({}).counts.waiting_total, routed.body.counts.waiting_total)
+})
+
+test('M1c: a card closed by its archived project leaves the to-do board', async () => {
+  const home = await openHome()
+  seed(home, {
+    projects: [project('prj_1', 'Alpha', 'room_1')],
+    employees: [employee('emp_1', '小蓝', 'bot_1')],
+    acceptances: {
+      acc_closed: acceptance({ id: 'acc_closed', state: 'cancelled', close_reason: 'project_archived', decided_at: new Date(AT - 2 * MINUTE).toISOString() }),
+      acc_other: acceptance({ id: 'acc_other', state: 'cancelled', close_reason: 'other', decided_at: new Date(AT - 3 * MINUTE).toISOString() }),
+      acc_pending: acceptance({ id: 'acc_pending', state: 'pending' }),
+    },
+  })
+  const { body } = await apiOf(home).todos({})
+
+  // The closed card is in neither list, by id — the totals are not a proxy for it.
+  const listed = [...body.waiting, ...body.handled].map(row => row.acceptance_id)
+  assert.equal(listed.includes('acc_closed'), false)
+  // Reverse: another closure reason is not filtered, it still reads as a handled card.
+  assert.equal(body.handled.some(row => row.acceptance_id === 'acc_other'), true)
+  assert.equal(body.waiting.some(row => row.acceptance_id === 'acc_pending'), true)
+  assert.equal(body.counts.handled_total, 1)
+  assert.equal(body.counts.waiting_total, 1)
+  // The reason lives on the acceptance, not on the row: the row shape did not grow.
+  for (const row of [...body.waiting, ...body.handled]) assert.equal('close_reason' in row, false)
+})
+
+test('M1c: the archive handler reports what it closed to logs and tests, not to the screen', async () => {
+  const home = await openHome()
+  const state = seed(home, {
+    projects: [project('prj_1', 'Alpha', 'room_1', { revision: 3 })],
+    employees: [employee('emp_1', '小蓝', 'bot_1')],
+    acceptances: {
+      acc_pending: acceptance({ id: 'acc_pending', state: 'pending', opinion: null }),
+      acc_done: acceptance({ id: 'acc_done', state: 'accepted', decided_at: new Date(AT - 5 * MINUTE).toISOString(), opinion: '通过' }),
+      acc_other: acceptance({ id: 'acc_other', project_id: 'prj_2', state: 'pending' }),
+    },
+  })
+
+  // A clock that moves on every read: the closure must read it once, so `decided_at` and
+  // `updated_at` cannot straddle a millisecond boundary.
+  let tick = AT
+  const clock = () => (tick += 1)
+  const outcome = await projectHandlers({})['project.archive']({ state, payload: { project_id: 'prj_1' }, now: clock })
+
+  // The separate list is what a log or a test reads; body and event keep the three arrays.
+  assert.deepEqual(outcome.closed_acceptances, ['acc_pending'])
+  assert.deepEqual(Object.keys(outcome.body).sort(), ['archived_members', 'left_members', 'project', 'suspended_employees'])
+  assert.deepEqual(Object.keys(outcome.events[0].data).sort(), ['archived_members', 'left_members', 'suspended_employees'])
+  assert.equal(outcome.body.project.status, 'archived')
+  assert.equal(state.acceptances.acc_pending.state, 'cancelled')
+  assert.equal(state.acceptances.acc_pending.close_reason, 'project_archived')
+  assert.equal(state.acceptances.acc_pending.decided_at, state.acceptances.acc_pending.updated_at)
+  assert.ok(state.acceptances.acc_pending.decided_at > AT)
+  assert.equal(state.acceptances.acc_pending.revision, 4)
+  // A card that was already decided, and a card of another project, stay as they were.
+  assert.equal(state.acceptances.acc_done.state, 'accepted')
+  assert.equal(state.acceptances.acc_done.close_reason, undefined)
+  assert.equal(state.acceptances.acc_done.revision, 3)
+  assert.equal(state.acceptances.acc_other.state, 'pending')
+  assert.equal(state.acceptances.acc_other.close_reason, undefined)
 })
 
 function acceptance(extra) {

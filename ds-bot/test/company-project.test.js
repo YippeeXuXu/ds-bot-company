@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { ROW_REVISION_COMMANDS, acceptanceHandlers } from '../src/host/company/acceptances.js'
 import { createCommands } from '../src/host/company/commands.js'
 import { orgHandlers } from '../src/host/company/org.js'
 import { projectHandlers } from '../src/host/company/projects.js'
@@ -51,7 +52,10 @@ function open(home, { failSetMembers = false } = {}) {
     handlers: {
       ...orgHandlers({ botOf, isPrivate: () => false }),
       ...projectHandlers({ groups }),
+      ...acceptanceHandlers(),
     },
+    // Production wiring (index.js): `acceptance.decide` carries the acceptance's revision.
+    rowRevisionCommands: ROW_REVISION_COMMANDS,
   })
   return { store, commands, rooms }
 }
@@ -590,5 +594,67 @@ test('the project group is led by the coordinator, not left to the roster defaul
   // The coordinator is 小蓝's Bot; the roster would have picked a Main Bot the group does not hold.
   assert.equal(rooms.get(room).admin, 'bot_a')
   assert.deepEqual(rooms.get(room).members, ['bot_a'])
+  rmSync(home, { recursive: true, force: true })
+})
+
+// M1c: an acceptance cannot outlive the project it is waiting on. Archiving closes the
+// pending ones on the object itself, leaves decided ones alone, and keeps the response, the
+// event and the event journal free of any new shape.
+test('archiving closes the pending acceptances of the project (M1c)', async () => {
+  const home = tempHome()
+  const { store, commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', { operation_key: key('create'), ...draft(seed_) })
+  const projectId = created.body.project.id
+  await run(commands, 'project.start', { operation_key: key('start'), project_id: projectId })
+
+  const pending = await run(commands, 'acceptance.submit', {
+    operation_key: key('submit-pending'),
+    project_id: projectId,
+    requester_employee_id: seed_.alpha,
+    title: '第一版交付',
+    submitted_version: 'v1',
+    acceptance_actor: 'user',
+  })
+  const pendingId = pending.body.acceptance.id
+  assert.equal(pending.body.acceptance.close_reason, null)
+  const second = await run(commands, 'acceptance.submit', {
+    operation_key: key('submit-decided'),
+    project_id: projectId,
+    requester_employee_id: seed_.alpha,
+    title: '第二版交付',
+    submitted_version: 'v2',
+    acceptance_actor: 'user',
+  })
+  const decidedId = second.body.acceptance.id
+  await run(commands, 'acceptance.decide', { operation_key: key('decide'), acceptance_id: decidedId, decision: 'accept', expected_revision: 1 })
+  const decidedBefore = { ...store.state.acceptances[decidedId] }
+
+  const archived = await run(commands, 'project.archive', { operation_key: key('archive'), project_id: projectId })
+  assert.equal(archived.status, 'committed')
+  // The closed ids travel on the handler's own list, never on the response.
+  assert.deepEqual(Object.keys(archived.body).sort(), ['archived_members', 'left_members', 'project', 'suspended_employees'])
+  assert.equal('closed_acceptances' in archived.body, false)
+
+  const closed = store.state.acceptances[pendingId]
+  assert.equal(closed.state, 'cancelled')
+  assert.equal(closed.close_reason, 'project_archived')
+  assert.equal(closed.opinion, null)
+  assert.equal(typeof closed.decided_at, 'number')
+  assert.equal(closed.updated_at, closed.decided_at)
+  assert.equal(closed.revision, 2)
+
+  const kept = store.state.acceptances[decidedId]
+  assert.equal(kept.state, 'accepted')
+  assert.equal(kept.decided_at, decidedBefore.decided_at)
+  assert.equal(kept.revision, decidedBefore.revision)
+  // A normal decision carries the field as null, never a closure reason (contract §2.2).
+  assert.equal(kept.close_reason, null)
+
+  // No closure event: the archive itself is the visible record (contract §3.5 rule 9).
+  const journal = readFileSync(join(home, 'company', 'events.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+  assert.equal(journal.some(event => event.type === 'acceptance.cancelled'), false)
+  assert.equal(journal.at(-1).type, 'project.archived')
+  assert.deepEqual(Object.keys(journal.at(-1).data).sort(), ['archived_members', 'left_members', 'suspended_employees'])
   rmSync(home, { recursive: true, force: true })
 })

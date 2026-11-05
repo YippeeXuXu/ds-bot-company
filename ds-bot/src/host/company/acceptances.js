@@ -101,6 +101,9 @@ export function acceptanceHandlers() {
         state: 'pending',
         opinion: null,
         decided_at: null,
+        // Closure reasons are written by the system only (project archive, M1c); a fresh
+        // submission is never closed (contract §2.2 / §5.2).
+        close_reason: null,
         created_at: now(),
         updated_at: now(),
         revision: 1,

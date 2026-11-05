@@ -557,6 +557,26 @@ export function projectHandlers({ groups = {} } = {}) {
         suspendedEmployees.push(employeeId)
       }
       for (const employee of Object.values(state.employees)) if (employee.project_id === project.id) employee.project_id = null
+      // M1c: archiving closes the acceptances the project still owns. Only `pending` ones
+      // move — a card already decided keeps its own outcome — and the reason is recorded on
+      // the acceptance itself (`close_reason`, contract §2.2 / §3.5 rule 9), because the
+      // to-do read side must skip the card without the row shape changing. Archiving is the
+      // only entry: `acceptance.submit` and `acceptance.decide` refuse an archived project,
+      // so the read-side filter is for history, not for a second closure path.
+      const closedAcceptances = []
+      // One timestamp for the whole closure: `decided_at` and `updated_at` must agree, and two
+      // `now()` calls can land on either side of a millisecond.
+      const closedAt = now()
+      for (const acceptance of Object.values(state.acceptances ?? {})) {
+        if (acceptance === null || typeof acceptance !== 'object' || Array.isArray(acceptance)) continue
+        if (acceptance.project_id !== project.id || acceptance.state !== 'pending') continue
+        acceptance.state = 'cancelled'
+        acceptance.close_reason = 'project_archived'
+        acceptance.decided_at = closedAt
+        acceptance.updated_at = closedAt
+        acceptance.revision = (acceptance.revision ?? 1) + 1
+        closedAcceptances.push(acceptance.id)
+      }
       project.status = 'archived'
       project.archived_at = now()
       project.updated_at = now()
@@ -567,6 +587,10 @@ export function projectHandlers({ groups = {} } = {}) {
         aggregate_id: project.id,
         body: { project, archived_members: archived, left_members: left, suspended_employees: suspendedEmployees },
         events: [{ type: 'project.archived', data: { archived_members: archived, left_members: left, suspended_employees: suspendedEmployees } }],
+        // For logs and tests only. The command envelope copies `body`, `warning`, `events`
+        // and `mutates`; every other key is dropped, so this closed list never reaches a
+        // response or an event (and the `archived` arrays above stay untouched).
+        closed_acceptances: closedAcceptances,
       }
     },
 
