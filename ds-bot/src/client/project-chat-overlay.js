@@ -4,6 +4,7 @@ import { SPRING_SHAPE, SPRING_TAP } from './motion.js'
 import { statusLabel } from './projects-page.js'
 import { call } from './api.js'
 import { HeaderPill } from './header.js'
+import { activityLines, pendingRows, pinnedRows, waitingTotal } from './project-activity.js'
 
 // P04 项目群聊叠加件（原型 v2.11 / 设计语言 v0.2.7 §4.6）。
 // 消息流与输入区由宿主会话 surface 提供，本模块只渲染浮动群头、状态条、
@@ -361,7 +362,28 @@ const loadProjectMembers = async projectId => {
   }
 }
 
-export function ProjectChatSurface({ props, project, members, pendingCount, open, onOpenDetails, onClose, onOpenConfig }) {
+// C-02: the project's waiting decisions and events are read here, once per surface
+// (status bar + pinned card) and once per drawer opening; a failed read stays null and
+// its section is left out instead of showing a placeholder (spec v0.4.1 §3).
+const loadProjectTodos = async projectId => {
+  try {
+    return await call('company-todos', { project_id: projectId })
+  } catch {
+    return null
+  }
+}
+
+const loadProjectEvents = async projectId => {
+  try {
+    // Newest five, in one read (§1.2, A5): the default order is oldest-first, so ask for
+    // descending explicitly instead of relying on the page order.
+    return await call('company-events', { project_id: projectId, order: 'desc', limit: 5 })
+  } catch {
+    return null
+  }
+}
+
+export function ProjectChatSurface({ props, project, members, pendingCount, pinned, pending, activity, open, onOpenDetails, onClose, onOpenConfig }) {
   return h(Fragment, null,
     // The host pill stays mounted (hidden) for its effects: beginVisit/endVisit, the
     // room flag and CSS variables, and the new-message pills. It must not draw a second
@@ -379,7 +401,7 @@ export function ProjectChatSurface({ props, project, members, pendingCount, open
         expanded: open,
       }),
       Number(pendingCount) > 0
-        ? h('div', { className: 'pc-pin-layer' }, h(ProjectChatPinned, { count: pendingCount, items: project.pinned_decisions || [] }))
+        ? h('div', { className: 'pc-pin-layer' }, h(ProjectChatPinned, { count: pendingCount, items: Array.isArray(pinned) ? pinned : [] }))
         : null,
       open
         ? h(ProjectChatDrawer, {
@@ -387,6 +409,8 @@ export function ProjectChatSurface({ props, project, members, pendingCount, open
           goal: project.goal || '',
           stage: statusLabel(project.status),
           members,
+          pending,
+          activity,
           onClose,
           onOpenConfig,
         })
@@ -398,10 +422,12 @@ export function ProjectChatHeaderSlot(props) {
   const room = roster?.roomsById?.[props.sessionId]
   const roomId = room?.id ?? room?.sessionId
   const [data, setData] = useState(null)
+  const [todos, setTodos] = useState(null)
+  const [drawer, setDrawer] = useState(null)
   const [open, setOpen] = useState(false)
   const opener = useRef(null)
   useEffect(() => {
-    if (!roomId) { setData(null); return }
+    if (!roomId) { setData(null); setTodos(null); return }
     let live = true
     loadCompany().then(async model => {
       const found = projectOfRoom(model, roomId)
@@ -410,15 +436,31 @@ export function ProjectChatHeaderSlot(props) {
       const rawMembers = await loadProjectMembers(found.project.id)
       if (!live) return
       const employees = model.employees ?? []
+      const names = new Map(employees.filter(entry => typeof entry?.id === 'string').map(entry => [entry.id, entry.name ?? '']))
       const members = rawMembers.map(member => ({
         id: member.id,
         name: employees.find(entry => entry.id === member.employee_id)?.name ?? '',
         role: member.role ?? '',
       })).filter(member => member.name)
-      setData({ project: found.project, members })
+      setData({ project: found.project, members, names })
+      loadProjectTodos(found.project.id).then(result => { if (live) setTodos(result) })
     })
     return () => { live = false }
   }, [roomId])
+  // One read per opening: the drawer drops its rows when it closes (§4).
+  useEffect(() => {
+    if (!open || !data) return
+    let live = true
+    setDrawer(null)
+    Promise.all([loadProjectTodos(data.project.id), loadProjectEvents(data.project.id)]).then(([todosResult, eventsResult]) => {
+      if (!live) return
+      setDrawer({
+        pending: pendingRows(todosResult, () => { setOpen(false); props.actions.openCompanyPage('todos') }),
+        activity: activityLines(eventsResult, { names: data.names }),
+      })
+    })
+    return () => { live = false }
+  }, [open, data])
   useEffect(() => {
     if (!open) return
     const onKey = event => {
@@ -433,13 +475,15 @@ export function ProjectChatHeaderSlot(props) {
   }, [open])
   if (!data) return h(HeaderPill, props)
   const project = data.project
-  const pending = Number.isFinite(project.pending_count) ? project.pending_count : 0
-  const close = () => { setOpen(false); opener.current?.focus?.() }
+  const close = () => { setOpen(false); setDrawer(null); opener.current?.focus?.() }
   return h(ProjectChatSurface, {
     props,
     project,
     members: data.members,
-    pendingCount: pending,
+    pendingCount: waitingTotal(todos),
+    pinned: pinnedRows(todos),
+    pending: drawer?.pending,
+    activity: drawer?.activity,
     open,
     onOpenDetails: event => { opener.current = event?.currentTarget ?? null; setOpen(true) },
     onClose: close,

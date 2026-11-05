@@ -1281,6 +1281,19 @@ Object.assign(ZH, HOST_ZH, {
   Pending: "待确认",
   Waiting: "已等待",
   "Submitted by {name}": "{name} 提交",
+  // C-02 群聊详情栏：活动事件文案与待决定行
+  Member: "成员",
+  "Project created": "项目已创建",
+  "Project details updated": "项目资料已更新",
+  "Project started": "项目已启动",
+  "Project archived": "项目已归档",
+  "Project group bound": "项目群已绑定",
+  "{name} joined the project": "{name} 加入项目",
+  "{name} left the project": "{name} 退出项目",
+  "Acceptance submitted": "提交了验收",
+  "{name} submitted an acceptance": "{name} 提交了验收",
+  "Acceptance passed": "验收已通过",
+  "Acceptance sent back": "验收已退回",
   min: "分钟",
   h: "小时",
   Passed: "已通过",
@@ -10889,8 +10902,7 @@ function ProjectWizard({ data, roster, preview, loading, error: loadError, mutat
   );
 }
 
-// src/client/todo-page.js
-var import_react22 = require("react");
+// src/client/wait-text.js
 var waitText = (value) => {
   const total = Math.max(0, Math.round(Number(value) || 0));
   if (total < 60) return `${total} ${t("min")}`;
@@ -10898,6 +10910,9 @@ var waitText = (value) => {
   const rest = total % 60;
   return rest ? `${hours} ${t("h")} ${rest} ${t("min")}` : `${hours} ${t("h")}`;
 };
+
+// src/client/todo-page.js
+var import_react22 = require("react");
 var stateLabel = (item) => {
   switch (item.state) {
     case "accepted":
@@ -11847,6 +11862,78 @@ function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
   );
 }
 
+// src/client/project-activity.js
+var MINUTE2 = 60 * 1e3;
+var HOUR2 = 60 * MINUTE2;
+var DAY2 = 24 * HOUR2;
+var PENDING_IN_DRAWER = 5;
+var PENDING_PINNED = 3;
+var ACTIVITY_IN_DRAWER = 5;
+var agoText = (at, now = Date.now()) => {
+  if (!Number.isFinite(at)) return "";
+  const ago2 = Math.max(0, now - at);
+  if (ago2 < MINUTE2) return t("Just now");
+  if (ago2 < HOUR2) return `${Math.max(1, Math.round(ago2 / MINUTE2))} ${t("minutes ago")}`;
+  if (ago2 < DAY2) return `${Math.max(1, Math.round(ago2 / HOUR2))} ${t("hours ago")}`;
+  if (ago2 < 7 * DAY2) return `${Math.max(1, Math.floor(ago2 / DAY2))} ${t("days ago")}`;
+  const date = new Date(at);
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+};
+var nameOf = (names, employeeId) => {
+  const known = names instanceof Map ? names.get(employeeId) : names?.[employeeId];
+  return typeof known === "string" && known.trim() ? known.trim() : "";
+};
+var ACTIVITY_KINDS = /* @__PURE__ */ new Map([
+  ["project.created", () => t("Project created")],
+  ["project.updated", () => t("Project details updated")],
+  ["project.started", () => t("Project started")],
+  ["project.archived", () => t("Project archived")],
+  ["project.member.added", (data, names) => t("{name} joined the project", { name: nameOf(names, data?.employee_id) || t("Member") })],
+  ["project.member.removed", (data, names) => t("{name} left the project", { name: nameOf(names, data?.employee_id) || t("Member") })],
+  ["project.group.bound", () => t("Project group bound")],
+  ["acceptance.submitted", (data, names) => {
+    const name = nameOf(names, data?.employee_id);
+    return name ? t("{name} submitted an acceptance", { name }) : t("Acceptance submitted");
+  }],
+  ["acceptance.decided", (data) => data?.decision === "return" ? t("Acceptance sent back") : t("Acceptance passed")]
+]);
+var activityLine = (event, context = {}) => {
+  const format = ACTIVITY_KINDS.get(event?.type);
+  if (!format) return null;
+  const text = format(event?.data ?? {}, context.names);
+  if (!text) return null;
+  const when3 = agoText(event?.at, context.now);
+  return when3 ? `${text} · ${when3}` : text;
+};
+var activityLines = (body, context = {}) => {
+  const events = Array.isArray(body?.events) ? body.events : [];
+  const stamp = (event) => Number.isFinite(event?.at) ? event.at : Number(event?.cursor) || 0;
+  return events.slice().sort((a, b) => stamp(b) - stamp(a)).map((event) => activityLine(event, context)).filter((line) => typeof line === "string" && line.length > 0).slice(0, ACTIVITY_IN_DRAWER);
+};
+var KIND_TEXT = { approval: "Approval", acceptance: "Acceptance review" };
+var byWait2 = (a, b) => (Number(b?.wait_minutes) || 0) - (Number(a?.wait_minutes) || 0);
+var waitingTotal = (todos) => {
+  const counts2 = todos?.counts ?? {};
+  return Number.isFinite(counts2.waiting_total) ? counts2.waiting_total : 0;
+};
+var pendingRow = (item, onOpen) => {
+  const parts = [t(KIND_TEXT[item?.card_kind] ?? "Approval")];
+  if (Number.isFinite(item?.wait_minutes)) parts.push(`${t("Waiting")} ${waitText(item.wait_minutes)}`);
+  if (item?.ready === false) {
+    parts.push(t("Suspended · waiting"));
+    if (typeof item?.reason === "string" && item.reason.trim()) parts.push(item.reason.trim());
+  }
+  return { id: item?.id ?? "", title: item?.title ?? "", who: parts.join(" · "), onOpen };
+};
+var pendingRows = (todos, onOpen) => {
+  const waiting = Array.isArray(todos?.waiting) ? todos.waiting : [];
+  return waiting.slice().sort(byWait2).slice(0, PENDING_IN_DRAWER).map((item) => pendingRow(item, onOpen));
+};
+var pinnedRows = (todos) => {
+  const waiting = Array.isArray(todos?.waiting) ? todos.waiting : [];
+  return waiting.slice().sort(byWait2).slice(0, PENDING_PINNED).map((item) => pendingRow(item, null));
+};
+
 // src/client/project-chat-overlay.js
 var import_react25 = require("react");
 var initial = (name) => typeof name === "string" && name.trim() ? name.trim().slice(0, 1).toUpperCase() : "·";
@@ -11961,7 +12048,7 @@ function ProjectChatDrawer({ projectName, goal, stage, members, pending, activit
     closeRef.current?.focus?.();
   }, []);
   const rows2 = Array.isArray(members) ? members : [];
-  const pendingRows = Array.isArray(pending) ? pending : [];
+  const pendingRows2 = Array.isArray(pending) ? pending : [];
   const activityRows = Array.isArray(activity) ? activity : [];
   const sections = [
     (0, import_react25.createElement)("section", { className: "pc-sec" }, (0, import_react25.createElement)("h3", null, t("Goal")), (0, import_react25.createElement)("p", null, goal || t("No goal specified")))
@@ -11969,8 +12056,8 @@ function ProjectChatDrawer({ projectName, goal, stage, members, pending, activit
   if (rows2.length) {
     sections.push((0, import_react25.createElement)("section", { className: "pc-sec" }, (0, import_react25.createElement)("h3", null, t("Members")), rows2.map((row, index) => (0, import_react25.createElement)("button", { key: row.id ?? index, type: "button", className: "pc-member", onClick: row.onOpen ?? swallow }, (0, import_react25.createElement)("span", null, row.name ?? ""), (0, import_react25.createElement)("small", null, row.role ?? "")))));
   }
-  if (pendingRows.length) {
-    sections.push((0, import_react25.createElement)("section", { className: "pc-sec" }, (0, import_react25.createElement)("h3", null, t("Waiting for you")), pendingRows.map((row, index) => (0, import_react25.createElement)("button", { key: row.id ?? index, type: "button", className: "pc-wait", onClick: row.onOpen ?? swallow }, (0, import_react25.createElement)("span", null, row.title ?? ""), (0, import_react25.createElement)("small", null, row.who ?? "")))));
+  if (pendingRows2.length) {
+    sections.push((0, import_react25.createElement)("section", { className: "pc-sec" }, (0, import_react25.createElement)("h3", null, t("Waiting for you")), pendingRows2.map((row, index) => (0, import_react25.createElement)("button", { key: row.id ?? index, type: "button", className: "pc-wait", onClick: row.onOpen ?? swallow }, (0, import_react25.createElement)("span", null, row.title ?? ""), (0, import_react25.createElement)("small", null, row.who ?? "")))));
   }
   if (activityRows.length) {
     sections.push((0, import_react25.createElement)("section", { className: "pc-sec" }, (0, import_react25.createElement)("h3", null, t("Last activity")), activityRows.map((row, index) => (0, import_react25.createElement)("p", { key: index }, row))));
@@ -12176,7 +12263,21 @@ var loadProjectMembers = async (projectId) => {
     return [];
   }
 };
-function ProjectChatSurface({ props, project, members, pendingCount, open, onOpenDetails, onClose, onOpenConfig }) {
+var loadProjectTodos = async (projectId) => {
+  try {
+    return await call("company-todos", { project_id: projectId });
+  } catch {
+    return null;
+  }
+};
+var loadProjectEvents = async (projectId) => {
+  try {
+    return await call("company-events", { project_id: projectId, order: "desc", limit: 5 });
+  } catch {
+    return null;
+  }
+};
+function ProjectChatSurface({ props, project, members, pendingCount, pinned, pending, activity, open, onOpenDetails, onClose, onOpenConfig }) {
   return (0, import_react25.createElement)(
     import_react25.Fragment,
     null,
@@ -12197,12 +12298,14 @@ function ProjectChatSurface({ props, project, members, pendingCount, open, onOpe
         onOpenDetails,
         expanded: open
       }),
-      Number(pendingCount) > 0 ? (0, import_react25.createElement)("div", { className: "pc-pin-layer" }, (0, import_react25.createElement)(ProjectChatPinned, { count: pendingCount, items: project.pinned_decisions || [] })) : null,
+      Number(pendingCount) > 0 ? (0, import_react25.createElement)("div", { className: "pc-pin-layer" }, (0, import_react25.createElement)(ProjectChatPinned, { count: pendingCount, items: Array.isArray(pinned) ? pinned : [] })) : null,
       open ? (0, import_react25.createElement)(ProjectChatDrawer, {
         projectName: project.name,
         goal: project.goal || "",
         stage: statusLabel(project.status),
         members,
+        pending,
+        activity,
         onClose,
         onOpenConfig
       }) : null
@@ -12214,11 +12317,14 @@ function ProjectChatHeaderSlot(props) {
   const room2 = roster?.roomsById?.[props.sessionId];
   const roomId = room2?.id ?? room2?.sessionId;
   const [data, setData] = (0, import_react25.useState)(null);
+  const [todos, setTodos] = (0, import_react25.useState)(null);
+  const [drawer, setDrawer] = (0, import_react25.useState)(null);
   const [open, setOpen] = (0, import_react25.useState)(false);
   const opener = (0, import_react25.useRef)(null);
   (0, import_react25.useEffect)(() => {
     if (!roomId) {
       setData(null);
+      setTodos(null);
       return;
     }
     let live = true;
@@ -12232,17 +12338,39 @@ function ProjectChatHeaderSlot(props) {
       const rawMembers = await loadProjectMembers(found.project.id);
       if (!live) return;
       const employees = model.employees ?? [];
+      const names = new Map(employees.filter((entry) => typeof entry?.id === "string").map((entry) => [entry.id, entry.name ?? ""]));
       const members = rawMembers.map((member) => ({
         id: member.id,
         name: employees.find((entry) => entry.id === member.employee_id)?.name ?? "",
         role: member.role ?? ""
       })).filter((member) => member.name);
-      setData({ project: found.project, members });
+      setData({ project: found.project, members, names });
+      loadProjectTodos(found.project.id).then((result) => {
+        if (live) setTodos(result);
+      });
     });
     return () => {
       live = false;
     };
   }, [roomId]);
+  (0, import_react25.useEffect)(() => {
+    if (!open || !data) return;
+    let live = true;
+    setDrawer(null);
+    Promise.all([loadProjectTodos(data.project.id), loadProjectEvents(data.project.id)]).then(([todosResult, eventsResult]) => {
+      if (!live) return;
+      setDrawer({
+        pending: pendingRows(todosResult, () => {
+          setOpen(false);
+          props.actions.openCompanyPage("todos");
+        }),
+        activity: activityLines(eventsResult, { names: data.names })
+      });
+    });
+    return () => {
+      live = false;
+    };
+  }, [open, data]);
   (0, import_react25.useEffect)(() => {
     if (!open) return;
     const onKey = (event) => {
@@ -12257,16 +12385,19 @@ function ProjectChatHeaderSlot(props) {
   }, [open]);
   if (!data) return (0, import_react25.createElement)(HeaderPill, props);
   const project = data.project;
-  const pending = Number.isFinite(project.pending_count) ? project.pending_count : 0;
   const close = () => {
     setOpen(false);
+    setDrawer(null);
     opener.current?.focus?.();
   };
   return (0, import_react25.createElement)(ProjectChatSurface, {
     props,
     project,
     members: data.members,
-    pendingCount: pending,
+    pendingCount: waitingTotal(todos),
+    pinned: pinnedRows(todos),
+    pending: drawer?.pending,
+    activity: drawer?.activity,
     open,
     onOpenDetails: (event) => {
       opener.current = event?.currentTarget ?? null;
@@ -16608,7 +16739,7 @@ function KeptPrivateSection({ roster, actions, run: run2, Section, Row: Row3 }) 
 }
 
 // src/client/usage-data.js
-var HOUR2 = 0;
+var HOUR3 = 0;
 var OWNER = 1;
 var MODEL = 2;
 var KIND = 3;
@@ -16704,7 +16835,7 @@ function summarize(view, range, keep = () => true, seriesOf = () => "all") {
   const current = buckets.map((bucket) => ({ ...bucket, sum: blank2(), stacks: /* @__PURE__ */ new Map() }));
   const result = { buckets: current, total: blank2(), previous: 0, owners: /* @__PURE__ */ new Map(), models: /* @__PURE__ */ new Map(), kinds: /* @__PURE__ */ new Map() };
   for (const row of view.rows) {
-    const hour = row[HOUR2];
+    const hour = row[HOUR3];
     if (hour < before || hour > to || !keep(row)) continue;
     if (hour < from) {
       result.previous += tokensOf(row);
@@ -17146,7 +17277,7 @@ function Heat({ view, keep, paint, index }) {
   const from = dayKey(first);
   const daily = /* @__PURE__ */ new Map();
   for (const row of view.rows) {
-    const day = row[HOUR2].slice(0, 10);
+    const day = row[HOUR3].slice(0, 10);
     if (day >= from && keep(row)) daily.set(day, (daily.get(day) ?? 0) + tokensOf(row));
   }
   const most = Math.max(0, ...daily.values());
@@ -17278,8 +17409,8 @@ function UsagePage({ roster, actions, focusId }) {
     const activeDays2 = /* @__PURE__ */ new Set();
     let first = view.now;
     for (const row of view.rows) {
-      if (row[HOUR2] < first) first = row[HOUR2];
-      if (keep2(row) && tokensOf(row) > 0) activeDays2.add(row[HOUR2].slice(0, 10));
+      if (row[HOUR3] < first) first = row[HOUR3];
+      if (keep2(row) && tokensOf(row) > 0) activeDays2.add(row[HOUR3].slice(0, 10));
     }
     const oldest2 = Math.min(monthOf(hourMs(first)), addMonths(monthOf(hourMs(view.now)), -12));
     const ranked2 = (map) => [...map].filter(([, sum]) => sum.total > 0).sort((a, b) => b[1].total - a[1].total);
@@ -20779,7 +20910,7 @@ function readPage(limits) {
     items.push(item);
     return { item, number: items.length, secret };
   };
-  const nameOf = (el, text2, secret) => collapse(
+  const nameOf2 = (el, text2, secret) => collapse(
     el.getAttribute("aria-label") || text2 || (el.localName === "input" && !secret && NO_VALUE_TYPES.has(el.type) ? el.value : "") || el.getAttribute("placeholder") || el.title || el.getAttribute("alt") || el.querySelector?.("img[alt]")?.alt || el.getAttribute("name") || ""
   ).slice(0, 80);
   const fenced = (code, lang) => {
@@ -20955,7 +21086,7 @@ ${body2 || "(no text)"}
     const found = itemFor(el, style);
     const mark = found ? `[#${found.number}]` : "";
     if (tag === "input" || tag === "textarea" || tag === "select") {
-      if (found) found.item.name = nameOf(el, tag === "select" ? "" : el.labels?.[0] ? collapse(el.labels[0].textContent) : "", found.secret);
+      if (found) found.item.name = nameOf2(el, tag === "select" ? "" : el.labels?.[0] ? collapse(el.labels[0].textContent) : "", found.secret);
       return mark ? ` ${mark} ` : "";
     }
     let body2;
@@ -20973,7 +21104,7 @@ ${body2 || "(no text)"}
     } else {
       body2 = children(el, { ...next, pre: keepsSpace });
     }
-    if (found) found.item.name = nameOf(el, oneLine(body2), found.secret);
+    if (found) found.item.name = nameOf2(el, oneLine(body2), found.secret);
     const level = /^h([1-6])$/.exec(tag)?.[1] || (el.getAttribute("role") === "heading" ? el.getAttribute("aria-level") || "2" : "");
     if (level) {
       const title = oneLine(body2);

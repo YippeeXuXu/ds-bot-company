@@ -17,7 +17,7 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>')
 
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { ProjectChatSurface, ProjectChatDrawer, ProjectChatHeaderSlot } from './src/client/project-chat-overlay.js'\nexport { HeaderPill } from './src/client/header.js'",
+    contents: "export { ProjectChatSurface, ProjectChatDrawer, ProjectChatHeaderSlot } from './src/client/project-chat-overlay.js'\nexport { HeaderPill } from './src/client/header.js'\nexport { installLocale } from './src/client/i18n.js'",
     resolveDir: PLUGIN,
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -114,6 +114,21 @@ const sandbox = {
 runInNewContext(outputFiles[0].text, sandbox)
 const { ProjectChatSurface, ProjectChatDrawer, ProjectChatHeaderSlot, HeaderPill } = module.exports
 
+// The interface runs in Chinese; the bundle carries its own copy of i18n, so install the
+// dictionary through the bundled `installLocale` — the copy the user actually sees.
+const dictionaries = new Map()
+module.exports.installLocale({
+  register: (namespace, locale, dictionary) => {
+    dictionaries.set(`${namespace}:${locale}`, dictionary)
+    return () => dictionaries.delete(`${namespace}:${locale}`)
+  },
+  bind: namespace => (key, params) => {
+    const text = dictionaries.get(`${namespace}:zh`)?.[key] ?? key
+    return params ? text.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match)) : text
+  },
+  getLocale: () => ({ active: 'zh' }),
+})
+
 // Component elements only become markup when rendered; expand the plain-function
 // components first, leaving HeaderPill as an element we can identify.
 const resolve = node => {
@@ -141,7 +156,8 @@ const hasClass = (node, name) => typeof node?.props?.className === 'string' && n
 
 // Mounts the slot the way the host does: render, then let the company reads settle and
 // re-render for every state update their results cause.
-const mountSlot = async () => {
+const mountSlot = async (overrides = {}) => {
+  const input = { ...slotProps(), ...overrides }
   const root = {
     root: true, next: 0, slots: [], queue: [], cleanups: [], dirty: false, tree: null,
     schedule() { root.dirty = true },
@@ -151,7 +167,7 @@ const mountSlot = async () => {
     root.queue = []
     outer.push(frame)
     frame = root
-    try { root.tree = ProjectChatHeaderSlot(slotProps()) } finally { frame = outer.pop() ?? null }
+    try { root.tree = ProjectChatHeaderSlot(input) } finally { frame = outer.pop() ?? null }
     for (const job of root.queue) {
       const previous = root.cleanups[job.index]
       if (typeof previous === 'function') previous()
@@ -197,11 +213,43 @@ const slotProps = () => ({
   useRoster: selector(roster),
   actions: { beginVisit: noop, endVisit: noop, openCompanyPage: noop },
 })
-const slotProject = { id: 'prj_1', name: '官网改版', status: 'active', goal: '上线新首页', pending_count: 2, pinned_decisions: [], group_binding: { room_id: 'room-1' } }
+// The model's own counters are stale on purpose: the surface must take the count and the
+// pinned rows from the waiting read, not from `pending_count`/`pinned_decisions` (A15, B8).
+const slotProject = { id: 'prj_1', name: '官网改版', status: 'active', goal: '上线新首页', pending_count: 99, pinned_decisions: [{ id: 'stale', title: '旧置顶', who: '不应出现' }], group_binding: { room_id: 'room-1' } }
 const companyModel = { projects: [slotProject], employees: [{ id: 'emp_1', name: '键盘' }] }
-const companyModelResponses = detail => (endpoint, payload) => endpoint === 'company-model'
-  ? (payload?.project_id ? detail : companyModel)
-  : undefined
+// C-02 fixtures: one project's waiting decisions and recent events, read through the
+// same two routes the drawer uses.
+const todosBody = {
+  read_at: '2026-11-05T19:00:00Z',
+  company_id: 'company-1',
+  counts: { waiting_approvals: 2, waiting_acceptances: 1, waiting_total: 3 },
+  waiting: [
+    { id: 'ac_1', card_kind: 'acceptance', title: '验收官网改版', wait_minutes: 3, ready: true },
+    { id: 'ap_1', card_kind: 'approval', title: '私聊里的审批', wait_minutes: 40, ready: false, suspended: true, reason: '请在私聊中处理' },
+    { id: 'ap_2', card_kind: 'approval', title: '发布到生产', wait_minutes: 12, ready: true },
+  ],
+  handled: [],
+  handled_has_more: false,
+}
+const eventsAt = Date.now()
+// Deliberately oldest first: the client must order and truncate by itself, not trust the
+// array it received (A5).
+const eventsBody = {
+  cursor: '9',
+  has_more: false,
+  events: [
+    { id: 'evt_6_0', cursor: 6, at: eventsAt - 26 * 60 * 60 * 1000, type: 'acceptance.decided', data: { acceptance_id: 'acc_1', decision: 'return' } },
+    { id: 'evt_7_0', cursor: 7, at: eventsAt - 3 * 60 * 60 * 1000, type: 'project.group.reconciled', data: {} },
+    { id: 'evt_8_0', cursor: 8, at: eventsAt - 2 * 60 * 60 * 1000, type: 'project.member.added', data: { employee_id: 'emp_1', role: 'coordinator' } },
+    { id: 'evt_9_0', cursor: 9, at: eventsAt - 5 * 60 * 1000, type: 'project.updated', data: { fields: ['goal'] } },
+  ],
+}
+const companyModelResponses = detail => (endpoint, payload) => {
+  if (endpoint === 'company-model') return payload?.project_id ? detail : companyModel
+  if (endpoint === 'company-todos') return todosBody
+  if (endpoint === 'company-events') return eventsBody
+  return undefined
+}
 
 test('the project header keeps the host pill mounted but hidden', () => {
   const tree = resolve(ProjectChatSurface({ props, project, members, pendingCount: 0, open: false, onOpenDetails() {}, onClose() {}, onOpenConfig() {} }))
@@ -236,7 +284,7 @@ test('the drawer leaves out member, decision and activity sections without data'
   assert.doesNotMatch(body, /All clear/)
   assert.doesNotMatch(body, /No recent activity/)
   const headings = collect(tree, node => node.type === 'h3').map(text)
-  assert.deepEqual(headings, ['Goal'])
+  assert.deepEqual(headings, ['目标'])
 })
 
 test('the drawer renders real member rows, and decisions only when they exist', () => {
@@ -278,7 +326,11 @@ test('the header slot renders member faces from the project detail read', async 
   assert.equal(text(faces[0]), '键')
   assert.match(text(tree), /官网改版/)
   assert.equal(collect(tree, node => node.props?.className === 'pc-host-head').length, 1, 'the host pill stays mounted under the P04 header')
-  assert.deepEqual(requests.filter(entry => entry.payload?.project_id), [{ endpoint: 'company-model', payload: { project_id: 'prj_1' } }])
+  // C-02 adds the project's waiting read to the same entry pass as the member read.
+  assert.deepEqual(requests.filter(entry => entry.payload?.project_id), [
+    { endpoint: 'company-model', payload: { project_id: 'prj_1' } },
+    { endpoint: 'company-todos', payload: { project_id: 'prj_1' } },
+  ])
 })
 
 test('the header slot leaves the member area out when the detail read returns no members', async () => {
@@ -293,5 +345,103 @@ test('the header slot leaves the member area out when the detail read returns no
   const drawer = collect(slot.tree(), node => hasClass(node, 'pc-drawer'))[0]
   assert.ok(drawer, 'the details drawer opens from the project pill')
   assert.equal(collect(drawer, node => hasClass(node, 'pc-member')).length, 0, 'no member rows')
-  assert.doesNotMatch(text(drawer), /键盘/)
+  assert.doesNotMatch(text(drawer), /成员/)
+})
+
+test('the status bar and the pinned card show the project waiting read', async () => {
+  requests = []
+  responses = companyModelResponses({ project: { id: 'prj_1', members: [] } })
+  const slot = await mountSlot()
+  const tree = slot.tree()
+  const pin = collect(tree, node => node.props?.className === 'pc-pin')
+  assert.equal(pin.length, 1, 'the pinned card is drawn from the waiting read')
+  assert.match(text(pin[0]), /待我决定/)
+  assert.match(text(pin[0]), /已置顶 3/)
+  // Neither the model's stale count (99) nor its stale pinned rows may leak in.
+  assert.doesNotMatch(text(pin[0]), /99/)
+  assert.doesNotMatch(text(pin[0]), /旧置顶/)
+  // At most three rows, longest wait first, and each row carries the type, the waiting
+  // time and, for a blocked row, the reason.
+  const rows = collect(pin[0], node => hasClass(node, 'pc-pin-row'))
+  assert.equal(rows.length, 3)
+  assert.match(text(rows[0]), /私聊里的审批/)
+  assert.match(text(rows[0]), /审批 · 已等待 40 分钟/)
+  assert.match(text(rows[0]), /已挂起 · 等待中/)
+  assert.match(text(rows[0]), /请在私聊中处理/)
+  assert.match(text(rows[1]), /发布到生产/)
+  assert.match(text(rows[2]), /验收官网改版/)
+  assert.match(text(rows[2]), /验收 · 已等待 3 分钟/)
+  assert.equal(requests.filter(entry => entry.endpoint === 'company-todos').length, 1, 'one waiting read for the whole surface')
+  assert.equal(requests.filter(entry => entry.endpoint === 'company-events').length, 0, 'the event read waits for the drawer')
+})
+
+test('the drawer reads both sources once per opening and shows readable copy', async () => {
+  requests = []
+  responses = companyModelResponses({ project: { id: 'prj_1', members: [{ id: 'm1', employee_id: 'emp_1', role: 'coordinator' }] } })
+  const slot = await mountSlot()
+  const open = () => {
+    collect(slot.tree(), node => hasClass(node, 'pc-pill'))[0].props.onClick({ currentTarget: { focus: noop } })
+  }
+  open()
+  await slot.settle()
+  const drawer = collect(slot.tree(), node => hasClass(node, 'pc-drawer'))[0]
+  assert.ok(drawer, 'the drawer opens from the project pill')
+  const body = text(drawer)
+  assert.match(body, /私聊里的审批/)
+  assert.match(body, /审批 · 已等待 40 分钟/)
+  assert.match(body, /已挂起 · 等待中/)
+  assert.match(body, /请在私聊中处理/)
+  assert.match(body, /验收 · 已等待 3 分钟/)
+  // The nine known event kinds become sentences with a relative time; anything else is
+  // dropped rather than shown raw (§1.2, K-05).
+  assert.match(body, /项目资料已更新 · 5 分钟前/)
+  assert.match(body, /键盘 加入项目 · 2 小时前/)
+  assert.match(body, /验收已退回 · 1 天前/)
+  assert.doesNotMatch(body, /project\.|evt_|operation_key|unknown/)
+  const todoReads = requests.filter(entry => entry.endpoint === 'company-todos')
+  const eventReads = requests.filter(entry => entry.endpoint === 'company-events')
+  assert.equal(todoReads.length, 2, 'the surface read plus one drawer read')
+  assert.equal(eventReads.length, 1, 'one event read per opening')
+  assert.deepEqual(eventReads[0].payload, { project_id: 'prj_1', order: 'desc', limit: 5 }, 'newest five, descending')
+  // The stub answers oldest first; the client still shows the newest lines first.
+  const shown = ['项目资料已更新 · 5 分钟前', '键盘 加入项目 · 2 小时前', '验收已退回 · 1 天前'].map(line => body.indexOf(line))
+  assert.ok(shown.every(index => index >= 0), 'every mapped event is shown')
+  assert.deepEqual(shown.slice().sort((a, b) => a - b), shown, 'newest first even when the read arrives oldest first')
+  // Closing discards the rows; opening again reads once more instead of reusing them (§4).
+  collect(drawer, node => hasClass(node, 'pc-round'))[0].props.onClick()
+  await slot.settle()
+  assert.equal(collect(slot.tree(), node => hasClass(node, 'pc-drawer')).length, 0, 'the drawer closes')
+  open()
+  await slot.settle()
+  assert.equal(requests.filter(entry => entry.endpoint === 'company-events').length, 2, 'a second opening reads again')
+})
+
+test('a failed read leaves the drawer sections out without a placeholder', async () => {
+  responses = (endpoint, payload) => endpoint === 'company-model'
+    ? (payload?.project_id ? { project: { id: 'prj_1', members: [] } } : companyModel)
+    : undefined
+  const slot = await mountSlot()
+  const closed = slot.tree()
+  assert.equal(collect(closed, node => node.props?.className === 'pc-pin').length, 0, 'no pinned card without a waiting read')
+  collect(closed, node => hasClass(node, 'pc-pill'))[0].props.onClick({ currentTarget: { focus: noop } })
+  await slot.settle()
+  const body = text(collect(slot.tree(), node => hasClass(node, 'pc-drawer'))[0])
+  assert.doesNotMatch(body, /待我决定/)
+  assert.doesNotMatch(body, /暂无/)
+  assert.doesNotMatch(body, /\b0\b/)
+  assert.doesNotMatch(body, /失败|错误|error/i)
+})
+
+test('a waiting row opens the to-do page and closes the drawer', async () => {
+  responses = companyModelResponses({ project: { id: 'prj_1', members: [] } })
+  const opened = []
+  const slot = await mountSlot({ actions: { beginVisit: noop, endVisit: noop, openCompanyPage: kind => opened.push(kind) } })
+  collect(slot.tree(), node => hasClass(node, 'pc-pill'))[0].props.onClick({ currentTarget: { focus: noop } })
+  await slot.settle()
+  const row = collect(slot.tree(), node => hasClass(node, 'pc-wait'))[0]
+  assert.ok(row, 'the drawer lists the waiting rows')
+  row.props.onClick()
+  await slot.settle()
+  assert.deepEqual(opened, ['todos'])
+  assert.equal(collect(slot.tree(), node => hasClass(node, 'pc-drawer')).length, 0, 'the drawer closes behind the page')
 })
