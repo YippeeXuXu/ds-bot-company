@@ -244,6 +244,11 @@ const eventsBody = {
     { id: 'evt_9_0', cursor: 9, at: eventsAt - 5 * 60 * 1000, type: 'project.updated', data: { fields: ['goal'] } },
     // B: a newly written acceptance carries the submitter; the client shows the real name.
     { id: 'evt_10_0', cursor: 10, at: eventsAt - 60 * 1000, type: 'acceptance.submitted', data: { acceptance_id: 'acc_2', project_id: 'prj_1', employee_id: 'emp_1' } },
+    // An older acceptance has no employee id: K-12 asks for "成员", not a nameless line.
+    { id: 'evt_11_0', cursor: 11, at: eventsAt - 10 * 60 * 1000, type: 'acceptance.submitted', data: { acceptance_id: 'acc_3', project_id: 'prj_1' } },
+    // Two more mapped events push the list past five, so the client must cut the oldest.
+    { id: 'evt_12_0', cursor: 12, at: eventsAt - 30 * 60 * 60 * 1000, type: 'project.started', data: { room_id: 'room-1' } },
+    { id: 'evt_13_0', cursor: 13, at: eventsAt - 40 * 60 * 60 * 1000, type: 'project.created', data: { name: '官网改版' } },
   ],
 }
 const companyModelResponses = detail => (endpoint, payload) => {
@@ -347,7 +352,10 @@ test('the header slot leaves the member area out when the detail read returns no
   const drawer = collect(slot.tree(), node => hasClass(node, 'pc-drawer'))[0]
   assert.ok(drawer, 'the details drawer opens from the project pill')
   assert.equal(collect(drawer, node => hasClass(node, 'pc-member')).length, 0, 'no member rows')
-  assert.doesNotMatch(text(drawer), /成员/)
+  // The word itself can legitimately appear in an activity line (K-12 falls back to
+  // "成员" when an event has no employee id), so look for the section heading only.
+  const headings = collect(drawer, node => node.type === 'h3').map(node => text(node))
+  assert.ok(!headings.includes('成员'), 'no member section heading')
 })
 
 test('the status bar and the pinned card show the project waiting read', async () => {
@@ -400,7 +408,11 @@ test('the drawer reads both sources once per opening and shows readable copy', a
   assert.match(body, /键盘 加入项目 · 2 小时前/)
   assert.match(body, /验收已退回 · 1 天前/)
   assert.match(body, /键盘 提交了验收 · 1 分钟前/)
+  assert.match(body, /成员 提交了验收 · 10 分钟前/)
   assert.doesNotMatch(body, /project\.|evt_|operation_key|unknown/)
+  // Seven mapped events were handed over; the drawer keeps the newest five (B-2, K-06).
+  assert.equal(collect(drawer, node => node.type === 'p').length, 6, 'one goal line plus five activity lines')
+  assert.doesNotMatch(body, /项目已启动|项目已创建/, 'the two oldest mapped events are cut')
   const todoReads = requests.filter(entry => entry.endpoint === 'company-todos')
   const eventReads = requests.filter(entry => entry.endpoint === 'company-events')
   assert.equal(todoReads.length, 2, 'the surface read plus one drawer read')

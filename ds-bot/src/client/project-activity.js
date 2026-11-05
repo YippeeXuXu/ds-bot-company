@@ -40,10 +40,9 @@ const ACTIVITY_KINDS = new Map([
   ['project.member.added', (data, names) => t('{name} joined the project', { name: nameOf(names, data?.employee_id) || t('Member') })],
   ['project.member.removed', (data, names) => t('{name} left the project', { name: nameOf(names, data?.employee_id) || t('Member') })],
   ['project.group.bound', () => t('Project group bound')],
-  ['acceptance.submitted', (data, names) => {
-    const name = nameOf(names, data?.employee_id)
-    return name ? t('{name} submitted an acceptance', { name }) : t('Acceptance submitted')
-  }],
+  // New events carry the submitter (§1.2:41); older ones have no id to look up, and K-12
+  // says to write "成员" rather than fall back to a nameless sentence.
+  ['acceptance.submitted', (data, names) => t('{name} submitted an acceptance', { name: nameOf(names, data?.employee_id) || t('Member') })],
   ['acceptance.decided', data => (data?.decision === 'return' ? t('Acceptance sent back') : t('Acceptance passed'))],
 ])
 

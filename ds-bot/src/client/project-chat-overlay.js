@@ -386,9 +386,9 @@ export const drawerPendingRows = (project, todos, openTodos) =>
 
 const loadProjectEvents = async projectId => {
   try {
-    // Newest five, in one read (§1.2, A5): the default order is oldest-first, so ask for
-    // descending explicitly instead of relying on the page order.
-    // Ask for ten so a future cap raise needs no client change; five are shown (§1.2:45).
+    // Newest five of ten asked (§1.2:45, A5): the default order is oldest-first, so ask
+    // for descending explicitly instead of relying on the page order; the client keeps
+    // the newest five, so a later cap raise needs no client change.
     return await call('company-events', { project_id: projectId, order: 'desc', limit: 10 })
   } catch {
     return null
