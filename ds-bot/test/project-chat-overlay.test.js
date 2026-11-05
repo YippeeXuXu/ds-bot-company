@@ -17,7 +17,7 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>')
 
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { ProjectChatSurface, ProjectChatDrawer, ProjectChatHeaderSlot } from './src/client/project-chat-overlay.js'\nexport { HeaderPill } from './src/client/header.js'\nexport { installLocale } from './src/client/i18n.js'",
+    contents: "export { ProjectChatSurface, ProjectChatDrawer, ProjectChatHeaderSlot, drawerPendingRows } from './src/client/project-chat-overlay.js'\nexport { HeaderPill } from './src/client/header.js'\nexport { installLocale } from './src/client/i18n.js'",
     resolveDir: PLUGIN,
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -112,7 +112,7 @@ const sandbox = {
   Date,
 }
 runInNewContext(outputFiles[0].text, sandbox)
-const { ProjectChatSurface, ProjectChatDrawer, ProjectChatHeaderSlot, HeaderPill } = module.exports
+const { ProjectChatSurface, ProjectChatDrawer, ProjectChatHeaderSlot, drawerPendingRows, HeaderPill } = module.exports
 
 // The interface runs in Chinese; the bundle carries its own copy of i18n, so install the
 // dictionary through the bundled `installLocale` — the copy the user actually sees.
@@ -242,6 +242,8 @@ const eventsBody = {
     { id: 'evt_7_0', cursor: 7, at: eventsAt - 3 * 60 * 60 * 1000, type: 'project.group.reconciled', data: {} },
     { id: 'evt_8_0', cursor: 8, at: eventsAt - 2 * 60 * 60 * 1000, type: 'project.member.added', data: { employee_id: 'emp_1', role: 'coordinator' } },
     { id: 'evt_9_0', cursor: 9, at: eventsAt - 5 * 60 * 1000, type: 'project.updated', data: { fields: ['goal'] } },
+    // B: a newly written acceptance carries the submitter; the client shows the real name.
+    { id: 'evt_10_0', cursor: 10, at: eventsAt - 60 * 1000, type: 'acceptance.submitted', data: { acceptance_id: 'acc_2', project_id: 'prj_1', employee_id: 'emp_1' } },
   ],
 }
 const companyModelResponses = detail => (endpoint, payload) => {
@@ -397,14 +399,15 @@ test('the drawer reads both sources once per opening and shows readable copy', a
   assert.match(body, /项目资料已更新 · 5 分钟前/)
   assert.match(body, /键盘 加入项目 · 2 小时前/)
   assert.match(body, /验收已退回 · 1 天前/)
+  assert.match(body, /键盘 提交了验收 · 1 分钟前/)
   assert.doesNotMatch(body, /project\.|evt_|operation_key|unknown/)
   const todoReads = requests.filter(entry => entry.endpoint === 'company-todos')
   const eventReads = requests.filter(entry => entry.endpoint === 'company-events')
   assert.equal(todoReads.length, 2, 'the surface read plus one drawer read')
   assert.equal(eventReads.length, 1, 'one event read per opening')
-  assert.deepEqual(eventReads[0].payload, { project_id: 'prj_1', order: 'desc', limit: 5 }, 'newest five, descending')
+  assert.deepEqual(eventReads[0].payload, { project_id: 'prj_1', order: 'desc', limit: 10 }, 'ask ten, show five, descending')
   // The stub answers oldest first; the client still shows the newest lines first.
-  const shown = ['项目资料已更新 · 5 分钟前', '键盘 加入项目 · 2 小时前', '验收已退回 · 1 天前'].map(line => body.indexOf(line))
+  const shown = ['键盘 提交了验收 · 1 分钟前', '项目资料已更新 · 5 分钟前', '键盘 加入项目 · 2 小时前', '验收已退回 · 1 天前'].map(line => body.indexOf(line))
   assert.ok(shown.every(index => index >= 0), 'every mapped event is shown')
   assert.deepEqual(shown.slice().sort((a, b) => a - b), shown, 'newest first even when the read arrives oldest first')
   // Closing discards the rows; opening again reads once more instead of reusing them (§4).
@@ -430,6 +433,26 @@ test('a failed read leaves the drawer sections out without a placeholder', async
   assert.doesNotMatch(body, /暂无/)
   assert.doesNotMatch(body, /\b0\b/)
   assert.doesNotMatch(body, /失败|错误|error/i)
+})
+
+test('an archived project keeps its waiting rows on show but takes the way in away', () => {
+  const openTodos = () => {}
+  const active = drawerPendingRows({ id: 'prj_1', status: 'active' }, todosBody, openTodos)
+  assert.equal(active.length, 3)
+  assert.ok(active.every(row => row.onOpen === openTodos), 'an active project keeps the way in')
+  const archived = drawerPendingRows({ id: 'prj_1', status: 'archived' }, todosBody, openTodos)
+  assert.equal(archived.length, 3, 'the remaining rows are still listed')
+  assert.ok(archived.every(row => row.onOpen === null), 'an archived project takes the way in away')
+  const drawer = resolve(ProjectChatDrawer({
+    projectName: '官网改版', goal: '上线新首页', stage: '', members: [],
+    pending: archived, activity: [], onClose: noop, onOpenConfig: noop,
+  }))
+  assert.match(text(drawer), /验收 · 已等待 3 分钟/, 'the rows stay readable')
+  const rows = collect(drawer, node => hasClass(node, 'pc-wait'))
+  assert.equal(rows.length, 3)
+  assert.ok(rows.every(row => hasClass(row, 'is-readonly')), 'every row is marked read-only')
+  assert.equal(rows.filter(row => row.type === 'button').length, 0, 'no button, so no answer entry')
+  assert.ok(rows.every(row => row.props.onClick === undefined), 'nothing to click')
 })
 
 test('a waiting row opens the to-do page and closes the drawer', async () => {

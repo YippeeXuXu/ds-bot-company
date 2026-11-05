@@ -140,8 +140,13 @@ export function ProjectChatDrawer({ projectName, goal, stage, members, pending, 
       h('button', { key: row.id ?? index, type: 'button', className: 'pc-member', onClick: row.onOpen ?? swallow }, h('span', null, row.name ?? ''), h('small', null, row.role ?? '')))))
   }
   if (pendingRows.length) {
-    sections.push(h('section', { className: 'pc-sec' }, h('h3', null, t('Waiting for you')), pendingRows.map((row, index) =>
-      h('button', { key: row.id ?? index, type: 'button', className: 'pc-wait', onClick: row.onOpen ?? swallow }, h('span', null, row.title ?? ''), h('small', null, row.who ?? '')))))
+    sections.push(h('section', { className: 'pc-sec' }, h('h3', null, t('Waiting for you')), pendingRows.map((row, index) => {
+      const lines = [h('span', null, row.title ?? ''), h('small', null, row.who ?? '')]
+      // A row with no way in is text: an archived project keeps the record, not the
+      // button, the pointer or the click state (§3:60, K-07).
+      if (!row.onOpen) return h('div', { key: row.id ?? index, className: 'pc-wait is-readonly' }, ...lines)
+      return h('button', { key: row.id ?? index, type: 'button', className: 'pc-wait', onClick: row.onOpen }, ...lines)
+    })))
   }
   if (activityRows.length) {
     sections.push(h('section', { className: 'pc-sec' }, h('h3', null, t('Last activity')), activityRows.map((row, index) => h('p', { key: index }, row))))
@@ -289,7 +294,7 @@ header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inse
 .pc-stat-text{color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pc-stat-count{font-weight:700;color:var(--bt-ink)}
 .pc-pin-layer{position:absolute;left:0;right:0;top:calc(100% + 8px);z-index:9;display:flex;justify-content:center;padding:0 12px;pointer-events:none}
-.pc-pin{width:min(100%,var(--dsh-chat-content-width,960px));max-height:72px;overflow:hidden;margin:0;padding:10px 14px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-card);pointer-events:none}
+.pc-pin{width:min(100%,var(--dsh-chat-content-width,960px));overflow:hidden;margin:0;padding:10px 14px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-card);pointer-events:none}
 .pc-pin-head{display:flex;align-items:baseline;gap:6px;font-size:12px;line-height:16px}
 .pc-pin-title{font-weight:600;color:var(--bt-ink)}
 .pc-pin-sub{color:var(--pc-ink-3)}
@@ -315,6 +320,8 @@ header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inse
 .pc-sec p{margin:0;color:var(--bt-ink-2)}
 .pc-member,.pc-wait{display:flex;justify-content:space-between;align-items:baseline;gap:12px;width:100%;padding:8px 0;border:0;border-top:1px solid var(--bt-line);background:transparent;color:var(--bt-ink);font:13px/18px var(--bt-font);text-align:left;cursor:pointer}
 .pc-member:hover,.pc-wait:hover{color:var(--bt-accent)}
+.pc-wait.is-readonly{cursor:default}
+.pc-wait.is-readonly:hover{color:var(--bt-ink)}
 .pc-member small,.pc-wait small{font-size:11px;color:var(--pc-ink-3)}
 .pc-drawer-foot{padding:12px 16px 16px;border-top:1px solid var(--bt-line)}
 .pc-btn{width:100%;min-height:40px;border:0;border-radius:999px;background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));font:500 13px/18px var(--bt-font);cursor:pointer}
@@ -325,7 +332,7 @@ header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inse
 .pc-dock.is-out .pc-dock-pill{animation:pc-dock-out .16s cubic-bezier(.4,0,1,1) forwards;pointer-events:none}
 @keyframes pc-pane-in{from{transform:translateX(24px);opacity:0}to{transform:translateX(0);opacity:1}}
 @media (prefers-reduced-motion:reduce){.pc-dock-pill{animation:none}.pc-drawer{animation:none}}
-@media (max-width:640px){.pc-pill{max-width:78%}.pc-stat{padding:8px 12px 0}.pc-body{padding:12px 12px 56px}.pc-pin{max-height:56px;padding:8px 12px}.pc-pin-row{margin-top:4px}}
+@media (max-width:640px){.pc-pill{max-width:78%}.pc-stat{padding:8px 12px 0}.pc-body{padding:12px 12px 56px}.pc-pin{padding:8px 12px}.pc-pin-row{margin-top:4px}}
 `
 
 
@@ -373,11 +380,16 @@ const loadProjectTodos = async projectId => {
   }
 }
 
+// An archived project still shows its remaining rows, but they lead nowhere (§3:60, K-07).
+export const drawerPendingRows = (project, todos, openTodos) =>
+  pendingRows(todos, project?.status === 'archived' ? null : openTodos)
+
 const loadProjectEvents = async projectId => {
   try {
     // Newest five, in one read (§1.2, A5): the default order is oldest-first, so ask for
     // descending explicitly instead of relying on the page order.
-    return await call('company-events', { project_id: projectId, order: 'desc', limit: 5 })
+    // Ask for ten so a future cap raise needs no client change; five are shown (§1.2:45).
+    return await call('company-events', { project_id: projectId, order: 'desc', limit: 10 })
   } catch {
     return null
   }
@@ -455,7 +467,7 @@ export function ProjectChatHeaderSlot(props) {
     Promise.all([loadProjectTodos(data.project.id), loadProjectEvents(data.project.id)]).then(([todosResult, eventsResult]) => {
       if (!live) return
       setDrawer({
-        pending: pendingRows(todosResult, () => { setOpen(false); props.actions.openCompanyPage('todos') }),
+        pending: drawerPendingRows(data.project, todosResult, () => { setOpen(false); props.actions.openCompanyPage('todos') }),
         activity: activityLines(eventsResult, { names: data.names }),
       })
     })
