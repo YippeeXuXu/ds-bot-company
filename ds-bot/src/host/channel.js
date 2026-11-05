@@ -114,7 +114,7 @@ export function install(rt) {
   }
   // What a host that only reads the team may still answer.
   // Updates change the dsh profile, not the team, so a reading host may run them too.
-  const READS = new Set(['state', 'models', 'efforts', 'providers', 'provider-models', 'earlier', 'chat', 'run-stats', 'room-progress', 'exchange', 'exchange-text', 'file-text', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'thinking', 'avatar-library', 'company-model', 'company-events'])
+  const READS = new Set(['state', 'models', 'efforts', 'providers', 'provider-models', 'earlier', 'chat', 'run-stats', 'room-progress', 'exchange', 'exchange-text', 'file-text', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'thinking', 'avatar-library', 'company-model', 'company-events', 'company-todos'])
 
   function setPrefs(body) {
     if (body.theme !== undefined) {
@@ -587,6 +587,18 @@ export function install(rt) {
           return ok((await rt.companyApi.model(body)).body)
         case 'company-events':
           return ok((await rt.companyApi.events(body)).body)
+        // The to-do read: same answer as GET /api/company/todos, through the channel the
+        // screens already use for everything else.
+        case 'company-todos': {
+          const result = await rt.companyApi.todos(body)
+          return result.status === 200 ? ok(result.body) : { ok: false, error: result.body }
+        }
+        // Answering a waiting card: the same call as POST /api/company/todos/answer. A write,
+        // so it is not in READS and a read-only host refuses it before this switch runs.
+        case 'company-todo-answer': {
+          const result = await rt.companyApi.answer(body)
+          return result.status === 200 ? ok(result.body) : { ok: false, error: result.body }
+        }
         default:
           return fail(`Unknown endpoint ${endpoint}`, 'bot/not-found')
       }

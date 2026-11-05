@@ -8,7 +8,7 @@ const OUTCOMES = { allow: 'allowed-once', reject: 'rejected' }
 
 export function install(rt) {
   const { ctx } = rt
-  /** @type {Map<string, {id:string, sessionId:string, botId:string, roomId?:string, tool:string, reason:string, detail:{text?:string, code?:string}, at:number, answer?:(outcome:string)=>void}>} */
+  /** @type {Map<string, {id:string, sessionId:string, botId:string, roomId?:string, tool:string, callId?:string|null, reason:string, detail:{text?:string, code?:string}, at:number, answer?:(outcome:string)=>void}>} */
   const pending = new Map()
 
   // Ahead of DSH's own answerer, which would hold a hidden Session's request unseen.
@@ -24,6 +24,9 @@ export function install(rt) {
       botId,
       ...(owner ? { roomId: owner.roomId } : {}),
       tool: String(request.toolName ?? ''),
+      // The host's call id, so the to-do view can join a live card to its review record
+      // and its host facts (M1b-2a §3.2). A card without one stays `null`, not undefined.
+      callId: request.callId ?? null,
       reason: String(request.reason ?? '').slice(0, 500),
       detail: rt.callDetail?.(sessionId, request.callId) ?? {},
       at: Date.now(),

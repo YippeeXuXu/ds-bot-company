@@ -89,6 +89,9 @@ export function makeRecord({
     rule_decision: local.decision ?? null,
     tool: request.tool ?? null,
     target: typeof request.target === 'string' ? request.target : null,
+    // What the judge was shown, so the line explains itself later. Same facts as the request:
+    // no message body, no file content, no credential value (§3.3, M1b-1 item 1).
+    features: request.features ?? null,
   }
 }
 

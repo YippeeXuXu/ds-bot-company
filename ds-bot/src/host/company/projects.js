@@ -13,7 +13,8 @@
 import { randomUUID } from 'node:crypto'
 import { companyFail } from './store.js'
 
-const newId = prefix => `${prefix}_${randomUUID().replaceAll('-', '').slice(0, 12)}`
+// Shared with the acceptance objects (acceptances.js): one id shape for the whole company.
+export const newId = prefix => `${prefix}_${randomUUID().replaceAll('-', '').slice(0, 12)}`
 
 const text = (value, field, { max = 120, min = 1 } = {}) => {
   const trimmed = typeof value === 'string' ? value.trim() : ''
@@ -105,6 +106,21 @@ const expectedBots = (state, projectId) => activeMembers(state, projectId)
 
 const sameMembers = (left, right) => left.length === right.length && [...left].sort().join('\n') === [...right].sort().join('\n')
 
+/**
+ * The Bot that should lead the project group (M1b-1 item 4).
+ *
+ * The roster picks an admin of its own — the first Main Bot in the group — which a project
+ * group usually does not hold, so the group ended up without one and every plain message was
+ * answered by every member in turn. The coordinator is the member the project is run by, so it
+ * leads the group when it is there. A draft with no coordinator keeps the roster's default.
+ */
+const coordinatorBot = (state, project, members) => {
+  const assignment = project?.coordinator_assignment_id == null ? undefined : state?.members?.[project.coordinator_assignment_id]
+  const employee = assignment === undefined ? undefined : state?.employees?.[assignment.employee_id]
+  const botId = employee?.bot_id
+  return typeof botId === 'string' && members.includes(botId) ? botId : undefined
+}
+
 // One project as a screen reads it: the record, its active members, and the group chat it
 // lives in with the drift already worked out. Shared by `project.get` and the HTTP read
 // model, so both answer the same shape.
@@ -132,11 +148,11 @@ export function projectHandlers({ groups = {} } = {}) {
 
   const groupFailure = (project, action, error) => companyFail('project/group-pending', `The project group ${project.group_chat_ref ?? ''} needs attention (${action}): ${error?.message ?? error}. Run project.group.reconcile.`, { project_id: project.id, room_id: project.group_chat_ref ?? null })
 
-  async function bindGroup(project, name, members, now) {
+  async function bindGroup(project, name, members, now, state) {
     if (typeof rooms.create !== 'function') throw companyFail('project/group-failed', 'This dsh cannot create a group chat, so the project group was not made.', { project_id: project.id })
     let created
     try {
-      created = await rooms.create({ name, members })
+      created = await rooms.create({ name, members, admin: coordinatorBot(state, project, members) })
     } catch (error) {
       throw companyFail('project/group-failed', `The project group could not be created: ${error?.message ?? error}`, { project_id: project.id })
     }
@@ -260,7 +276,7 @@ export function projectHandlers({ groups = {} } = {}) {
       state.members[memberId] = member
       project.coordinator_assignment_id = memberId
       coordinator.project_id = projectId
-      const roomId = await bindGroup(project, name, [coordinator.bot_id], now)
+      const roomId = await bindGroup(project, name, [coordinator.bot_id], now, state)
       return {
         aggregate_id: projectId,
         body: { project, member, project_member: member, group_chat_ref: roomId },
@@ -401,7 +417,7 @@ export function projectHandlers({ groups = {} } = {}) {
         // The first member of a draft that was created without a coordinator makes the
         // group, with everyone the project holds at that point. Refusing here would leave
         // the draft permanently unstartable, since a group can only be made from members.
-        const roomId = await bindGroup(project, project.name, expectedBots(state, project.id), now)
+        const roomId = await bindGroup(project, project.name, expectedBots(state, project.id), now, state)
         events.push({ type: 'project.group.bound', data: { room_id: roomId } })
       } else if (roomMembers(project) === undefined) {
         throw groupFailure(project, 'the project group is missing', 'no group chat')
@@ -491,7 +507,7 @@ export function projectHandlers({ groups = {} } = {}) {
       // members the project holds. A group that was bound and then vanished is a different
       // case: it still stops the start, and reconcile is the explicit repair.
       if (project.group_chat_ref == null) {
-        const roomId = await bindGroup(project, project.name, expected, now)
+        const roomId = await bindGroup(project, project.name, expected, now, state)
         events.push({ type: 'project.group.bound', data: { room_id: roomId } })
       }
       const actual = roomMembers(project)
@@ -565,7 +581,7 @@ export function projectHandlers({ groups = {} } = {}) {
         return { aggregate_id: project.id, mutates: false, body: { project, group_binding: project.group_binding, room_id: project.group_chat_ref } }
       }
       if (actual === undefined) {
-        const roomId = await bindGroup(project, project.name, expected, now)
+        const roomId = await bindGroup(project, project.name, expected, now, state)
         project.updated_at = now()
         project.revision += 1
         return { aggregate_id: project.id, body: { project, group_binding: project.group_binding, room_id: roomId }, events: [{ type: 'project.group.bound', data: { room_id: roomId, repaired: true } }] }

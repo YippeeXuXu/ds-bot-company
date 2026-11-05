@@ -12,6 +12,9 @@ node_modules/
 # A DeepSeek Harness checkout for the tests and the test bench.
 /deepseek-harness/
 
+# Parallel branches checked out beside the main one (scripts/bench.sh runs inside them).
+/.worktrees/
+
 # Test bench, local DSH data and the screenshots of dev/check.sh.
 .dsh-test*/
 .dsh-home/

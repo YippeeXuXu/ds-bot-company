@@ -201,7 +201,7 @@ test('a file from a newer plugin version counts as corrupt', async () => {
   mkdirSync(companyDir(home), { recursive: true })
   writeFileSync(statePath(home), JSON.stringify({ version: 99, revision: 4 }))
   const { store } = open(home)
-  assert.match(store.readOnly(), /version 99 is not 1/)
+  assert.match(store.readOnly(), /version 99 is not 2/)
   rmSync(home, { recursive: true, force: true })
 })
 
