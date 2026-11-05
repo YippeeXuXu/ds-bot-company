@@ -9,7 +9,9 @@
 //
 // What is never carried: file bodies, message text, the command line itself, flag values
 // (`--password=…`, `-p…`, the word after `-H`), the argument of a nested `-c` command, tokens,
-// and the local rule verdict. A key whose name says it holds a document is reported by name
+// the right side of a `NAME=value` assignment anywhere on the line, a quoted sentence where a
+// path or a program would go, and the query or fragment of a word that looks like an endpoint
+// (`…/x?token=…`) — and the local rule verdict. A key whose name says it holds a document is reported by name
 // only, and a key whose name says it holds a credential is reported by name only as well.
 // A value that `secrets.js` already knows as a saved secret hides its key the same way, so the
 // host's own secret store — not a second word list — decides what counts as a credential.
@@ -32,7 +34,7 @@ const SHELL_TOOLS = new Set(['bash', 'pwsh'])
 const EXEC_FLAGS = new Set(['-exec', '-execdir', '-ok', '-okdir'])
 
 /** Shell flags whose next word is a command line: neither a path nor a fact that travels. */
-const COMMAND_FLAGS = new Set(['-c', '--command', '-Command', '-EncodedCommand'])
+const COMMAND_FLAGS = new Set(['-c', '--command', '-Command', '-EncodedCommand', '/c', '/k'])
 
 /**
  * Flags whose next word is a body or a credential — a header, a payload, a token, a password.
@@ -75,8 +77,38 @@ const ENV_ASSIGN = /^[A-Za-z_][A-Za-z0-9_]*=/
 /** A bare command name: no path separator, no quoting, no payload. */
 const BARE_NAME = /^[A-Za-z][\w.+-]*$/
 
+/**
+ * A shell word that can name a place. Whitespace means the word was quoted: it is a command line
+ * or a sentence, not a path. `?` and `#` start a query and a fragment, and a query is where an
+ * inline credential hides (`…/x?token=…`). Neither can be part of a place, so the word is not
+ * carried as one and the call reports shortened facts.
+ */
+const PLACE_SHAPED = /^[^\s?#]+$/
+
+/**
+ * A path taken from a structured argument, not from a shell line. A real file name may hold
+ * spaces (`My Documents`), so only a query or a fragment disqualifies it.
+ */
+const ARG_PATH = /^[^?#]*$/
+
 /** A cluster of short flag names: `-rf`, `-la`, `-rn`. Anything longer may carry a value. */
 const SHORT_CLUSTER = /^-[A-Za-z]{1,3}$/
+
+/**
+ * The first letter of every short flag that takes a value (`-p` in `mysql -pSECRET`, `-u` in
+ * `curl -uuser:pass`, `-d` in `curl -dDATA`). A cluster that starts with one of them is not a
+ * cluster: `-pab` may be `-p ab`, so only the letter is kept and the call reports shortened
+ * facts. The cost is `tar -czf` reading as `-c`, and that cost is named rather than paid by
+ * letting a two-letter password travel.
+ *
+ * `-p` is listed on its own because no tool takes it as a separate word: `mysql -p db` and
+ * `ssh -p 22` mean different things, so it must not swallow the next word the way `-u` does.
+ */
+const VALUE_LETTERS = new Set(
+  [...VALUE_FLAGS, ...PATH_FLAGS, ...COMMAND_FLAGS, '-p']
+    .filter(name => name.length === 2 && name.startsWith('-'))
+    .map(name => name[1]),
+)
 
 const MAX_FIELDS = 16
 const MAX_FLAGS = 8
@@ -121,7 +153,12 @@ const flagName = (word) => {
     const at = word.indexOf('=')
     return at === -1 ? { name: word.slice(0, WORD_MAX), cut: false } : { name: word.slice(0, Math.min(at, WORD_MAX)), cut: false }
   }
-  if (SHORT_CLUSTER.test(word)) return { name: word, cut: false }
+  if (SHORT_CLUSTER.test(word)) {
+    // A one-letter word has no tail to hide a value in; a longer one that starts with a
+    // value-taking letter does, and only the letter is kept.
+    if (word.length > 2 && VALUE_LETTERS.has(word[1])) return { name: word.slice(0, 2), cut: true }
+    return { name: word, cut: false }
+  }
   return { name: word.slice(0, 2), cut: true }
 }
 
@@ -202,7 +239,10 @@ export function callFeatures({ tool, args, base, scope = {}, home, redact } = {}
         const word = words[at]
         if (EXEC_FLAGS.has(word)) {
           const program = words[at + 1]
-          if (program !== undefined) {
+          // A quoted program is a command line: `-exec "curl http://…?token=…"` carries the whole
+          // sentence, so the program slot stays empty and the call says its facts are shortened.
+          if (program !== undefined && !PLACE_SHAPED.test(program)) cut = true
+          else if (program !== undefined) {
             if (programs.length < MAX_PROGRAMS) programs.push(redactText(program).slice(0, WORD_MAX))
             else cut = true
           }
@@ -229,6 +269,12 @@ export function callFeatures({ tool, args, base, scope = {}, home, redact } = {}
           continue
         }
         if (word === '--' || word === '-') continue
+        // `FOO=bar` anywhere on the line — after `sudo`, inside a `sh -c` tail — sets the
+        // environment, and its right side is a value that may be a credential. Only the leading
+        // assignments are skipped above to find the command name; these are skipped for the same
+        // reason: the value is not a fact that travels. The name is not carried either, so the
+        // call says its facts are shortened.
+        if (ENV_ASSIGN.test(word)) { cut = true; continue }
         if (word.startsWith('-')) {
           const flag = flagName(word)
           if (flags.length < MAX_FLAGS) flags.push(flag.name)
@@ -238,13 +284,19 @@ export function callFeatures({ tool, args, base, scope = {}, home, redact } = {}
         }
         // A URL is an endpoint, not a path: it leaves the machine, which is the judge's call.
         const isUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(word)
-        if (!isUrl && (word.includes('/') || word.startsWith('.') || word.startsWith('~'))) pushPath(word)
+        if (!isUrl && (word.includes('/') || word.startsWith('.') || word.startsWith('~'))) {
+          if (!PLACE_SHAPED.test(word)) { cut = true; continue }
+          pushPath(word)
+        }
       }
       // A redirect target is the path the shell writes to; it belongs with the other paths, but
       // stays separate so a judge can tell a bare argument from a write.
       const redirects = []
       for (const match of command.matchAll(/(?:^|\s)\d*>>?\s*([^\s;&|]+)/g)) {
         if (redirects.length >= MAX_PATHS) { cut = true; break }
+        // A redirect target is a place; one that carries a query or a fragment is not, and the
+        // tail is exactly the part that must not travel.
+        if (!PLACE_SHAPED.test(match[1])) { cut = true; continue }
         const target = resolveTarget({ value: match[1], base: resolvedBase, workspace, redact: redactText })
         if (target === undefined) cut = true
         else redirects.push(target.value)
@@ -266,7 +318,12 @@ export function callFeatures({ tool, args, base, scope = {}, home, redact } = {}
 
   const key = WRITE_ARG.get(tool) ?? PATH_KEYS.find(name => names.includes(name))
   if (key !== undefined) {
-    const target = resolveTarget({ value: args[key], base: resolvedBase, workspace, redact: redactText })
+    // A structured path may hold spaces, but not a query: the query is where an inline credential
+    // hides, so a value that carries one is reported as an unknown place instead of a path.
+    const raw = text(args[key])
+    const target = raw !== undefined && ARG_PATH.test(raw.trim())
+      ? resolveTarget({ value: args[key], base: resolvedBase, workspace, redact: redactText })
+      : undefined
     if (target !== undefined) features.path = target
     else features.truncated = true
   }

