@@ -387,6 +387,11 @@ test('B-7: handled_limit takes only a whole number from 1 to 200', async () => {
   }
   const accepted = await api.todos({ handled_limit: '2' })
   assert.equal(accepted.status, 200)
+  // An empty parameter means "not given", not "invalid": it falls back to the default
+  // window (馒头 11:56 ruling) instead of failing the whole screen.
+  const empty = await api.todos({ handled_limit: '' })
+  assert.equal(empty.status, 200)
+  assert.equal(empty.body.handled.length, 0)
 })
 
 test('A13: an owner-only acceptance is listed even when an employee submitted it', async () => {

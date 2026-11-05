@@ -79,7 +79,7 @@ export const queryOf = url => {
   return query
 }
 
-export function createCompanyApi({ store, execute, groups = {}, now = Date.now, approvals = () => [], sessionBot, home, redact = value => value, answerApproval, warn = () => {} }) {
+export function createCompanyApi({ store, execute, groups = {}, now = Date.now, approvals = () => [], sessionBot, home, redact = value => value, answerApproval, runExclusive, warn = () => {} }) {
   const roomMembers = project => {
     if (typeof groups.members !== 'function' || project.group_chat_ref == null) return undefined
     return groups.members(project.group_chat_ref)
@@ -87,7 +87,7 @@ export function createCompanyApi({ store, execute, groups = {}, now = Date.now, 
 
   // The to-do read is the one answer assembled from several sources rather than projected
   // from one table. It is created once so the route and the client channel cannot drift.
-  const todos = createTodos({ store, approvals, sessionBot, home: home ?? dirname(store.dir), now, redact, answerApproval, warn })
+  const todos = createTodos({ store, approvals, sessionBot, home: home ?? dirname(store.dir), now, redact, answerApproval, runExclusive, warn })
   const todosRead = (input = {}) => {
     try {
       return { status: 200, body: todos.read(input ?? {}) }
