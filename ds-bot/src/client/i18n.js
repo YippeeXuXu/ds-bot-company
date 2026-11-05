@@ -1221,6 +1221,7 @@ Object.assign(ZH, HOST_ZH, {
   'Not synced · reconcile later': '未同步 · 待对账',
   'Please handle it in the private chat': '请在私聊中处理',
   'Cannot be answered here': '暂时不可答复',
+  'This card cannot be answered from here.': '这张卡不能在这里答复，请刷新后再看。',
   'Handled elsewhere.': '已在别处处理',
   'The request changed. Refreshed.': '请求已变化，已刷新',
   'Only the most recent {n} are shown.': '仅显示最近 {n} 条',

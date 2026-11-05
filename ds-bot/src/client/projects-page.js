@@ -265,7 +265,7 @@ export function CompanySurface({ page, actions, roster }) {
         markStale(item)
         return { stale: true }
       }
-      if (code === 'company/revision-conflict') {
+      if (code === 'company/revision-conflict' || code === 'acceptance/state-conflict') {
         await loadTodos(undefined, true)
         throw Object.assign(new Error(t('The request changed. Refreshed.')), { code })
       }

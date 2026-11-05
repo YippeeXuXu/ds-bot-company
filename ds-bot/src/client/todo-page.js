@@ -134,7 +134,11 @@ export function TodoPage({ todos = [], counts = null, read_at = null, loading = 
         })
       }
     } catch (failure) {
-      setNotice(failure?.message ?? String(failure))
+      // A card the host will not answer from this view keeps its place; the notice
+      // stays neutral so a refused answer cannot read like a success.
+      setNotice(failure?.code === 'todo/unsupported'
+        ? t('This card cannot be answered from here.')
+        : (failure?.message ?? String(failure)))
     } finally {
       setBusy('')
     }
