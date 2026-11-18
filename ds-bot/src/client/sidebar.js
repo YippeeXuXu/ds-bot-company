@@ -345,6 +345,7 @@ const NAV_PATHS = {
   company: 'M4 20V6.5A2.5 2.5 0 0 1 6.5 4H14a2 2 0 0 1 2 2v14M16 10h2.5A1.5 1.5 0 0 1 20 11.5V20M2 20h20M7 8h4M7 12h4M7 16h4',
   projects: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
   chats: 'M20 12a8 8 0 0 1-8 8H7l-4 3v-6.5A8 8 0 0 1 11 4h1a8 8 0 0 1 8 8z',
+  templates: 'M7 3h7l4 4v14H7zM14 3v4h4M10 12h6M10 16h4',
 }
 const CoIcon = ({ name }) => h('svg', {
   className: 'bt-co-ico', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
@@ -625,6 +626,7 @@ export function TeamSidebar(props) {
   const departments = companyData.departments ?? []
   const employees = companyData.employees ?? []
   const projects = companyData.projects ?? []
+  const templates = (companyData.templates ?? []).filter(item => item.status !== 'archived')
   const activeProjects = projects.filter(item => item.status === 'active').length
   // A project chat keeps the project column visible even though the page state is
   // null: the room is bound to one project and that is the context the user needs.
@@ -761,14 +763,16 @@ export function TeamSidebar(props) {
         h(AccountLauncher, { seat: false, actions }))
   const railNav = h('nav', { className: 'bt-company-nav bt-company-rail', 'aria-label': t('Workspace navigation') },
     h('button', { type: 'button', 'aria-label': t('Company'), 'aria-current': kind === 'company' ? 'page' : undefined, title: t('Company'), onClick: () => actions.openCompanyPage('company') }, h('span', { 'aria-hidden': true }, '⌂')),
-    h('button', { type: 'button', 'aria-label': t('Projects'), 'aria-current': kind !== 'company' && kind !== 'chat' ? 'page' : undefined, title: t('Projects'), onClick: () => actions.openCompanyPage('list') }, h('span', { 'aria-hidden': true }, '▦')),
+    h('button', { type: 'button', 'aria-label': t('Templates'), 'aria-current': kind === 'templates' ? 'page' : undefined, title: t('Templates'), onClick: () => actions.openCompanyPage('templates') }, h('span', { 'aria-hidden': true }, '▤')),
+    h('button', { type: 'button', 'aria-label': t('Projects'), 'aria-current': kind !== 'company' && kind !== 'chat' && kind !== 'templates' ? 'page' : undefined, title: t('Projects'), onClick: () => actions.openCompanyPage('list') }, h('span', { 'aria-hidden': true }, '▦')),
     h('button', { type: 'button', 'aria-label': t('Chats'), 'aria-current': kind === 'chat' ? 'page' : undefined, title: t('Chats'), onClick: () => actions.closeCompanyPage() }, h('span', { 'aria-hidden': true }, '◉')))
   const content = h('div', { className: wideContent ? 'bt-side bt-side-company' : 'bt-side bt-rail', onKeyDown: typeToSearch },
     top,
     wideContent
       ? h('nav', { className: 'bt-co-nav', 'aria-label': t('Workspace navigation') },
           navButton('company', t('Company'), null, kind === 'company', () => actions.openCompanyPage('company')),
-          navButton('projects', t('Projects'), projects.length, kind !== 'company' && kind !== 'chat', () => actions.openCompanyPage('list')),
+          navButton('templates', t('Templates'), templates.length, kind === 'templates', () => actions.openCompanyPage('templates')),
+          navButton('projects', t('Projects'), projects.length, kind !== 'company' && kind !== 'chat' && kind !== 'templates', () => actions.openCompanyPage('list')),
           navButton('chats', t('Chats'), order.length + (main ? 1 : 0), kind === 'chat', () => {
             // A project chat keeps the Projects column; leaving it for Chats means
             // landing on a conversation outside the project as well.
