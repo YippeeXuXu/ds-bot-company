@@ -12,6 +12,7 @@
 // and keeps its code in the body; HTTP only says what kind of answer it is.
 import { readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { departmentView } from './org.js'
 import { projectDetailOf } from './projects.js'
 import { createTodos, TODOS_ANSWER_PATH, TODOS_PATH } from './todos.js'
 
@@ -36,6 +37,13 @@ const STATUS = new Map([
   ['department.name-taken', 409],
   // A department lead who is not one of its active employees: understood, refused.
   ['department/invalid', 422],
+  // The department's group chat (M1a-4): a room that is gone, a room another department
+  // already owns, a roster that refused, employees with no Bot, too few Bots to group.
+  ['department/group-not-found', 404],
+  ['department/group-bound', 409],
+  ['department/group-failed', 409],
+  ['department/group-missing-bots', 422],
+  ['department/group-too-small', 422],
   ['employee.bot_already_employed', 409],
   ['project/member-exists', 409],
   ['project/member-busy', 409],
@@ -126,7 +134,9 @@ export function createCompanyApi({ store, execute, groups = {}, now = Date.now, 
       activity_cursor: String(state.revision),
       server_time: now(),
       company,
-      departments: Object.values(state.departments).filter(mine).sort(byCreated),
+      // `room_id` rides on every department row (M1a-4): the roster knows nothing about
+      // departments, so the binding lives here and the room side is derived from it.
+      departments: Object.values(state.departments).filter(mine).sort(byCreated).map(departmentView),
       employees: Object.values(state.employees).filter(mine).sort(byCreated),
       projects: Object.values(state.projects).filter(mine).sort(byCreated),
     }

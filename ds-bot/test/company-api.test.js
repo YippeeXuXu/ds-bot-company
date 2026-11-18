@@ -126,6 +126,20 @@ test('the read model answers an empty company without inventing one', async () =
   rmSync(home, { recursive: true, force: true })
 })
 
+test('the read model carries the department room binding', async () => {
+  const home = tempHome()
+  const { api, rooms } = open(home)
+  const seed_ = await seed(api, rooms)
+  const answer = api.model({})
+  const department = answer.body.departments.find(item => item.id === seed_.department)
+  // `chat_ref` stays the stored name; `room_id` is the alias the department screens and
+  // the group header read, so both answer the same room.
+  assert.equal(department.chat_ref, 'room_dep_product')
+  assert.equal(department.room_id, 'room_dep_product')
+  assert.equal(answer.body.departments.find(item => item.id === seed_.department).room_id, 'room_dep_product')
+  rmSync(home, { recursive: true, force: true })
+})
+
 test('a command over HTTP returns the same envelope the tools get', async () => {
   const home = tempHome()
   const { api, rooms } = open(home)

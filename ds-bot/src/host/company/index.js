@@ -30,6 +30,8 @@ const groupAdapter = (rt) => ({
     const room = rt.roomOf(roomId)
     return room === undefined ? undefined : [...room.members]
   },
+  // The department group commands read the room to bind one made elsewhere (M1a-4).
+  roomOf: roomId => (typeof rt.roomOf === 'function' ? rt.roomOf(roomId) : undefined),
   setMembers: async (roomId, members) => {
     if (typeof rt.updateRoom !== 'function') throw new Error('The roster does not change groups here.')
     if (typeof rt.roomOf === 'function' && rt.roomOf(roomId) === undefined) throw new Error(`No group chat ${roomId}.`)
@@ -49,7 +51,7 @@ export function install(rt) {
     // row carries it, contract A12), so the envelope leaves that comparison to its handler.
     rowRevisionCommands: ROW_REVISION_COMMANDS,
     handlers: {
-      ...orgHandlers({ botOf: id => rt.botOf?.(id), isPrivate: id => rt.isPrivate?.(id) === true }),
+      ...orgHandlers({ botOf: id => rt.botOf?.(id), isPrivate: id => rt.isPrivate?.(id) === true, groups: groupAdapter(rt) }),
       ...projectHandlers({ groups: groupAdapter(rt) }),
       ...acceptanceHandlers(),
     },

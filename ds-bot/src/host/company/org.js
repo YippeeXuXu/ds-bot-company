@@ -65,7 +65,35 @@ const acceptanceRole = (value) => {
   return role
 }
 
-export function orgHandlers({ botOf = () => undefined, isPrivate = () => false } = {}) {
+// A department group is an ordinary group chat, so the roster owns the room and the
+// department owns the pointer. The stored name is `chat_ref`; `room_id` is its public
+// alias, and `room.department_id` is derived from it at read time (the roster keeps no
+// product fields). Both spellings are written through, so a screen can use either.
+export const departmentView = (department) => ({ ...department, room_id: department.chat_ref ?? null })
+
+const chatRef = payload => (payload.chat_ref !== undefined ? payload.chat_ref : payload.room_id)
+
+// The Bots a department group would hold: its active employees, in join order. An
+// employee whose Bot is gone is named rather than skipped — a group quietly missing
+// someone is worse than a refusal that says who is missing.
+const groupProfilesOf = (state, department, botOf) => {
+  const profiles = Object.values(state.employees)
+    .filter(profile => profile.company_id === department.company_id && profile.department_id === department.id && profile.status === 'active')
+    .sort((left, right) => left.created_at - right.created_at)
+  const missing = profiles.filter(profile => botOf(profile.bot_id) === undefined || botOf(profile.bot_id) === null)
+  return { profiles, missing }
+}
+
+export function orgHandlers({ botOf = () => undefined, isPrivate = () => false, groups = {} } = {}) {
+  const roomOf = typeof groups.roomOf === 'function' ? groups.roomOf : () => undefined
+  const roomView = (roomId, fallback = {}) => {
+    const room = roomOf(roomId)
+    return {
+      id: room?.id ?? roomId,
+      name: room?.name ?? fallback.name ?? null,
+      members: Array.isArray(room?.members) ? [...room.members] : [...(fallback.members ?? [])],
+    }
+  }
   return {
     'company.init': ({ state, payload, now }) => {
       const name = text(payload.name, 'name', { max: 80 })
@@ -98,9 +126,9 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false }
         company_id: company.id,
         name,
         description: optionalText(payload.description, 'description') ?? null,
-        // A department chat is an ordinary group chat, bound later (M1a-4); it is never
-        // created here, because a group needs two Bots the department may not have yet.
-        chat_ref: optionalText(payload.chat_ref, 'chat_ref', 120) ?? null,
+        // A department chat is an ordinary group chat. It can be bound here, or made by
+        // department.group.create once the department has Bots to put in it (M1a-4).
+        chat_ref: optionalText(chatRef(payload), 'chat_ref', 120) ?? null,
         // Added by M1b-2.2: the lead is a pointer into this department's employees.
         lead_employee_id: null,
         status: 'active',
@@ -108,7 +136,7 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false }
         updated_at: now(),
         revision: 1,
       }
-      return { aggregate_id: id, body: { department: state.departments[id] }, events: [{ type: 'department.created', data: { name } }] }
+      return { aggregate_id: id, body: { department: departmentView(state.departments[id]) }, events: [{ type: 'department.created', data: { name } }] }
     },
 
     'department.update': ({ state, payload, now }) => {
@@ -120,7 +148,7 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false }
         department.name = name
       }
       if (payload.description !== undefined) department.description = optionalText(payload.description, 'description') ?? null
-      if (payload.chat_ref !== undefined) department.chat_ref = optionalText(payload.chat_ref, 'chat_ref', 120) ?? null
+      if (payload.chat_ref !== undefined || payload.room_id !== undefined) department.chat_ref = optionalText(chatRef(payload), 'chat_ref', 120) ?? null
       if (payload.lead_employee_id !== undefined) {
         department.lead_employee_id = payload.lead_employee_id === null || payload.lead_employee_id === ''
           ? null
@@ -128,7 +156,91 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false }
       }
       department.revision += 1
       department.updated_at = now()
-      return { aggregate_id: department.id, body: { department }, events: [{ type: 'department.updated', data: { name: department.name, lead_employee_id: department.lead_employee_id } }] }
+      return { aggregate_id: department.id, body: { department: departmentView(department) }, events: [{ type: 'department.updated', data: { name: department.name, lead_employee_id: department.lead_employee_id } }] }
+    },
+
+    // Make the department's group chat out of its own Bots, then bind it. The command is
+    // async because the roster creates a real Session; the department row is written in
+    // the same commit, so a group is never left with no owner on disk.
+    'department.group.create': async ({ state, payload, now }) => {
+      const company = companyOf(state)
+      const department = departmentOf(state, text(payload.department_id, 'department_id', { max: 120 }))
+      if (department.company_id !== company.id) {
+        throw companyFail('department/not-found', `No department ${department.id} in this company.`, { department_id: department.id })
+      }
+      // A live binding answers as it is: pressing "new group" twice must not make two.
+      if (department.chat_ref != null) {
+        const current = roomOf(department.chat_ref)
+        if (current !== undefined) {
+          return { aggregate_id: department.id, mutates: false, body: { department: departmentView(department), room: roomView(department.chat_ref), existing: true } }
+        }
+      }
+      if (typeof groups.create !== 'function') {
+        throw companyFail('department/group-failed', 'This dsh cannot create a group chat, so the department group was not made.', { department_id: department.id })
+      }
+      const { profiles, missing } = groupProfilesOf(state, department, botOf)
+      if (missing.length > 0) {
+        const named = missing.map(profile => `${profile.name} (${profile.bot_id})`).join(', ')
+        throw companyFail('department/group-missing-bots', `The group chat of ${department.name} was not created: ${named} ${missing.length === 1 ? 'has' : 'have'} no Bot in this team.`, {
+          department_id: department.id,
+          missing: missing.map(profile => ({ employee_id: profile.id, name: profile.name, bot_id: profile.bot_id })),
+        })
+      }
+      if (profiles.length < 2) {
+        throw companyFail('department/group-too-small', `A group chat needs at least two Bots; ${department.name} has ${profiles.length}. Add an employee before making its group chat.`, { department_id: department.id, count: profiles.length })
+      }
+      const members = profiles.map(profile => profile.bot_id)
+      const lead = department.lead_employee_id == null ? undefined : state.employees[department.lead_employee_id]
+      const admin = lead !== undefined && members.includes(lead.bot_id) ? lead.bot_id : undefined
+      const name = optionalText(payload.name, 'name', 80) ?? `${department.name}群`
+      let created
+      try {
+        created = await groups.create({ name, members, admin })
+      } catch (error) {
+        throw companyFail('department/group-failed', `The group chat of ${department.name} could not be created: ${error?.message ?? error}`, { department_id: department.id })
+      }
+      const roomId = typeof created === 'string' ? created : created?.id
+      if (typeof roomId !== 'string' || roomId === '') {
+        throw companyFail('department/group-failed', 'The roster did not return a group id for the department group.', { department_id: department.id })
+      }
+      department.chat_ref = roomId
+      department.revision += 1
+      department.updated_at = now()
+      const room = roomView(roomId, { name, members })
+      return { aggregate_id: department.id, body: { department: departmentView(department), room }, events: [{ type: 'department.group.created', data: { room_id: roomId, members } }] }
+    },
+
+    // Bind a group that already exists (made in the chat list, or by an earlier install).
+    // The members are reported, not changed: an existing group may hold Bots this
+    // department has no profile for, and the screen decides what to do about it.
+    'department.group.bind': ({ state, payload, now }) => {
+      const department = departmentOf(state, text(payload.department_id, 'department_id', { max: 120 }))
+      const roomId = text(chatRef(payload), 'room_id', { max: 120 })
+      if (typeof groups.roomOf !== 'function') {
+        throw companyFail('department/group-failed', 'This dsh cannot read group chats, so the binding was not checked.', { department_id: department.id })
+      }
+      if (groups.roomOf(roomId) === undefined) throw companyFail('department/group-not-found', `No group chat ${roomId}.`, { room_id: roomId })
+      const other = Object.values(state.departments).find(entry => entry.id !== department.id && entry.company_id === department.company_id && entry.chat_ref === roomId)
+      if (other !== undefined) {
+        throw companyFail('department/group-bound', `Group chat ${roomId} already belongs to ${other.name}.`, { room_id: roomId, department_id: other.id })
+      }
+      const changed = department.chat_ref !== roomId
+      if (changed) {
+        department.chat_ref = roomId
+        department.revision += 1
+        department.updated_at = now()
+      }
+      const { profiles } = groupProfilesOf(state, department, botOf)
+      const expected = profiles.filter(profile => botOf(profile.bot_id) !== undefined && botOf(profile.bot_id) !== null).map(profile => profile.bot_id)
+      const room = roomView(roomId)
+      const actual = room.members
+      const drifted = expected.length !== actual.length || expected.some(botId => !actual.includes(botId))
+      return {
+        aggregate_id: department.id,
+        ...(changed ? {} : { mutates: false }),
+        body: { department: departmentView(department), room, expected, actual, drifted },
+        ...(changed ? { events: [{ type: 'department.group.bound', data: { room_id: roomId } }] } : {}),
+      }
     },
 
     'department.list': ({ state }) => {
@@ -136,6 +248,7 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false }
       const departments = Object.values(state.departments)
         .filter(department => company === undefined || department.company_id === company.id)
         .sort((left, right) => left.created_at - right.created_at)
+        .map(departmentView)
       return { aggregate_id: company?.id ?? null, mutates: false, body: { departments } }
     },
 
