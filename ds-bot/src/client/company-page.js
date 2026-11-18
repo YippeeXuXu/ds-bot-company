@@ -85,8 +85,12 @@ export function CompanyPageView(props) {
   const employees = (data.employees ?? []).filter(item => !archived(item))
   const projects = data.projects ?? []
   const botReady = employee => botOpenable(employee, roster)
-  const openEmployee = employee => { if (botReady(employee)) props.onOpenEmployee(employee) }
+  const openEmployee = employee => {
+    if (botReady(employee) && employee.status === 'active') props.onOpenEmployee(employee)
+    else props.onChatHint?.(employeeTitle(employee))
+  }
   const employeeTitle = employee => {
+    if (employee.status !== 'active') return t('This employee is dismissed. Reactivate them in the company chart first.')
     if (!employee.bot_id) return t('This employee has no Bot yet.')
     if (!botReady(employee)) return t('This employee cannot open a private chat right now.')
     return t('Chat privately with {name}', { name: employee.name })
@@ -96,14 +100,15 @@ export function CompanyPageView(props) {
   const avatar = (employee, size = 'sm') => h('span', { className: `bc-co-face bc-co-face-${size}`, 'aria-hidden': true }, initialOf(employee.name))
 
   const employeeRow = employee => {
-    const disabled = !botReady(employee) || employee.status !== 'active'
+    const chatOpen = botReady(employee) && employee.status === 'active'
     const detail = employee.role ? String(employee.role) : projectText(projects, employee)
+    // An employee whose Bot is not running looks like any other row: the state is said in
+    // words when it matters instead of a greyed-out control the person cannot use.
     return h('button', {
       key: employee.id,
       type: 'button',
-      className: 'bc-co-emp' + (disabled ? ' is-disabled' : ''),
+      className: 'bc-co-emp' + (chatOpen ? '' : ' is-static'),
       'aria-label': t('Employee: {name}, {detail}', { name: employee.name, detail }),
-      'aria-disabled': disabled ? 'true' : undefined,
       tabIndex: 0,
       title: employeeTitle(employee),
       onClick: event => { event.stopPropagation(); openEmployee(employee) },
@@ -174,19 +179,34 @@ export function CompanyPageView(props) {
     acceptor: t('Independent acceptor'),
     'memory keeper': t('Memory keeper'),
     executor: t('Member'),
+    member: t('Member'),
   })[value] ?? value
+  // Each place a dismissed employee still holds gets its own line, because the place to
+  // hand it over differs by role: a lead moves in the department overview, a coordinator
+  // or a member in the project's member area, an acceptor or a memory keeper in its editor.
+  const roleAction = value => ({
+    coordinator: t('Change in the member area'),
+    acceptor: t('Change in the project editor'),
+    'memory keeper': t('Change in the project editor'),
+    member: t('Remove in the member area'),
+  })[value] ?? t('Open project')
   const referencedList = failure => {
     const details = failure?.details ?? {}
     const departments = details.departments ?? []
     const projects = details.projects ?? []
+    const rows = []
+    departments.forEach(item => rows.push(h('div', { key: `d-${item.department_id}`, className: 'bc-co-ref' },
+      h('span', { className: 'bc-co-ref-name' }, `${item.name} · ${t('Department lead')}`),
+      h('button', { type: 'button', className: 'bc-co-ref-go', onClick: () => props.onOpenDepartmentRef(item.department_id) }, `${t('Open department settings')} ›`))))
+    projects.forEach(item => {
+      const roles = (item.roles ?? []).length > 0 ? item.roles : ['member']
+      roles.forEach(role => rows.push(h('div', { key: `p-${item.project_id}-${role}`, className: 'bc-co-ref' },
+        h('span', { className: 'bc-co-ref-name' }, `${item.name} · ${roleText(role)}`),
+        h('button', { type: 'button', className: 'bc-co-ref-go', onClick: () => props.onOpenProjectRef(item.project_id) }, `${roleAction(role)} ›`))))
+    })
     return h('div', { className: 'bc-co-refs', role: 'alert' },
       h('strong', null, t('Hand the work over before dismissing:')),
-      departments.map(item => h('div', { key: `d-${item.department_id}`, className: 'bc-co-ref' },
-        h('span', { className: 'bc-co-ref-name' }, `${item.name} · ${t('Department lead')}`),
-        h('button', { type: 'button', className: 'bc-co-ref-go', onClick: () => props.onOpenDepartmentRef(item.department_id) }, `${t('Open')} ›`))),
-      projects.map(item => h('div', { key: `p-${item.project_id}`, className: 'bc-co-ref' },
-        h('span', { className: 'bc-co-ref-name' }, `${item.name} · ${(item.roles ?? []).map(roleText).join('、')}`),
-        h('button', { type: 'button', className: 'bc-co-ref-go', onClick: () => props.onOpenProjectRef(item.project_id) }, `${t('Open')} ›`))))
+      rows)
   }
 
   const overview = department => {
@@ -224,8 +244,7 @@ export function CompanyPageView(props) {
         ? h('div', { className: 'bc-co-pop-emps' }, staff.map(employee => h('div', { key: employee.id, className: 'bc-co-row-wrap' },
           h('button', {
             type: 'button',
-            className: 'bc-co-row' + (botReady(employee) && employee.status === 'active' ? '' : ' is-disabled'),
-            'aria-disabled': botReady(employee) && employee.status === 'active' ? undefined : 'true',
+            className: 'bc-co-row' + (botReady(employee) && employee.status === 'active' ? '' : ' is-static'),
             title: employeeTitle(employee),
             onClick: () => openEmployee(employee),
           },
@@ -340,6 +359,9 @@ export function CompanyPageView(props) {
       props.canCreate ? h('div', { className: 'bc-co-actions' },
         h('button', { type: 'button', className: 'bc-button', onClick: () => props.onCreateOpen('department') }, `＋ ${t('New department')}`),
         h('button', { type: 'button', className: 'bc-button', onClick: () => props.onCreateOpen('employee') }, `＋ ${t('New employee')}`)) : null) : null,
+    props.chatHint ? h('div', { className: 'bc-co-hintbar', role: 'status' },
+      h('span', null, props.chatHint),
+      h('button', { type: 'button', className: 'bc-co-hintbar-close', 'aria-label': t('Close'), onClick: () => props.onChatHint?.('') }, '×')) : null,
     h('div', { className: 'bc-co-stage' }, body,
       editingEmployee ? editPanel() : department ? overview(department) : null,
       createPanel()))
@@ -356,6 +378,7 @@ export function CompanyPage(props) {
   const [draftBusy, setDraftBusy] = useState(false)
   const [draftError, setDraftError] = useState('')
   const [leadError, setLeadError] = useState('')
+  const [chatHint, setChatHint] = useState('')
   const [editing, setEditing] = useState(null)
   const [editName, setEditName] = useState('')
   const [editRole, setEditRole] = useState('executor')
@@ -480,6 +503,7 @@ export function CompanyPage(props) {
     dragging,
     canvasRef,
     leadError,
+    chatHint,
     editing,
     editName,
     editRole,
@@ -496,6 +520,7 @@ export function CompanyPage(props) {
     onStatus: employee => void setStatus(employee),
     onOpenDepartmentRef: id => { closeEdit(); setOpenDept(id) },
     onOpenProjectRef: id => props.onOpenProject?.(id),
+    onChatHint: setChatHint,
     draftName,
     draftBot,
     draftDept,
@@ -563,8 +588,8 @@ export const COMPANY_PAGE_CSS = `
 .bc-co-emp{display:flex;align-items:center;gap:9px;width:100%;padding:5px 6px;border:0;border-radius:8px;background:none;font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer}
 .bc-co-emp:hover{background:var(--bt-hover)}
 .bc-co-emp:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
-.bc-co-emp.is-disabled{color:var(--bt-ink-2);cursor:default}
-.bc-co-emp.is-disabled:hover{background:none}
+.bc-co-emp.is-static{cursor:default}
+.bc-co-emp.is-static:hover{background:none}
 .bc-co-face{flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bt-main);border:1px solid var(--bt-line-2);color:var(--bt-ink-2);font:600 10px/1 var(--bt-font)}
 .bc-co-face-sm{width:22px;height:22px}
 .bc-co-emp-text{display:flex;flex:1;flex-direction:column;gap:0;min-width:0}
@@ -591,8 +616,8 @@ export const COMPANY_PAGE_CSS = `
 .bc-co-row{display:flex;align-items:center;gap:9px;width:100%;padding:7px 6px;border:0;border-radius:8px;background:none;font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer}
 .bc-co-row:hover{background:var(--bt-hover)}
 .bc-co-row:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
-.bc-co-row.is-disabled{cursor:default;color:var(--bt-ink-2)}
-.bc-co-row.is-disabled:hover{background:none}
+.bc-co-row.is-static{cursor:default}
+.bc-co-row.is-static:hover{background:none}
 .bc-co-row-main{display:flex;flex:1;flex-direction:column;gap:0;min-width:0}
 .bc-co-row-main strong{font-size:12px;line-height:16px;font-weight:600}
 .bc-co-row-go{font-size:13px;color:var(--bt-ink-3)}
@@ -605,6 +630,10 @@ export const COMPANY_PAGE_CSS = `
 .bc-co-ref-go{flex:none;border:0;border-radius:6px;background:none;padding:2px 4px;font:600 12px var(--bt-font);color:var(--bt-accent);cursor:pointer}
 .bc-co-ref-go:hover{background:var(--bt-hover)}
 .bc-co-ref-go:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}
+.bc-co-hintbar{display:flex;align-items:center;gap:10px;margin:0 22px 10px;padding:8px 12px;border:1px solid var(--bt-line-2);border-radius:10px;background:var(--bt-card);font-size:12px;line-height:17px;color:var(--bt-ink-2)}
+.bc-co-hintbar span{flex:1;min-width:0}
+.bc-co-hintbar-close{flex:none;border:0;background:none;padding:0 4px;font-size:14px;line-height:16px;color:var(--bt-ink-3);cursor:pointer}
+.bc-co-hintbar-close:hover{color:var(--bt-ink)}
 .bc-co-create-fields{display:flex;flex-direction:column;gap:10px}
 .bc-co-create-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:12px}
 .bc-co-spacer{flex:1}
