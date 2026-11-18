@@ -52,7 +52,7 @@ const activeMemberOf = (state, projectId, employeeId) => Object.values(state.mem
 const activeEmployeeOf = (state, employeeId, field = 'requester_employee_id') => {
   const employee = state.employees?.[employeeId]
   if (employee === undefined) throw companyFail('employee/not-found', `No employee ${employeeId}.`, { field, employee_id: employeeId })
-  if (employee.status !== 'active') throw companyFail('company/invalid', `Employee ${employeeId} is not active.`, { field, employee_id: employeeId })
+  if (employee.status !== 'active') throw companyFail('employee/inactive', `Employee ${employeeId} is dismissed; re-activate them before they take part in an acceptance.`, { field, employee_id: employeeId })
   return employee
 }
 

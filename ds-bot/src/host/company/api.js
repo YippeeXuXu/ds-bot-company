@@ -57,6 +57,11 @@ const STATUS = new Map([
   ['employee/unknown-bot', 422],
   ['employee/private-bot', 422],
   ['employee/immutable-field', 422],
+  // A profile may be dismissed (M1b-2.4). Refusing a dismissal that live work still
+  // depends on is a conflict the screen resolves by handing the work over; naming a
+  // dismissed employee anywhere else is a request that is understood and refused.
+  ['employee/still-referenced', 409],
+  ['employee/inactive', 422],
   ['project/invalid', 422],
   ['project/owner-required', 422],
   ['project/missing-input', 422],
