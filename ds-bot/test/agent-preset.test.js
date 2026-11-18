@@ -107,3 +107,67 @@ test('a group made under the PTC preset relays through run_code', async (t) => {
     timeoutMs: 600_000,
   })
 })
+
+// M1b-2.5: the company picks the default mode, an employee may follow it or pin one. The
+// roster reads the company layer at the moment a Session is made; without it, standard.
+const companyState = ({ companyMode, employeeMode, botId = 'chief' } = {}) => ({
+  companies: companyMode === undefined && employeeMode === undefined ? {} : {
+    cmp: { id: 'cmp', status: 'active', ...(companyMode === undefined ? {} : { conversation_mode: companyMode }) },
+  },
+  employees: employeeMode === undefined ? {} : {
+    emp: { id: 'emp', status: 'active', bot_id: botId, ...(employeeMode === null ? {} : { conversation_mode: employeeMode }) },
+  },
+})
+
+async function sessionRequestFor(t, { presets, state, botId = 'chief' }) {
+  const { rt, created, stop } = start({ presets })
+  t.after(stop)
+  await rt.load()
+  rt.company = { store: { state } }
+  // `null` asks for a Session with no Bot behind it, the group's own relay.
+  await rt.createSession('Chief', botId === null ? {} : { botId })
+  return created
+}
+
+test('an employee who follows gets the company mode (M1b-2.5)', async (t) => {
+  const state = companyState({ companyMode: 'ptc', employeeMode: 'follow' })
+  const created = await sessionRequestFor(t, { presets: [{ id: 'ptc' }, { id: 'standard' }], state })
+  assert.deepEqual(created, [{ workspaceId: 'w1', agentPreset: 'ptc' }])
+})
+
+test('an employee can pin a mode over the company default (M1b-2.5)', async (t) => {
+  const presets = [{ id: 'ptc' }, { id: 'standard' }]
+  const pinned = await sessionRequestFor(t, { presets, state: companyState({ companyMode: 'ptc', employeeMode: 'standard' }) })
+  assert.deepEqual(pinned, [{ workspaceId: 'w1', agentPreset: 'standard' }])
+  const forward = await sessionRequestFor(t, { presets, state: companyState({ companyMode: 'standard', employeeMode: 'ptc' }) })
+  assert.deepEqual(forward, [{ workspaceId: 'w1', agentPreset: 'ptc' }])
+})
+
+test('a missing mode, or one this build does not know, reads as standard (M1b-2.5)', async (t) => {
+  const presets = [{ id: 'ptc' }, { id: 'standard' }]
+  // No company layer at all, a company row from before the field, and an employee row
+  // from before it: all three read as standard, as every Session did before M1b-2.5.
+  assert.deepEqual(await sessionRequestFor(t, { presets }), [{ workspaceId: 'w1', agentPreset: 'standard' }])
+  assert.deepEqual(await sessionRequestFor(t, { presets, state: companyState({}) }), [{ workspaceId: 'w1', agentPreset: 'standard' }])
+  assert.deepEqual(await sessionRequestFor(t, { presets, state: { companies: { cmp: { id: 'cmp', status: 'active' } }, employees: {} } }), [{ workspaceId: 'w1', agentPreset: 'standard' }])
+  // A value outside the vocabulary falls back to the company default, then to standard.
+  assert.deepEqual(await sessionRequestFor(t, { presets, state: companyState({ companyMode: 'ptc', employeeMode: 'turbo' }) }), [{ workspaceId: 'w1', agentPreset: 'ptc' }])
+  assert.deepEqual(await sessionRequestFor(t, { presets, state: companyState({ companyMode: 'turbo', employeeMode: 'follow' }) }), [{ workspaceId: 'w1', agentPreset: 'standard' }])
+  assert.deepEqual(await sessionRequestFor(t, { presets, state: companyState({ employeeMode: 'ptc', botId: 'another' }) }), [{ workspaceId: 'w1', agentPreset: 'standard' }])
+})
+
+test('PTC falls back to standard when this DSH does not serve it (M1b-2.5)', async (t) => {
+  const state = companyState({ companyMode: 'ptc', employeeMode: 'follow' })
+  assert.deepEqual(await sessionRequestFor(t, { presets: [{ id: 'standard' }], state }), [{ workspaceId: 'w1', agentPreset: 'standard' }])
+  assert.deepEqual(await sessionRequestFor(t, { presets: [{ id: 'ptc', broken: 'failed to start' }, { id: 'standard' }], state }), [{ workspaceId: 'w1', agentPreset: 'standard' }])
+  // A healthy PTC is used even when standard is not served; with PTC broken and no
+  // standard there is nothing to ask for, so DSH's own default stands.
+  assert.deepEqual(await sessionRequestFor(t, { presets: [{ id: 'ptc' }], state }), [{ workspaceId: 'w1', agentPreset: 'ptc' }])
+  assert.deepEqual(await sessionRequestFor(t, { presets: [{ id: 'ptc', broken: 'failed to start' }], state }), [{ workspaceId: 'w1' }])
+})
+
+test('a group chat\'s own relay Session stays standard under a PTC company (M1b-2.5)', async (t) => {
+  const state = companyState({ companyMode: 'ptc', employeeMode: 'follow' })
+  const created = await sessionRequestFor(t, { presets: [{ id: 'ptc' }, { id: 'standard' }], state, botId: null })
+  assert.deepEqual(created, [{ workspaceId: 'w1', agentPreset: 'standard' }])
+})

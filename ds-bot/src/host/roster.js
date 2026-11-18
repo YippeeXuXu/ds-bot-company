@@ -64,20 +64,38 @@ export function install(rt) {
     return workspace.id
   }
 
-  // Under the PTC preset (DSH Desktop's default) a model may call only run_code, which
-  // turns down the group_relay call that a group chat's Session is given. A Session
-  // keeps the preset it is made with.
-  async function botPreset() {
+  // Which mode a Session gets (M1b-2.5): the employee's own choice, else the company's
+  // default, else standard. The company layer holds both; before it installs, or with a
+  // value this build does not know, a Session stays on standard as every Session did.
+  // A group's own relaying Session never takes PTC: under PTC a model may call only
+  // run_code, which turns down the group_relay call the relay exists for (#37).
+  function conversationModeOf(botId) {
+    const state = rt.company?.store?.state
+    if (state === undefined || botId === undefined || botId === null) return 'standard'
+    const company = Object.values(state.companies ?? {}).find(entry => entry.status !== 'archived')
+    const companyMode = company?.conversation_mode === 'ptc' ? 'ptc' : 'standard'
+    const employee = Object.values(state.employees ?? {}).find(profile => profile.status === 'active' && profile.bot_id === botId)
+    const own = employee?.conversation_mode
+    return own === 'ptc' || own === 'standard' ? own : companyMode
+  }
+
+  // A Session keeps the preset it is made with, so the mode is read here and only here.
+  // The preset must exist and be healthy in this DSH; the mode falls back to standard, and
+  // to DSH's own default when even that one is not served.
+  async function botPreset(botId) {
     const presets = ctx.get?.('agentPresets')
     if (presets === undefined) return {}
-    const standard = (await presets.list()).some(preset => preset.id === 'standard' && preset.broken === undefined)
-    return standard ? { agentPreset: 'standard' } : {}
+    const rows = await presets.list()
+    const usable = id => rows.some(preset => preset.id === id && preset.broken === undefined)
+    const wanted = conversationModeOf(botId)
+    if (wanted === 'ptc' && usable('ptc')) return { agentPreset: 'ptc' }
+    return usable('standard') ? { agentPreset: 'standard' } : {}
   }
 
   // `dir` is a working folder outside the team workspace. Such a Session is made by cwd
   // alone, so it joins no DSH workspace and the user's own project lists stay as they are —
   // unless the folder is already registered as a workspace, which it then joins (#710).
-  async function createSession(title, { dir } = {}) {
+  async function createSession(title, { dir, botId } = {}) {
     // A Bot's tools run here too; while another dsh holds the team, a new Session would
     // belong to no saved Bot.
     const readOnly = rt.readOnly()
@@ -86,7 +104,7 @@ export function install(rt) {
     if (dir !== undefined && !usable) rt.warn('ds-bot: the working folder %s is gone; %s starts in the team workspace', dir, title)
     const known = usable ? await ctx.workspaceRegistry.resolveByPath(dir) : undefined
     const place = known !== undefined ? { workspaceId: known.id } : usable ? { cwd: dir } : { workspaceId: await ensureWorkspace() }
-    const { sessionId } = await ctx.sessionController.create({ ...place, ...await botPreset() })
+    const { sessionId } = await ctx.sessionController.create({ ...place, ...await botPreset(botId) })
     const agent = await rt.resolveAgent(sessionId)
     await ctx.sessionTitle.rename(agent.session, title)
     return sessionId
@@ -437,7 +455,8 @@ export function install(rt) {
   async function buildRoom({ members, custom, notice, mode, adminId, createdBy, allowSingle = false }) {
     const title = custom || autoRoomName(members)
     // The group's own Session only relays; like a member's it moves to a fresh part
-    // in the group's folder once the group has one (parts.js).
+    // in the group's folder once the group has one (parts.js). No `botId` on purpose: the
+    // relay stays on standard whatever the company picks, because PTC offers run_code only.
     const id = await createSession(title)
     try {
       // A member deleted while the Session was made stays out, and the group is checked

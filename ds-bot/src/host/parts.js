@@ -978,7 +978,7 @@ export function install(rt) {
     if (signal.aborted) throw signal.reason
     const dir = rt.workDirOf(job)
     const intended = dir !== undefined && await rt.isFolder(dir) ? dir : rt.teamFolder()
-    const freshId = await rt.createSession(room === undefined ? name : bot === undefined ? room.name : `${name} · ${room.name}`, { dir })
+    const freshId = await rt.createSession(room === undefined ? name : bot === undefined ? room.name : `${name} · ${room.name}`, { dir, botId: bot?.id })
     const picked = await freshRoute(bot, session)
     if (picked !== undefined) await selectRoute({ name }, freshId, picked)
     if (bot !== undefined) await rt.applyPermission(bot, freshId, room)

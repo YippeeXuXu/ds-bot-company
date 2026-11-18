@@ -8,6 +8,21 @@ import { companyFail } from './store.js'
 
 export const ACCEPTANCE_ROLES = ['executor', 'coordinator', 'acceptor', 'memory_keeper']
 
+// Conversation modes (M1b-2.5): the company picks the default for every new Session and an
+// employee may follow it, pin standard, or pin PTC. Only a new Session can take a preset —
+// the host locks it once the first turn starts (`agent-preset/locked`) — so these values
+// are read when the Session is made, never to switch a chat that is already open.
+export const COMPANY_MODES = ['standard', 'ptc']
+export const EMPLOYEE_MODES = ['follow', 'standard', 'ptc']
+
+// The stored value is the public value: `standard` and `ptc` name host presets, and
+// `follow` is an employee-only word for "the company's".
+const conversationMode = (value, allowed, field) => {
+  const mode = text(value, field, { max: 20 })
+  if (!allowed.includes(mode)) throw companyFail('company/invalid', `${field} is one of ${allowed.join(', ')}.`, { field, allowed })
+  return mode
+}
+
 const newId = prefix => `${prefix}_${randomUUID().replaceAll('-', '').slice(0, 12)}`
 
 const text = (value, field, { max = 120, min = 1 } = {}) => {
@@ -100,13 +115,35 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false, 
       const existing = onlyCompany(state)
       if (existing !== undefined) return { aggregate_id: existing.id, mutates: false, body: { company: existing, existing: true } }
       const id = newId('cmp')
-      state.companies[id] = { id, name, status: 'active', created_at: now(), updated_at: now(), revision: 1 }
+      state.companies[id] = { id, name, status: 'active', conversation_mode: 'standard', created_at: now(), updated_at: now(), revision: 1 }
       return { aggregate_id: id, body: { company: state.companies[id] }, events: [{ type: 'company.created', data: { name } }] }
     },
 
     'company.get': ({ state }) => {
       const company = onlyCompany(state) ?? null
       return { aggregate_id: company?.id ?? null, mutates: false, body: { company } }
+    },
+
+    // The company's mode is the default for every new Session (M1b-2.5). Sessions already
+    // started keep theirs; the host refuses a preset change mid-session.
+    'company.update': ({ state, payload, now }) => {
+      const company = companyOf(state)
+      if (payload.conversation_mode === undefined) {
+        throw companyFail('company/invalid', 'Nothing to change: conversation_mode was not given.', { field: 'conversation_mode' })
+      }
+      const mode = conversationMode(payload.conversation_mode, COMPANY_MODES, 'conversation_mode')
+      const changed = company.conversation_mode !== mode
+      if (changed) {
+        company.conversation_mode = mode
+        company.revision += 1
+        company.updated_at = now()
+      }
+      return {
+        aggregate_id: company.id,
+        ...(changed ? {} : { mutates: false }),
+        body: { company },
+        ...(changed ? { events: [{ type: 'company.updated', data: { conversation_mode: mode } }] } : {}),
+      }
     },
 
     'department.create': ({ state, payload, now }) => {
@@ -271,6 +308,9 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false, 
         name: text(payload.name ?? bot.name, 'name', { max: 80 }),
         role: optionalText(payload.role, 'role', 80) ?? null,
         acceptance_role: acceptanceRole(payload.acceptance_role),
+        // M1b-2.5: `follow` keeps the profile in step with the company default; a pinned
+        // value is for the one employee who needs the other mode.
+        conversation_mode: payload.conversation_mode === undefined ? 'follow' : conversationMode(payload.conversation_mode, EMPLOYEE_MODES, 'conversation_mode'),
         status: 'active',
         // Filled by the project commands (M1a-3): the profile itself has no project.
         project_id: null,
@@ -305,6 +345,7 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false, 
         profile.department_id = next
       }
       if (payload.acceptance_role !== undefined) profile.acceptance_role = acceptanceRole(payload.acceptance_role)
+      if (payload.conversation_mode !== undefined) profile.conversation_mode = conversationMode(payload.conversation_mode, EMPLOYEE_MODES, 'conversation_mode')
       profile.revision += 1
       profile.updated_at = now()
       return { aggregate_id: profile.id, body: { employee: profile }, events: [{ type: 'employee.updated', data: {} }] }

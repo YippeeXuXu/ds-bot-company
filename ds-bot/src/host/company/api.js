@@ -134,10 +134,15 @@ export function createCompanyApi({ store, execute, groups = {}, now = Date.now, 
       activity_cursor: String(state.revision),
       server_time: now(),
       company,
+      // The company's default at the top level (M1b-2.5), so a screen reads it without
+      // digging into `company`; an install from before the field reads as standard.
+      conversation_mode: company?.conversation_mode === 'ptc' ? 'ptc' : 'standard',
       // `room_id` rides on every department row (M1a-4): the roster knows nothing about
       // departments, so the binding lives here and the room side is derived from it.
       departments: Object.values(state.departments).filter(mine).sort(byCreated).map(departmentView),
-      employees: Object.values(state.employees).filter(mine).sort(byCreated),
+      // Every row carries its mode, so a screen never has to know the default (M1b-2.5).
+      employees: Object.values(state.employees).filter(mine).sort(byCreated)
+        .map(employee => ({ ...employee, conversation_mode: employee.conversation_mode ?? 'follow' })),
       projects: Object.values(state.projects).filter(mine).sort(byCreated),
     }
     if (query.project_id !== undefined && query.project_id !== '') {

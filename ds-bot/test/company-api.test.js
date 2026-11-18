@@ -126,6 +126,23 @@ test('the read model answers an empty company without inventing one', async () =
   rmSync(home, { recursive: true, force: true })
 })
 
+test('the read model carries the conversation modes (M1b-2.5)', async () => {
+  const home = tempHome()
+  const { api, rooms } = open(home)
+  await seed(api, rooms)
+  const before = api.model({})
+  // A company from before the field reads as standard, and every employee row carries a
+  // mode of its own so a screen never has to know the default.
+  assert.equal(before.body.conversation_mode, 'standard')
+  assert.ok(before.body.employees.every(row => row.conversation_mode === 'follow'))
+
+  await command(api, 'company.update', { operation_key: 'k-mode-ptc', conversation_mode: 'ptc' })
+  const after = api.model({})
+  assert.equal(after.body.conversation_mode, 'ptc')
+  assert.equal(after.body.company.conversation_mode, 'ptc')
+  rmSync(home, { recursive: true, force: true })
+})
+
 test('the read model carries the department room binding', async () => {
   const home = tempHome()
   const { api, rooms } = open(home)
