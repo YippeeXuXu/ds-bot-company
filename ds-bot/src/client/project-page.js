@@ -19,7 +19,7 @@ const memberError = failure => {
   return known ?? (failure?.message ? String(failure.message) : t('The change could not be saved.'))
 }
 
-export function ProjectPage({ project, data, tasks = [], tasksError = '', preview, loading, error, onBack, onChat, onRetry, onCommand, onTaskCommand }) {
+export function ProjectPage({ project, data, tasks = [], tasksError = '', preview, loading, error, onBack, onChat, onRetry, onCommand, onTaskCommand, onArchiveData }) {
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
   const [selectedEmployee, setSelectedEmployee] = useState('')
@@ -28,6 +28,9 @@ export function ProjectPage({ project, data, tasks = [], tasksError = '', previe
   const [archiveBusy, setArchiveBusy] = useState(false)
   const [archiveError, setArchiveError] = useState('')
   const [archiveResult, setArchiveResult] = useState(null)
+  const [archiveCheck, setArchiveCheck] = useState(null)
+  const [archiveChecking, setArchiveChecking] = useState(false)
+  const [archiveCheckError, setArchiveCheckError] = useState('')
   const run = async (command, fields = {}) => {
     if (busy || preview || !project) return
     setBusy(true)
@@ -64,11 +67,38 @@ export function ProjectPage({ project, data, tasks = [], tasksError = '', previe
   const candidates = data.employees.filter(employee => employee.status === 'active' && (project.source_department_ids ?? []).includes(employee.department_id)
     && !members.some(member => member.employee_id === employee.id && ['active', 'invited', 'archived_readonly'].includes(member.membership_status))
     && !data.projects.some(item => item.id === employee.project_id && ['active', 'paused', 'delivering'].includes(item.status)))
-  const openTasks = tasks.filter(task => !['done', 'cancelled'].includes(task.stage ?? task.status))
-  const pendingAcceptances = tasks.reduce((total, task) => total + (Array.isArray(task.acceptances) ? task.acceptances : task.acceptance ? [task.acceptance] : []).filter(record => record.state === 'pending').length, 0)
+  // The archive check is a fresh read of both lists, not the board's cache: a pending
+  // acceptance may have no task at all, and a failed task read must not look like zero.
+  const checkTasks = archiveCheck?.tasks ?? []
+  const checkAcceptances = archiveCheck?.acceptances ?? []
+  const openTasks = checkTasks.filter(task => !['done', 'cancelled'].includes(task.stage ?? task.status))
+  const pendingAcceptanceRecords = checkAcceptances.filter(record => (record.state ?? 'pending') === 'pending')
+  const pendingAcceptances = pendingAcceptanceRecords.length
+  const independentPending = pendingAcceptanceRecords.filter(record => !record.task_id)
+  const archiveChecked = Boolean(archiveCheck) && !archiveChecking && !archiveCheckError
   const canArchive = ['setup', 'active', 'paused'].includes(project.status) && !preview
+  const openArchive = () => {
+    setArchiveOpen(true)
+    setArchiveError('')
+    setArchiveResult(null)
+    setArchiveCheck(null)
+    setArchiveCheckError('')
+    if (!onArchiveData) {
+      if (tasksError) { setArchiveCheckError(tasksError); return }
+      setArchiveCheck({ tasks, acceptances: tasks.flatMap(task => Array.isArray(task.acceptances) ? task.acceptances : task.acceptance ? [task.acceptance] : []) })
+      return
+    }
+    setArchiveChecking(true)
+    void onArchiveData(project.id)
+      .then(snapshot => {
+        if (!snapshot) throw new Error(t('The archive check could not be loaded.'))
+        setArchiveCheck({ tasks: snapshot.tasks ?? [], acceptances: snapshot.acceptances ?? [] })
+      })
+      .catch(failure => setArchiveCheckError(failure?.message ? String(failure.message) : t('The archive check could not be loaded.')))
+      .finally(() => setArchiveChecking(false))
+  }
   const archive = async () => {
-    if (archiveBusy) return
+    if (archiveBusy || !archiveChecked) return
     setArchiveBusy(true)
     setArchiveError('')
     try {
@@ -84,7 +114,7 @@ export function ProjectPage({ project, data, tasks = [], tasksError = '', previe
     h('div', { className: 'bc-row' }, h('div', null, h('span', { className: 'bc-kicker' }, t('Workspace / Project')), h('h1', { className: 'bc-detail-title' }, project.name)),
       h('div', { className: 'bc-actions' },
         h('span', { className: `bc-status bc-${project.status}` }, label(project.status)),
-        canArchive ? h('button', { type: 'button', className: 'bc-button bc-danger', disabled: busy || archiveBusy, onClick: () => { setArchiveError(''); setArchiveResult(null); setArchiveOpen(true) } }, t('Archive project')) : null)),
+        canArchive ? h('button', { type: 'button', className: 'bc-button bc-danger', disabled: busy || archiveBusy, onClick: openArchive }, t('Archive project')) : null)),
     h('div', { className: 'bc-section' },
       h('div', { className: 'bc-row' }, h('strong', null, t('Project chat')), h('button', { type: 'button', className: 'bc-button', onClick: onChat, disabled: pending || preview || project.status === 'archived', title: preview ? t('Sample chat is unavailable') : undefined }, t('Open chat'))),
       h('p', { className: 'bc-muted' }, unbound ? t('The project group is created when a member joins or the project starts.') : pending ? t('Group binding needs attention before chat can be opened.') : project.status === 'archived' ? t('Archived project. The group history remains available for reading.') : t('Project group is linked. Open the existing chat to continue.')),
@@ -147,23 +177,32 @@ export function ProjectPage({ project, data, tasks = [], tasksError = '', previe
         h('div', { className: 'bc-co-create-fields' },
           archiveResult
             ? h('p', null, t('The project is archived. The group history stays available to read.'))
-            : h('p', null, t('This will close {tasks} unfinished tasks and {acceptances} pending acceptances.', { tasks: openTasks.length, acceptances: pendingAcceptances })),
+            : archiveChecking
+              ? h('p', { className: 'bc-muted', role: 'status' }, t('Checking tasks and acceptances…'))
+              : archiveCheckError
+                ? h('div', { className: 'bc-exception', role: 'alert' }, h('strong', null, t('The archive check could not be loaded.')), h('p', null, archiveCheckError), h('button', { type: 'button', className: 'bc-button', onClick: openArchive }, t('Try again')))
+                : h('p', null, t('This will close {tasks} unfinished tasks and {acceptances} pending acceptances.', { tasks: openTasks.length, acceptances: pendingAcceptances })),
           archiveResult
-            ? h('p', { className: 'bc-muted' }, t('Closed {tasks} tasks and {acceptances} acceptances. This cannot be undone.', { tasks: archiveResult.closed_tasks?.length ?? openTasks.length, acceptances: pendingAcceptances }))
-            : h('p', { className: 'bc-muted' }, t('The project and its group history are kept. Nothing can be added after archiving, and this cannot be undone.')),
+            ? h('p', { className: 'bc-muted' }, t('Closed {tasks} tasks and {acceptances} acceptances. This cannot be undone.', { tasks: Array.isArray(archiveResult.closed_tasks) ? archiveResult.closed_tasks.length : Number(archiveResult.closed_tasks ?? 0), acceptances: unresolved.filter(item => item.kind === 'acceptance').length }))
+            : archiveChecked
+              ? h('p', { className: 'bc-muted' }, t('The project and its group history are kept. Nothing can be added after archiving, and this cannot be undone.'))
+              : null,
           archiveResult && unresolved.length ? h('div', null,
             h('p', { className: 'bc-detail-label' }, t('Closed on archive')),
             h('ul', { className: 'bc-tb-list' }, unresolved.map((item, index) => h('li', { key: item.task_id ?? item.acceptance_id ?? index },
               h('span', null, item.kind === 'acceptance' ? t('Acceptance: {title}', { title: item.title }) : item.title),
               h('span', null, item.stage ?? ''))))) : null,
-          !archiveResult && openTasks.length ? h('div', null,
+          !archiveResult && archiveChecked && (openTasks.length || independentPending.length) ? h('div', null,
             h('p', { className: 'bc-detail-label' }, t('Will be closed')),
-            h('ul', { className: 'bc-tb-list' }, openTasks.map(task => h('li', { key: task.id }, h('span', null, task.title), h('span', null, task.stage ?? task.status ?? ''))))) : null,
+            h('ul', { className: 'bc-tb-list' }, [
+              ...openTasks.map(task => h('li', { key: task.id }, h('span', null, task.title), h('span', null, task.stage ?? task.status ?? ''))),
+              ...independentPending.map(record => h('li', { key: record.id }, h('span', null, t('Acceptance: {title}', { title: record.title ?? record.id })), h('span', null, t('Waiting for acceptance')))),
+            ])) : null,
           archiveError ? h('p', { className: 'bc-exception', role: 'alert' }, archiveError) : null),
         h('div', { className: 'bc-co-create-actions' },
           h('span', { className: 'bc-co-spacer' }),
           archiveResult
             ? h('button', { type: 'button', className: 'bc-button bc-primary', onClick: () => setArchiveOpen(false) }, t('Close'))
             : h('button', { type: 'button', className: 'bc-button', disabled: archiveBusy, onClick: () => setArchiveOpen(false) }, t('Cancel')),
-          archiveResult ? null : h('button', { type: 'button', className: 'bc-button bc-danger', disabled: archiveBusy || busy, onClick: () => void archive() }, archiveBusy ? t('Archiving…') : t('Archive project'))))) : null)
+          archiveResult ? null : h('button', { type: 'button', className: 'bc-button bc-danger', disabled: archiveBusy || busy || !archiveChecked, onClick: () => void archive() }, archiveBusy ? t('Archiving…') : t('Archive project'))))) : null)
 }

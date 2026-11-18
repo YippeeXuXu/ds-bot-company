@@ -1522,6 +1522,8 @@ Object.assign(ZH, HOST_ZH, {
   "Closed on archive": "归档时关闭",
   "Acceptance: {title}": "验收：{title}",
   "Will be closed": "将被关闭",
+  "Checking tasks and acceptances…": "正在核对任务与验收…",
+  "The archive check could not be loaded.": "无法读取归档清单。",
   "dependency": "项依赖",
   "dependencies": "项依赖",
   "Details": "详情",
@@ -12167,8 +12169,6 @@ var taskActionCommand = (action, task) => {
     start: ["task.dispatch", base],
     "to-ready": ["task.move", { ...base, to: "ready" }],
     submit: ["task.submit", base],
-    accept: ["acceptance.decide", base],
-    return: ["acceptance.decide", base],
     reopen: ["task.reopen", base]
   }[action] ?? null;
 };
@@ -12970,7 +12970,7 @@ var memberError = (failure) => {
   }[failure?.code];
   return known ?? (failure?.message ? String(failure.message) : t("The change could not be saved."));
 };
-function ProjectPage({ project, data, tasks = [], tasksError = "", preview, loading, error, onBack, onChat, onRetry, onCommand, onTaskCommand }) {
+function ProjectPage({ project, data, tasks = [], tasksError = "", preview, loading, error, onBack, onChat, onRetry, onCommand, onTaskCommand, onArchiveData }) {
   const [busy, setBusy] = (0, import_react22.useState)(false);
   const [actionError, setActionError] = (0, import_react22.useState)("");
   const [selectedEmployee, setSelectedEmployee] = (0, import_react22.useState)("");
@@ -12979,6 +12979,9 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
   const [archiveBusy, setArchiveBusy] = (0, import_react22.useState)(false);
   const [archiveError, setArchiveError] = (0, import_react22.useState)("");
   const [archiveResult, setArchiveResult] = (0, import_react22.useState)(null);
+  const [archiveCheck, setArchiveCheck] = (0, import_react22.useState)(null);
+  const [archiveChecking, setArchiveChecking] = (0, import_react22.useState)(false);
+  const [archiveCheckError, setArchiveCheckError] = (0, import_react22.useState)("");
   const run2 = async (command, fields = {}) => {
     if (busy || preview || !project) return;
     setBusy(true);
@@ -13022,11 +13025,36 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
     !project.workspace_ref ? t("set a workspace folder") : null
   ].filter(Boolean);
   const candidates = data.employees.filter((employee) => employee.status === "active" && (project.source_department_ids ?? []).includes(employee.department_id) && !members.some((member) => member.employee_id === employee.id && ["active", "invited", "archived_readonly"].includes(member.membership_status)) && !data.projects.some((item) => item.id === employee.project_id && ["active", "paused", "delivering"].includes(item.status)));
-  const openTasks = tasks.filter((task) => !["done", "cancelled"].includes(task.stage ?? task.status));
-  const pendingAcceptances = tasks.reduce((total, task) => total + (Array.isArray(task.acceptances) ? task.acceptances : task.acceptance ? [task.acceptance] : []).filter((record) => record.state === "pending").length, 0);
+  const checkTasks = archiveCheck?.tasks ?? [];
+  const checkAcceptances = archiveCheck?.acceptances ?? [];
+  const openTasks = checkTasks.filter((task) => !["done", "cancelled"].includes(task.stage ?? task.status));
+  const pendingAcceptanceRecords = checkAcceptances.filter((record) => (record.state ?? "pending") === "pending");
+  const pendingAcceptances = pendingAcceptanceRecords.length;
+  const independentPending = pendingAcceptanceRecords.filter((record) => !record.task_id);
+  const archiveChecked = Boolean(archiveCheck) && !archiveChecking && !archiveCheckError;
   const canArchive = ["setup", "active", "paused"].includes(project.status) && !preview;
+  const openArchive = () => {
+    setArchiveOpen(true);
+    setArchiveError("");
+    setArchiveResult(null);
+    setArchiveCheck(null);
+    setArchiveCheckError("");
+    if (!onArchiveData) {
+      if (tasksError) {
+        setArchiveCheckError(tasksError);
+        return;
+      }
+      setArchiveCheck({ tasks, acceptances: tasks.flatMap((task) => Array.isArray(task.acceptances) ? task.acceptances : task.acceptance ? [task.acceptance] : []) });
+      return;
+    }
+    setArchiveChecking(true);
+    void onArchiveData(project.id).then((snapshot) => {
+      if (!snapshot) throw new Error(t("The archive check could not be loaded."));
+      setArchiveCheck({ tasks: snapshot.tasks ?? [], acceptances: snapshot.acceptances ?? [] });
+    }).catch((failure) => setArchiveCheckError(failure?.message ? String(failure.message) : t("The archive check could not be loaded."))).finally(() => setArchiveChecking(false));
+  };
   const archive = async () => {
-    if (archiveBusy) return;
+    if (archiveBusy || !archiveChecked) return;
     setArchiveBusy(true);
     setArchiveError("");
     try {
@@ -13051,11 +13079,7 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
         "div",
         { className: "bc-actions" },
         (0, import_react22.createElement)("span", { className: `bc-status bc-${project.status}` }, label(project.status)),
-        canArchive ? (0, import_react22.createElement)("button", { type: "button", className: "bc-button bc-danger", disabled: busy || archiveBusy, onClick: () => {
-          setArchiveError("");
-          setArchiveResult(null);
-          setArchiveOpen(true);
-        } }, t("Archive project")) : null
+        canArchive ? (0, import_react22.createElement)("button", { type: "button", className: "bc-button bc-danger", disabled: busy || archiveBusy, onClick: openArchive }, t("Archive project")) : null
       )
     ),
     (0, import_react22.createElement)(
@@ -13165,8 +13189,8 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
         (0, import_react22.createElement)(
           "div",
           { className: "bc-co-create-fields" },
-          archiveResult ? (0, import_react22.createElement)("p", null, t("The project is archived. The group history stays available to read.")) : (0, import_react22.createElement)("p", null, t("This will close {tasks} unfinished tasks and {acceptances} pending acceptances.", { tasks: openTasks.length, acceptances: pendingAcceptances })),
-          archiveResult ? (0, import_react22.createElement)("p", { className: "bc-muted" }, t("Closed {tasks} tasks and {acceptances} acceptances. This cannot be undone.", { tasks: archiveResult.closed_tasks?.length ?? openTasks.length, acceptances: pendingAcceptances })) : (0, import_react22.createElement)("p", { className: "bc-muted" }, t("The project and its group history are kept. Nothing can be added after archiving, and this cannot be undone.")),
+          archiveResult ? (0, import_react22.createElement)("p", null, t("The project is archived. The group history stays available to read.")) : archiveChecking ? (0, import_react22.createElement)("p", { className: "bc-muted", role: "status" }, t("Checking tasks and acceptances…")) : archiveCheckError ? (0, import_react22.createElement)("div", { className: "bc-exception", role: "alert" }, (0, import_react22.createElement)("strong", null, t("The archive check could not be loaded.")), (0, import_react22.createElement)("p", null, archiveCheckError), (0, import_react22.createElement)("button", { type: "button", className: "bc-button", onClick: openArchive }, t("Try again"))) : (0, import_react22.createElement)("p", null, t("This will close {tasks} unfinished tasks and {acceptances} pending acceptances.", { tasks: openTasks.length, acceptances: pendingAcceptances })),
+          archiveResult ? (0, import_react22.createElement)("p", { className: "bc-muted" }, t("Closed {tasks} tasks and {acceptances} acceptances. This cannot be undone.", { tasks: Array.isArray(archiveResult.closed_tasks) ? archiveResult.closed_tasks.length : Number(archiveResult.closed_tasks ?? 0), acceptances: unresolved.filter((item) => item.kind === "acceptance").length })) : archiveChecked ? (0, import_react22.createElement)("p", { className: "bc-muted" }, t("The project and its group history are kept. Nothing can be added after archiving, and this cannot be undone.")) : null,
           archiveResult && unresolved.length ? (0, import_react22.createElement)(
             "div",
             null,
@@ -13178,11 +13202,14 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
               (0, import_react22.createElement)("span", null, item.stage ?? "")
             )))
           ) : null,
-          !archiveResult && openTasks.length ? (0, import_react22.createElement)(
+          !archiveResult && archiveChecked && (openTasks.length || independentPending.length) ? (0, import_react22.createElement)(
             "div",
             null,
             (0, import_react22.createElement)("p", { className: "bc-detail-label" }, t("Will be closed")),
-            (0, import_react22.createElement)("ul", { className: "bc-tb-list" }, openTasks.map((task) => (0, import_react22.createElement)("li", { key: task.id }, (0, import_react22.createElement)("span", null, task.title), (0, import_react22.createElement)("span", null, task.stage ?? task.status ?? ""))))
+            (0, import_react22.createElement)("ul", { className: "bc-tb-list" }, [
+              ...openTasks.map((task) => (0, import_react22.createElement)("li", { key: task.id }, (0, import_react22.createElement)("span", null, task.title), (0, import_react22.createElement)("span", null, task.stage ?? task.status ?? ""))),
+              ...independentPending.map((record) => (0, import_react22.createElement)("li", { key: record.id }, (0, import_react22.createElement)("span", null, t("Acceptance: {title}", { title: record.title ?? record.id })), (0, import_react22.createElement)("span", null, t("Waiting for acceptance"))))
+            ])
           ) : null,
           archiveError ? (0, import_react22.createElement)("p", { className: "bc-exception", role: "alert" }, archiveError) : null
         ),
@@ -13191,7 +13218,7 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
           { className: "bc-co-create-actions" },
           (0, import_react22.createElement)("span", { className: "bc-co-spacer" }),
           archiveResult ? (0, import_react22.createElement)("button", { type: "button", className: "bc-button bc-primary", onClick: () => setArchiveOpen(false) }, t("Close")) : (0, import_react22.createElement)("button", { type: "button", className: "bc-button", disabled: archiveBusy, onClick: () => setArchiveOpen(false) }, t("Cancel")),
-          archiveResult ? null : (0, import_react22.createElement)("button", { type: "button", className: "bc-button bc-danger", disabled: archiveBusy || busy, onClick: () => void archive() }, archiveBusy ? t("Archiving…") : t("Archive project"))
+          archiveResult ? null : (0, import_react22.createElement)("button", { type: "button", className: "bc-button bc-danger", disabled: archiveBusy || busy || !archiveChecked, onClick: () => void archive() }, archiveBusy ? t("Archiving…") : t("Archive project"))
         )
       )
     ) : null
@@ -14777,6 +14804,13 @@ function CompanySurface({ page, actions, roster }) {
     });
     return () => controller.abort();
   }, [selected, preview, detailAttempt]);
+  const loadArchiveData = async (projectId) => {
+    const [taskResult, acceptanceResult] = await Promise.all([
+      call("company-command", { command: "task.list", payload: { project_id: projectId, operation_key: `archive-task-list-${freshKey()}` } }),
+      call("company-command", { command: "acceptance.list", payload: { project_id: projectId, limit: 200, operation_key: `archive-acceptance-list-${freshKey()}` } })
+    ]);
+    return { tasks: taskResult?.body?.tasks ?? [], acceptances: acceptanceResult?.body?.acceptances ?? [] };
+  };
   const sendTask = async (command, fields = {}) => {
     if (preview) throw Object.assign(new Error(t("Preview")), { code: "preview" });
     const result = await call("company-command", { command, payload: { ...fields, operation_key: freshKey() } });
@@ -14967,7 +15001,7 @@ function CompanySurface({ page, actions, roster }) {
       (0, import_react26.createElement)(
         "main",
         { className: "bc-content" + (onCompany ? " bc-content-company" : "") },
-        kind === "wizard" ? (0, import_react26.createElement)(ProjectWizard, { data, roster, preview, loading, error, mutate, onBack: () => actions.openCompanyPage("list"), onCreated: (result) => actions.openCompanyPage("detail", result.body?.project?.id) }) : kind === "detail" ? (0, import_react26.createElement)(ProjectPage, { project, data, tasks, tasksError, preview, loading: loading || detailLoading, error: detailError || error, onBack: () => actions.openCompanyPage("list"), onChat: () => project && openChat(project), onRetry: () => setDetailAttempt((value) => value + 1), onTaskCommand: sendTask, onCommand: async (command, fields) => {
+        kind === "wizard" ? (0, import_react26.createElement)(ProjectWizard, { data, roster, preview, loading, error, mutate, onBack: () => actions.openCompanyPage("list"), onCreated: (result) => actions.openCompanyPage("detail", result.body?.project?.id) }) : kind === "detail" ? (0, import_react26.createElement)(ProjectPage, { project, data, tasks, tasksError, preview, loading: loading || detailLoading, error: detailError || error, onBack: () => actions.openCompanyPage("list"), onChat: () => project && openChat(project), onRetry: () => setDetailAttempt((value) => value + 1), onTaskCommand: sendTask, onArchiveData: loadArchiveData, onCommand: async (command, fields) => {
           const result = await mutate(command, fields);
           setDetailAttempt((value) => value + 1);
           return result;

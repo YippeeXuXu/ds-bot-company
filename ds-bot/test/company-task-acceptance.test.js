@@ -308,13 +308,14 @@ test('list: newest first, filter by task and state, archived projects stay reada
       acc_new: acceptance({ id: 'acc_new', task_id: 'tsk_a', task_revision: 4, created_at: 300 }),
       acc_old: acceptance({ id: 'acc_old', state: 'accepted', created_at: 200 }),
       acc_archived: acceptance({ id: 'acc_archived', project_id: 'prj_old', state: 'accepted', created_at: 400 }),
+      acc_closed: acceptance({ id: 'acc_closed', state: 'cancelled', close_reason: 'project_archived', created_at: 100 }),
     },
   })
   const execute = commandsFor(home)
 
   const first = await execute('acceptance.list', { operation_key: 'list-1', project_id: 'prj_1' })
   assert.equal(first.revision, 4, 'a read does not bump the company revision')
-  assert.deepEqual(first.body.acceptances.map(row => row.id), ['acc_new', 'acc_old'])
+  assert.deepEqual(first.body.acceptances.map(row => row.id), ['acc_new', 'acc_old', 'acc_closed'])
   assert.equal(first.body.acceptances[0].task_id, 'tsk_a')
   assert.equal(first.body.acceptances[1].task_id, null, 'older rows read as unlinked')
 
@@ -322,6 +323,8 @@ test('list: newest first, filter by task and state, archived projects stay reada
   assert.deepEqual(byTask.body.acceptances.map(row => row.id), ['acc_new'])
   const byState = await execute('acceptance.list', { operation_key: 'list-3', project_id: 'prj_1', state: 'accepted' })
   assert.deepEqual(byState.body.acceptances.map(row => row.id), ['acc_old'])
+  const cancelled = await execute('acceptance.list', { operation_key: 'list-3b', project_id: 'prj_1', state: 'cancelled' })
+  assert.deepEqual(cancelled.body.acceptances.map(row => row.id), ['acc_closed'])
   const limited = await execute('acceptance.list', { operation_key: 'list-4', project_id: 'prj_1', limit: 1 })
   assert.deepEqual(limited.body.acceptances.map(row => row.id), ['acc_new'])
   const archived = await execute('acceptance.list', { operation_key: 'list-5', project_id: 'prj_old' })
