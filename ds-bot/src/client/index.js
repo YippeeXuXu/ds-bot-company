@@ -11,6 +11,7 @@ import { TeamSidebar, YouAvatar, AccountLauncher, FooterAccount, BrandMark, Bran
 import { frameLayout, readSidebar, writeSidebar, toggledPref, reopenAsDrawer, DSH_NARROW } from './frame-layout.js'
 import { installFrameWatch } from './frame-watch.js'
 import { ProjectChatHeaderSlot } from './project-chat-overlay.js'
+import { DEPARTMENT_CHAT_CSS } from './department-chat.js'
 import { ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
 import { CHATS_SOURCE, atSources } from './at-menu.js'
 import { BtwDock, BtwTurnTail } from './btw.js'
@@ -915,6 +916,7 @@ export function apply(ctx) {
     () => installCompiledStyles(COMPANY_CSS, 'company'),
     () => installCompiledStyles(TODO_CSS, 'todos'),
     () => installCompiledStyles(PROJECT_CHAT_CSS, 'project-chat'),
+    () => installCompiledStyles(DEPARTMENT_CHAT_CSS, 'department-chat'),
     () => installCompiledStyles(SECRET_CSS, 'secrets'),
     () => installCompiledStyles(LEARNING_CSS, 'learning'),
     () => installCompiledStyles(MODEL_CSS + FOLDER_CSS + BOT_SETTINGS_CSS + GROUP_SETTINGS_CSS + AVATAR_LIBRARY_CSS, 'models'),

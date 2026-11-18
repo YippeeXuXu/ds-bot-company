@@ -5,6 +5,7 @@ import { statusLabel } from './projects-page.js'
 import { call } from './api.js'
 import { HeaderPill } from './header.js'
 import { activityLines, pendingRows, pinnedRows, waitingTotal } from './project-activity.js'
+import { DepartmentChatSurface, departmentActivityLines, departmentOfRoom } from './department-chat.js'
 
 // P04 项目群聊叠加件（原型 v2.11 / 设计语言 v0.2.7 §4.6）。
 // 消息流与输入区由宿主会话 surface 提供，本模块只渲染浮动群头、状态条、
@@ -474,6 +475,11 @@ export function ProjectChatHeaderSlot(props) {
     if (!roomId) { setData(null); setTodos(null); return }
     let live = true
     loadCompany().then(async model => {
+      // A room belongs to at most one thing here: a department's group is drawn with the
+      // department header, everything else asks the project overlay whether it knows it.
+      const department = departmentOfRoom(model, roomId)
+      if (!live) return
+      if (department) { setData({ kind: 'department', ...department }); return }
       const found = projectOfRoom(model, roomId)
       if (!live) return
       if (!found) { setData(null); return }
@@ -495,7 +501,7 @@ export function ProjectChatHeaderSlot(props) {
   }, [roomId])
   // One read per opening: the drawer drops its rows when it closes (§4).
   useEffect(() => {
-    if (!open || !data) return
+    if (!open || !data || data.kind === 'department') return
     let live = true
     setDrawer(null)
     Promise.all([loadProjectTodos(data.project.id), loadProjectEvents(data.project.id)]).then(([todosResult, eventsResult]) => {
@@ -507,6 +513,26 @@ export function ProjectChatHeaderSlot(props) {
     })
     return () => { live = false }
   }, [open, data])
+  // A department has no project to narrow the journal by, so the page is read whole and
+  // filtered here; a failed read leaves the activity section out, as with a project.
+  useEffect(() => {
+    if (!open || !data || data.kind !== 'department') return
+    let live = true
+    setDrawer(null)
+    call('company-events', { order: 'desc', limit: 120 }).then(result => {
+      if (!live) return
+      const names = new Map(data.employees.map(entry => [entry.id, entry.name ?? '']))
+      setDrawer({
+        activity: departmentActivityLines(result, {
+          departmentId: data.department.id,
+          memberIds: new Set(data.employees.map(entry => entry.id)),
+          names,
+        }),
+      })
+    }).catch(() => { if (live) setDrawer({ activity: [] }) })
+    return () => { live = false }
+  }, [open, data])
+
   useEffect(() => {
     if (!open) return
     const onKey = event => {
@@ -520,6 +546,18 @@ export function ProjectChatHeaderSlot(props) {
     return () => window.removeEventListener('keydown', onKey, true)
   }, [open])
   if (!data) return h(HeaderPill, props)
+  if (data.kind === 'department') {
+    const closeDepartment = () => { setOpen(false); setDrawer(null); opener.current?.focus?.() }
+    return h(Fragment, null,
+      h('div', { className: 'pc-host-head', 'aria-hidden': 'true' }, h(HeaderPill, props)),
+      h(DepartmentChatSurface, {
+        data: { department: data.department, employees: data.employees, projects: data.projects, lead: data.lead, activity: drawer?.activity },
+        open,
+        onOpenDetails: event => { opener.current = event?.currentTarget ?? null; setOpen(true) },
+        onClose: closeDepartment,
+        onOpenConfig: () => { props.actions.openCompanyPage('list'); closeDepartment() },
+      }))
+  }
   const project = data.project
   const close = () => { setOpen(false); setDrawer(null); opener.current?.focus?.() }
   return h(ProjectChatSurface, {
