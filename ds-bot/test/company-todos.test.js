@@ -429,7 +429,7 @@ test('A13: an owner-only acceptance is listed even when an employee submitted it
   assert.equal(body.handled[0].handled_at, AT_ISO)
 })
 
-test('A10: a v1 company is read as v2, revision untouched, upgrade pending once', async () => {
+test('A10: a v1 company is read as the current version, revision untouched, upgrade pending once', async () => {
   const home = await openHome()
   const legacy = {
     version: 1,
@@ -443,11 +443,12 @@ test('A10: a v1 company is read as v2, revision untouched, upgrade pending once'
   }
   writeFileSync(join(home, 'company', 'state.json'), JSON.stringify(legacy))
   const store = storeOf(home)
-  assert.equal(store.state.version, 2)
+  assert.equal(store.state.version, 3)
   assert.deepEqual(store.state.acceptances, {})
   assert.deepEqual(store.state.todo_log, {})
+  assert.deepEqual(store.state.templates, {})
   assert.equal(store.state.revision, 7)
-  assert.deepEqual(store.migration(), { from: 1, to: 2 })
+  assert.deepEqual(store.migration(), { from: 1, to: 3 })
 
   const api = apiOf(home, {})
   const result = await api.todos({})
@@ -458,9 +459,10 @@ test('A10: a v1 company is read as v2, revision untouched, upgrade pending once'
   store.clearMigration()
   assert.equal(store.migration(), undefined)
   const saved = JSON.parse(readFileSync(join(home, 'company', 'state.json'), 'utf8'))
-  assert.equal(saved.version, 2)
+  assert.equal(saved.version, 3)
   assert.equal(saved.revision, 7)
   assert.deepEqual(saved.acceptances, {})
+  assert.deepEqual(saved.templates, {})
   const reopened = storeOf(home)
   assert.equal(reopened.migration(), undefined)
 })
@@ -493,20 +495,21 @@ test('A10: a writable install saves a v1 file back once, with one migration even
   install(rt)
   const stateFile = join(home, 'company', 'state.json')
   const deadline = Date.now() + 2000
-  while (Date.now() < deadline && JSON.parse(readFileSync(stateFile, 'utf8')).version !== 2) {
+  while (Date.now() < deadline && JSON.parse(readFileSync(stateFile, 'utf8')).version !== 3) {
     await new Promise(resolve => setTimeout(resolve, 10))
   }
   const saved = JSON.parse(readFileSync(stateFile, 'utf8'))
-  assert.equal(saved.version, 2)
+  assert.equal(saved.version, 3)
   assert.equal(saved.revision, 7)
   assert.deepEqual(saved.acceptances, {})
+  assert.deepEqual(saved.templates, {})
   const eventsFile = join(home, 'company', 'events.jsonl')
   const events = readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
   assert.deepEqual(events.map(event => event.type), ['company/migrated'])
-  assert.deepEqual(events[0].data, { from: 1, to: 2 })
+  assert.deepEqual(events[0].data, { from: 1, to: 3 })
   rt.company.close()
 
-  // A second start on the now-v2 file has nothing to write back.
+  // A second start on the now-current file has nothing to write back.
   const again = rtOf()
   install(again)
   await new Promise(resolve => setTimeout(resolve, 100))

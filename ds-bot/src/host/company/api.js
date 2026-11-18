@@ -13,6 +13,7 @@
 import { readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { departmentView } from './org.js'
+import { templateView } from './templates.js'
 import { projectDetailOf } from './projects.js'
 import { createTodos, TODOS_ANSWER_PATH, TODOS_PATH } from './todos.js'
 
@@ -44,6 +45,12 @@ const STATUS = new Map([
   ['department/group-failed', 409],
   ['department/group-missing-bots', 422],
   ['department/group-too-small', 422],
+  // Employee templates (M1b-3.2): a template that is gone, a name already used, a
+  // builtin that must be copied before it changes, an archived one that cannot be edited.
+  ['template/not-found', 404],
+  ['template/name-taken', 409],
+  ['template/builtin-readonly', 422],
+  ['template/archived', 409],
   ['employee.bot_already_employed', 409],
   ['project/member-exists', 409],
   ['project/member-busy', 409],
@@ -144,6 +151,9 @@ export function createCompanyApi({ store, execute, groups = {}, now = Date.now, 
       employees: Object.values(state.employees).filter(mine).sort(byCreated)
         .map(employee => ({ ...employee, conversation_mode: employee.conversation_mode ?? 'follow' })),
       projects: Object.values(state.projects).filter(mine).sort(byCreated),
+      // Templates read like every other table (M1b-3.2); `source` says which can be
+      // edited and which must be copied first.
+      templates: Object.values(state.templates ?? {}).filter(mine).sort(byCreated).map(templateView),
     }
     if (query.project_id !== undefined && query.project_id !== '') {
       const project = state.projects[query.project_id]

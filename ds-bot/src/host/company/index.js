@@ -14,6 +14,7 @@ import { orgHandlers } from './org.js'
 import { projectHandlers } from './projects.js'
 import { pathRedactor } from './selfreview/features.js'
 import { companyFail, createCompanyStore } from './store.js'
+import { templateHandlers } from './templates.js'
 
 // The roster side of a project group. `members` returns undefined when the group is gone,
 // which is how the project commands tell "missing" from "drifted".
@@ -54,6 +55,7 @@ export function install(rt) {
       ...orgHandlers({ botOf: id => rt.botOf?.(id), isPrivate: id => rt.isPrivate?.(id) === true, groups: groupAdapter(rt) }),
       ...projectHandlers({ groups: groupAdapter(rt) }),
       ...acceptanceHandlers(),
+      ...templateHandlers(),
     },
   })
   const execute = commands.execute
