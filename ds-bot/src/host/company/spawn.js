@@ -88,6 +88,13 @@ export function spawnHandlers({ roster = {}, createEmployee, warn = () => {} } =
         throw companyFail('employee/capability-missing', `This dsh has no ${missing.join(', ')}; add it to the library or edit the template first.`, { template_id: template.id, missing })
       }
 
+      // A thinking level belongs to a model, and the host refuses one without the other. A
+      // template saved with an effort and no model would otherwise fail after the Bot exists,
+      // for a reason that is one field in the template — so it is refused before any is made.
+      if (template.effort && !template.model) {
+        throw companyFail('company/invalid', `Template ${template.name} names a thinking level but no model; set its model or drop its effort.`, { template_id: template.id, field: 'effort' })
+      }
+
       let bot
       try {
         bot = await roster.create({

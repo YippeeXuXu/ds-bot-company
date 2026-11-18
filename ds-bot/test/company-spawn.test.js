@@ -209,6 +209,22 @@ test('a skill the library does not hold is refused before a Bot is made (M1b-3.4
   assert.equal(env.store.state.revision, revision)
 })
 
+// The host refuses an effort with no model ("Pick a model before choosing a thinking level").
+// Caught after the Bot exists that refusal would cost a Bot and a rollback for a template typo.
+test('a thinking level without a model is refused before a Bot is made (M1b-3.4)', async (t) => {
+  const env = open()
+  t.after(() => env.dispose())
+  const { department } = await ready(env, { model: null, effort: 'high' })
+  const revision = env.store.state.revision
+
+  const error = await hire(env, department).catch(caught => caught)
+  assert.equal(error.code, 'company/invalid')
+  assert.equal(error.details.field, 'effort')
+  assert.equal(env.host.bots.size, 0)
+  assert.equal(env.host.calls.length, 0, 'no host call was made')
+  assert.equal(env.store.state.revision, revision)
+})
+
 test('a skill that fails mid-list unloads the attached ones and deletes the Bot (M1b-3.4)', async (t) => {
   // The library lists all three, so the pre-check passes; the second attach is where the
   // host refuses, which is the case a pre-check cannot see.
