@@ -168,7 +168,7 @@ test('template names are unique and skills are checked before they are saved (M1
   rmSync(home, { recursive: true, force: true })
 })
 
-test('the templates table is saved in the company file as version 3 (M1b-3.2)', async () => {
+test('the templates table is saved in the company file at the current version (M1b-3.2)', async () => {
   const home = tempHome()
   const { store, commands } = open(home)
   await company(commands)
@@ -176,12 +176,12 @@ test('the templates table is saved in the company file as version 3 (M1b-3.2)', 
 
   const saved = JSON.parse(readFileSync(join(home, 'company', 'state.json'), 'utf8'))
   assert.equal(saved.version, COMPANY_VERSION)
-  assert.equal(saved.version, 3)
+  assert.equal(saved.version, 4)
   const rows = Object.values(saved.templates)
   assert.equal(rows.length, 1)
   const stored = rows[0]
   assert.equal(stored.name, '产品')
   assert.equal(stored.source, 'custom')
-  assert.equal(store.state.version, 3)
+  assert.equal(store.state.version, 4)
   rmSync(home, { recursive: true, force: true })
 })

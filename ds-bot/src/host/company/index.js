@@ -16,6 +16,7 @@ import { projectHandlers } from './projects.js'
 import { pathRedactor } from './selfreview/features.js'
 import { spawnHandlers } from './spawn.js'
 import { companyFail, createCompanyStore } from './store.js'
+import { TASK_ROW_REVISION_COMMANDS, taskHandlers } from './tasks.js'
 import { templateHandlers } from './templates.js'
 import { nameProblem } from '../../shared/mentions.js'
 import { templateIoHandlers } from './template-io.js'
@@ -93,8 +94,9 @@ export function install(rt) {
     store,
     now,
     // `acceptance.decide` is answered with the revision of the acceptance itself (the to-do
-    // row carries it, contract A12), so the envelope leaves that comparison to its handler.
-    rowRevisionCommands: ROW_REVISION_COMMANDS,
+    // row carries it, contract A12), and every task command that writes is answered with the
+    // task's own revision, so the envelope leaves those comparisons to their handlers.
+    rowRevisionCommands: new Set([...ROW_REVISION_COMMANDS, ...TASK_ROW_REVISION_COMMANDS]),
     handlers: {
       ...org,
       // A new company is born with the nine builtin templates: they ride in the same commit
@@ -113,6 +115,8 @@ export function install(rt) {
       },
       ...projectHandlers({ groups: groupAdapter(rt) }),
       ...acceptanceHandlers(),
+      // The project board's cards: one table and the five commands a card moves through.
+      ...taskHandlers(),
       ...templateHandlers(),
       // The profile is written by the same handler `employee.create` uses, so the
       // one-active-profile rule and the role lists have one implementation.
