@@ -824,6 +824,24 @@ test('a missing project group is marked for a check and never rebuilt by the arc
   rmSync(home, { recursive: true, force: true })
 })
 
+test('an empty project without a group archives and still carries the read-only mark (4.5)', async () => {
+  const home = tempHome()
+  const { store, commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', { operation_key: key('create'), ...draft(seed_), coordinator_employee_id: undefined })
+  const projectId = created.body.project.id
+  assert.equal(created.body.project.group_chat_ref, null)
+  assert.equal(created.body.project.group_binding.status, 'unbound')
+
+  const archived = await run(commands, 'project.archive', { operation_key: key('archive'), project_id: projectId })
+  assert.equal(archived.status, 'committed')
+  assert.equal(archived.body.group.status, 'unbound')
+  assert.equal(archived.body.group.readonly, true)
+  assert.equal(store.state.projects[projectId].group_binding.readonly, true)
+  assert.ok(store.state.projects[projectId].group_binding.checked_at > 0)
+  rmSync(home, { recursive: true, force: true })
+})
+
 // M1b-2.4: a dismissal is about live work, not about the row. A project that still names
 // the employee refuses it and says which post; once the work is handed over, the same
 // dismissal goes through.

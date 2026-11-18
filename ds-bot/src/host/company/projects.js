@@ -678,13 +678,11 @@ export function projectHandlers({ groups = {} } = {}) {
           groupStatus = 'readonly_client'
           groupNote = 'This host has no read-only group switch; the client locks the composer while the project is archived.'
         }
-        project.group_binding = {
-          ...project.group_binding,
-          ...(groupStatus === 'missing' ? { status: 'pending', error: 'group missing at archive' } : {}),
-          readonly: true,
-          checked_at: closedAt,
-        }
+        if (groupStatus === 'missing') project.group_binding = { ...project.group_binding, status: 'pending', error: 'group missing at archive' }
       }
+      // Marked on every project, including one that never had a group: the binding is what
+      // the client reads, and a later writer must not take the project for live.
+      project.group_binding = { ...project.group_binding, readonly: true, checked_at: closedAt }
 
       project.status = 'archived'
       project.archived_at = closedAt
