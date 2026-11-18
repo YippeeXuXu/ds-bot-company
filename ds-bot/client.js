@@ -1380,7 +1380,7 @@ Object.assign(ZH, HOST_ZH, {
   "Open chat": "打开群聊",
   "Group binding needs attention before chat can be opened.": "群绑定需要处理后才能打开聊天。",
   "The project group is created when a member joins or the project starts.": "成员加入或项目启动时才会创建项目群。",
-  "Archived project. The group history remains available for reading.": "项目已归档，群聊历史保留供查阅。",
+  "Archived project. The group history remains available for reading.": "项目已归档，群历史保留。",
   "Project group is linked. Open the existing chat to continue.": "项目群已绑定，可打开现有群聊继续。",
   "Group needs reconciliation": "项目群待对账",
   "Group changes are not synced. An authorized operator must reconcile the group before starting work.": "群成员变更尚未同步，须由有权限的人员对账后才能启动工作。",
@@ -1494,6 +1494,34 @@ Object.assign(ZH, HOST_ZH, {
   "Unassigned": "未指派",
   "Waiting for approval": "等待审批",
   "Waiting for input": "等待补充",
+  "Acceptance checks": "验收标准",
+  "Assignee": "负责人",
+  "Acceptance state": "验收状态",
+  "Acceptance record": "验收记录",
+  "Accepted": "已通过",
+  "Returned": "已退回",
+  "Closed with the project": "项目归档时关闭",
+  "No summary.": "没有摘要。",
+  "The card stays in the column you choose.": "卡片会留在你选的那一列。",
+  "Create in": "创建到",
+  "Ready": "就绪",
+  "Title": "标题",
+  "Description": "描述",
+  "One check per line.": "每行一条验收标准。",
+  "Authorization scope": "授权范围",
+  "Folder or reference the Bot may work in.": "Bot 可操作的目录或引用。",
+  "A Ready card needs an owner, at least one acceptance check and an authorization scope.": "就绪卡需要负责人、至少一条验收标准和授权范围。",
+  "Create task": "创建任务",
+  "Archive project": "归档项目",
+  "The project could not be archived.": "项目归档失败。",
+  "This will close {tasks} unfinished tasks and {acceptances} pending acceptances.": "将关闭 {tasks} 张未完成任务、{acceptances} 条待验收。",
+  "The project and its group history are kept. Nothing can be added after archiving, and this cannot be undone.": "项目与群历史会保留；归档后不能再新增，且不可回退。",
+  "The project is archived. The group history stays available to read.": "项目已归档，群历史保留。",
+  "Project archived. The group history stays available to read.": "项目已归档，群历史保留。",
+  "Closed {tasks} tasks and {acceptances} acceptances. This cannot be undone.": "已关闭 {tasks} 张任务、{acceptances} 条验收，不可回退。",
+  "Closed on archive": "归档时关闭",
+  "Acceptance: {title}": "验收：{title}",
+  "Will be closed": "将被关闭",
   "dependency": "项依赖",
   "dependencies": "项依赖",
   "Details": "详情",
@@ -12091,21 +12119,39 @@ var taskRevision = (task) => {
   return Number.isInteger(task?.revision) ? task.revision : 0;
 };
 var taskOwnerId = (task) => task.owner_employee_id ?? task.assignee_id ?? task.owner_id ?? "";
-var taskOwnerName = (task, employees = []) => {
-  const owner = employees.find((employee) => employee.id === taskOwnerId(task));
+var taskOwnerName = (task, employees = [], members = []) => {
+  const direct = taskOwnerId(task);
+  const assignment = direct ? null : members.find((member) => member.id === task.owner_assignment_id);
+  const employeeId = direct || assignment?.employee_id || "";
+  const owner = employees.find((employee) => employee.id === employeeId);
   return owner?.name ?? task.owner_name ?? "";
 };
 var taskDependencyCount = (task) => {
   if (Number.isInteger(task.dependency_count)) return task.dependency_count;
   return Array.isArray(task.dependencies) ? task.dependencies.length : 0;
 };
-var taskArtifacts = (task) => task.submission?.artifact_refs ?? task.result_refs ?? task.artifacts ?? [];
+var taskSubmissions = (task) => Array.isArray(task?.submissions) ? task.submissions.filter(Boolean) : task?.submission ? [task.submission] : [];
+var taskArtifacts = (task) => {
+  const fromSubmissions = taskSubmissions(task).flatMap((submission) => submission.artifact_refs ?? []);
+  const own = task?.artifact_refs ?? task?.result_refs ?? task?.artifacts;
+  return Array.isArray(own) && own.length ? own : fromSubmissions;
+};
 var taskRuns = (task) => task.runs ?? task.history ?? [];
-var taskAcceptance = (task) => task.acceptance ?? task.acceptance_record ?? null;
+var taskAcceptances = (task) => Array.isArray(task?.acceptances) ? task.acceptances.filter(Boolean) : task?.acceptance ? [task.acceptance] : [];
+var taskAcceptance = (task) => taskAcceptances(task).map((record, index) => ({ record, index })).sort((left, right) => (right.record.decided_at ?? right.record.updated_at ?? 0) - (left.record.decided_at ?? left.record.updated_at ?? 0) || right.index - left.index)[0]?.record ?? null;
 var taskChecks = (task) => Array.isArray(task?.acceptance_checks) ? task.acceptance_checks : [];
+var acceptanceState = (record) => record?.state ?? (record?.decision === "accept" ? "accepted" : record?.decision === "return" ? "returned" : "");
+var acceptanceStateLabel = (record) => {
+  const state = acceptanceState(record);
+  if (state === "pending") return t("Waiting for acceptance");
+  if (state === "accepted") return t("Accepted");
+  if (state === "returned") return t("Returned");
+  if (state === "cancelled") return record?.close_reason === "project_archived" ? t("Closed with the project") : t("Cancelled");
+  return t("Not recorded yet");
+};
 var acceptanceReady = (task) => {
   const record = taskAcceptance(task);
-  return Boolean(record?.id) && Number.isInteger(record?.revision);
+  return Boolean(record?.id) && Number.isInteger(record?.revision) && acceptanceState(record) === "pending";
 };
 var taskBadges = (task) => [
   task.waiting_on === "approval" || task.waiting === "approval" ? t("Waiting for approval") : null,
@@ -12194,8 +12240,8 @@ var taskWhen = (value) => {
   const date = new Date(value);
   return `${date.getMonth() + 1}/${date.getDate()}`;
 };
-function TaskCard({ task, employees, selected, busy, dragging, ...handlers }) {
-  const owner = taskOwnerName(task, employees);
+function TaskCard({ task, employees, members, selected, busy, dragging, ...handlers }) {
+  const owner = taskOwnerName(task, employees, members);
   const badges = taskBadges(task);
   const dependencies = taskDependencyCount(task);
   const next = task.next_step ?? "";
@@ -12254,7 +12300,7 @@ function TaskCard({ task, employees, selected, busy, dragging, ...handlers }) {
     )
   );
 }
-function TaskColumn({ column, tasks, employees, selectedId, busy, dropTarget, ...handlers }) {
+function TaskColumn({ column, tasks, employees, members, selectedId, busy, dropTarget, ...handlers }) {
   return (0, import_react21.createElement)(
     "section",
     {
@@ -12282,6 +12328,7 @@ function TaskColumn({ column, tasks, employees, selectedId, busy, dropTarget, ..
       key: task.id,
       task,
       employees,
+      members,
       selected: selectedId === task.id,
       busy,
       dragging: handlers.draggingId === task.id,
@@ -12293,11 +12340,14 @@ function TaskColumn({ column, tasks, employees, selectedId, busy, dropTarget, ..
     tasks.length ? null : (0, import_react21.createElement)("p", { className: "bc-tb-emptycol" }, t("Drop a task here"))
   );
 }
-function TaskDetail({ task, employees, tab, busy, error, onTab, onClose, onAction, onChat }) {
+function TaskDetail({ task, employees, members = [], tab, busy, error, onTab, onClose, onAction, onChat }) {
   const acceptance = taskAcceptance(task);
   const artifacts = taskArtifacts(task);
   const runs = taskRuns(task);
-  const owner = taskOwnerName(task, employees);
+  const submissions = taskSubmissions(task);
+  const checks = taskChecks(task);
+  const owner = taskOwnerName(task, employees, members);
+  const employeeName = (id) => employees.find((employee) => employee.id === id)?.name ?? "";
   const stage = taskStage(task);
   const actions = [];
   if (stage === "draft") actions.push(["to-ready", t("Move to Ready")]);
@@ -12308,11 +12358,11 @@ function TaskDetail({ task, employees, tab, busy, error, onTab, onClose, onActio
   const blocked = stage === "review" && !acceptanceReady(task);
   const canFail = stage !== "doing" || Boolean(task.latest_run_id);
   const rows2 = [
-    [t("Owner"), owner || t("Not assigned")],
+    [t("Assignee"), owner || t("Not assigned")],
     [t("Priority"), task.priority ? String(task.priority) : t("Not set")],
     [t("Dependencies"), taskDependencyCount(task) ? String(taskDependencyCount(task)) : t("None")],
     [t("Next step"), task.next_step || "—"],
-    [t("Acceptance"), acceptance ? t("Recorded") : t("Not recorded yet")]
+    [t("Acceptance state"), acceptanceStateLabel(acceptance)]
   ];
   return (0, import_react21.createElement)(
     "div",
@@ -12345,13 +12395,35 @@ function TaskDetail({ task, employees, tab, busy, error, onTab, onClose, onActio
         { className: "bc-tb-panel", role: "tabpanel" },
         task.goal || task.description ? (0, import_react21.createElement)("p", { className: "bc-tb-doc" }, task.goal ?? task.description) : (0, import_react21.createElement)("p", { className: "bc-muted" }, t("No description yet.")),
         (0, import_react21.createElement)("dl", { className: "bc-tb-kv" }, rows2.map(([label2, value]) => (0, import_react21.createElement)("div", { key: label2 }, (0, import_react21.createElement)("dt", null, label2), (0, import_react21.createElement)("dd", null, value)))),
+        checks.length ? (0, import_react21.createElement)(
+          "section",
+          { className: "bc-tb-section" },
+          (0, import_react21.createElement)("h4", null, t("Acceptance checks")),
+          (0, import_react21.createElement)("ul", { className: "bc-tb-list" }, checks.map((check, index) => (0, import_react21.createElement)("li", { key: index }, check)))
+        ) : null,
+        acceptance ? (0, import_react21.createElement)(
+          "section",
+          { className: "bc-tb-section" },
+          (0, import_react21.createElement)("h4", null, t("Acceptance record")),
+          (0, import_react21.createElement)("p", { className: "bc-tb-acceptstate" }, acceptanceStateLabel(acceptance)),
+          acceptance.acceptance_criteria ? (0, import_react21.createElement)("p", { className: "bc-muted" }, acceptance.acceptance_criteria) : null,
+          acceptance.opinion ? (0, import_react21.createElement)("p", { className: "bc-tb-opinion" }, acceptance.opinion) : null,
+          acceptance.decided_at ? (0, import_react21.createElement)("p", { className: "bc-muted" }, taskWhen(acceptance.decided_at)) : null
+        ) : null,
         blocked ? (0, import_react21.createElement)("p", { className: "bc-muted bc-tb-hint" }, t("This task has no acceptance record yet. Submit it for review, then accept it — Done cannot be reached by dragging.")) : null,
         stage === "doing" && !task.latest_run_id ? (0, import_react21.createElement)("p", { className: "bc-muted bc-tb-hint" }, t("This task was moved to Doing without a dispatch, so there is no run to mark failed.")) : null
       ) : null,
       tab === "results" ? (0, import_react21.createElement)(
         "div",
         { className: "bc-tb-panel", role: "tabpanel" },
-        artifacts.length ? (0, import_react21.createElement)("ul", { className: "bc-tb-list" }, artifacts.map((artifact, index) => (0, import_react21.createElement)(
+        submissions.length ? (0, import_react21.createElement)("ol", { className: "bc-tb-submissions" }, submissions.map((submission, index) => (0, import_react21.createElement)(
+          "li",
+          { key: submission.id ?? index },
+          (0, import_react21.createElement)("p", { className: "bc-tb-subsummary" }, submission.summary || t("No summary.")),
+          Array.isArray(submission.check_notes) && submission.check_notes.length ? (0, import_react21.createElement)("ul", { className: "bc-tb-list" }, submission.check_notes.map((note, position) => (0, import_react21.createElement)("li", { key: position }, note))) : null,
+          Array.isArray(submission.artifact_refs) && submission.artifact_refs.length ? (0, import_react21.createElement)("ul", { className: "bc-tb-list" }, submission.artifact_refs.map((ref, position) => (0, import_react21.createElement)("li", { key: position }, (0, import_react21.createElement)("code", null, String(ref))))) : null,
+          (0, import_react21.createElement)("p", { className: "bc-muted" }, [employeeName(submission.submitted_by_employee_id), submission.submitted_at ? taskWhen(submission.submitted_at) : ""].filter(Boolean).join(" · "))
+        ))) : artifacts.length ? (0, import_react21.createElement)("ul", { className: "bc-tb-list" }, artifacts.map((artifact, index) => (0, import_react21.createElement)(
           "li",
           { key: artifact.id ?? artifact.path ?? index },
           (0, import_react21.createElement)("strong", null, artifact.name ?? artifact.title ?? artifact.path ?? String(artifact)),
@@ -12387,6 +12459,108 @@ function TaskDetail({ task, employees, tab, busy, error, onTab, onClose, onActio
         disabled: busy || blocked && (action === "accept" || action === "return") || action === "fail" && !canFail,
         onClick: () => onAction(action, task)
       }, label2))) : null
+    )
+  );
+}
+function TaskCreateDialog({ projectId, workspaceRef = "", employees = [], members = [], busy, error, onClose, onSend }) {
+  const [title, setTitle] = (0, import_react21.useState)("");
+  const [description, setDescription] = (0, import_react21.useState)("");
+  const [owner, setOwner] = (0, import_react21.useState)("");
+  const [stage, setStage] = (0, import_react21.useState)("draft");
+  const [checks, setChecks] = (0, import_react21.useState)("");
+  const [scope, setScope] = (0, import_react21.useState)(workspaceRef ?? "");
+  const checkList = checks.split("\n").map((line) => line.trim()).filter(Boolean);
+  const ready = stage === "ready";
+  const canCreate = Boolean(title.trim()) && title.trim().length <= 200 && (!ready || owner && checkList.length > 0 && scope.trim());
+  const send = () => {
+    if (!canCreate) return;
+    onSend({
+      project_id: projectId,
+      title: title.trim(),
+      ...description.trim() ? { description: description.trim() } : {},
+      source_ref: `ui:${projectId}`,
+      stage,
+      ...owner ? { owner_assignment_id: owner } : {},
+      ...checkList.length ? { acceptance_checks: checkList } : {},
+      ...scope.trim() ? { authorization_scope_ref: scope.trim() } : {}
+    });
+  };
+  return (0, import_react21.createElement)(
+    "div",
+    { className: "bc-tb-modal" },
+    (0, import_react21.createElement)(
+      "div",
+      { className: "bc-tb-modalcard", role: "dialog", "aria-modal": "true", "aria-label": t("New task") },
+      (0, import_react21.createElement)(
+        "header",
+        { className: "bc-co-pop-head" },
+        (0, import_react21.createElement)("strong", null, t("New task")),
+        (0, import_react21.createElement)("span", { className: "bc-co-pop-name" }, t("The card stays in the column you choose.")),
+        (0, import_react21.createElement)("button", { type: "button", className: "bc-co-pop-close", "aria-label": t("Close"), onClick: onClose }, "×")
+      ),
+      (0, import_react21.createElement)(
+        "div",
+        { className: "bc-co-create-fields" },
+        (0, import_react21.createElement)(
+          "label",
+          { className: "bc-field" },
+          (0, import_react21.createElement)("span", null, t("Title")),
+          (0, import_react21.createElement)("input", { value: title, maxLength: 200, onChange: (event) => setTitle(event.target.value) })
+        ),
+        (0, import_react21.createElement)(
+          "label",
+          { className: "bc-field" },
+          (0, import_react21.createElement)("span", null, t("Description")),
+          (0, import_react21.createElement)("textarea", { rows: 3, maxLength: 4e3, value: description, onChange: (event) => setDescription(event.target.value) })
+        ),
+        (0, import_react21.createElement)(
+          "label",
+          { className: "bc-field" },
+          (0, import_react21.createElement)("span", null, t("Create in")),
+          (0, import_react21.createElement)(
+            "select",
+            { value: stage, onChange: (event) => setStage(event.target.value) },
+            (0, import_react21.createElement)("option", { value: "draft" }, t("Draft")),
+            (0, import_react21.createElement)("option", { value: "ready" }, t("Ready"))
+          )
+        ),
+        (0, import_react21.createElement)(
+          "label",
+          { className: "bc-field" },
+          (0, import_react21.createElement)("span", null, t("Assignee")),
+          (0, import_react21.createElement)(
+            "select",
+            { value: owner, onChange: (event) => setOwner(event.target.value) },
+            (0, import_react21.createElement)("option", { value: "" }, t("Not assigned")),
+            members.filter((member) => member.membership_status === "active" || member.status === "active").map((member) => (0, import_react21.createElement)("option", { key: member.id, value: member.id }, employees.find((employee) => employee.id === member.employee_id)?.name ?? member.name ?? member.employee_id))
+          )
+        ),
+        (0, import_react21.createElement)(
+          "label",
+          { className: "bc-field" },
+          (0, import_react21.createElement)("span", null, t("Acceptance checks")),
+          (0, import_react21.createElement)("textarea", { rows: 3, value: checks, placeholder: t("One check per line."), onChange: (event) => setChecks(event.target.value) })
+        ),
+        (0, import_react21.createElement)(
+          "label",
+          { className: "bc-field" },
+          (0, import_react21.createElement)("span", null, t("Authorization scope")),
+          (0, import_react21.createElement)("input", { value: scope, maxLength: 500, placeholder: t("Folder or reference the Bot may work in."), onChange: (event) => setScope(event.target.value) })
+        ),
+        ready && !canCreate ? (0, import_react21.createElement)("p", { className: "bc-muted bc-tb-hint" }, t("A Ready card needs an owner, at least one acceptance check and an authorization scope.")) : null,
+        error ? (0, import_react21.createElement)("p", { className: "bc-exception", role: "alert" }, error) : null
+      ),
+      (0, import_react21.createElement)(
+        "div",
+        { className: "bc-co-create-actions" },
+        (0, import_react21.createElement)("span", { className: "bc-co-spacer" }),
+        (0, import_react21.createElement)("button", { type: "button", className: "bc-button", onClick: onClose }, t("Cancel")),
+        (0, import_react21.createElement)(
+          "button",
+          { type: "button", className: "bc-button bc-primary", disabled: busy || !canCreate, onClick: send },
+          busy ? t("Saving…") : t("Create task")
+        )
+      )
     )
   );
 }
@@ -12484,6 +12658,10 @@ function TaskDialog({ dialog, busy, error, onClose, onSend }) {
 function TaskBoardView({
   tasks = [],
   employees = [],
+  members = [],
+  projectId = "",
+  workspaceRef = "",
+  preview = false,
   selectedId = "",
   tab = "detail",
   busy = false,
@@ -12494,6 +12672,7 @@ function TaskBoardView({
   dropTarget = "",
   showCancelled = false,
   onToggleCancelled,
+  onCreate,
   onSelect,
   onClose,
   onTab,
@@ -12511,7 +12690,7 @@ function TaskBoardView({
   const live = tasks.filter((task) => taskStage(task) !== "cancelled");
   const cancelled = tasks.filter((task) => taskStage(task) === "cancelled");
   const selected = tasks.find((task) => task.id === selectedId) ?? null;
-  const handlers = { employees, selectedId, busy, draggingId, dropTarget, onSelect, onMoveTo, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop };
+  const handlers = { employees, members, selectedId, busy, draggingId, dropTarget, onSelect, onMoveTo, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop };
   return (0, import_react21.createElement)(
     "section",
     { className: "bc-taskboard" },
@@ -12519,7 +12698,12 @@ function TaskBoardView({
       "div",
       { className: "bc-tb-head" },
       (0, import_react21.createElement)("div", null, (0, import_react21.createElement)("h2", null, t("Tasks")), (0, import_react21.createElement)("p", { className: "bc-sub" }, t("Drag a card to ask for a new status. The board does not move it until the service agrees."))),
-      (0, import_react21.createElement)("button", { type: "button", className: "bc-chip", "aria-pressed": showCancelled ? "true" : "false", onClick: onToggleCancelled }, t("Show cancelled"))
+      (0, import_react21.createElement)(
+        "div",
+        { className: "bc-tb-headtools" },
+        (0, import_react21.createElement)("button", { type: "button", className: "bc-button bc-primary", disabled: preview || !onCreate, onClick: onCreate }, t("New task")),
+        (0, import_react21.createElement)("button", { type: "button", className: "bc-chip", "aria-pressed": showCancelled ? "true" : "false", onClick: onToggleCancelled }, t("Show cancelled"))
+      )
     ),
     error ? (0, import_react21.createElement)("p", { className: "bc-exception", role: "alert" }, error) : null,
     (0, import_react21.createElement)("div", { className: "bc-tb-cols" }, TASK_COLUMNS.map((column) => (0, import_react21.createElement)(TaskColumn, {
@@ -12553,11 +12737,11 @@ function TaskBoardView({
         (0, import_react21.createElement)("span", null, taskWhen(task.updated_at))
       ))
     ) : null,
-    selected ? (0, import_react21.createElement)(TaskDetail, { task: selected, employees, tab, busy, error, onTab, onClose, onAction, onChat }) : null,
-    dialog ? (0, import_react21.createElement)(TaskDialog, { dialog, busy, error: dialogError, onClose: onDialogClose, onSend: onDialogSend }) : null
+    selected ? (0, import_react21.createElement)(TaskDetail, { task: selected, employees, members, tab, busy, error, onTab, onClose, onAction, onChat }) : null,
+    dialog ? dialog.kind === "create" ? (0, import_react21.createElement)(TaskCreateDialog, { projectId, workspaceRef, employees, members, busy, error: dialogError, onClose: onDialogClose, onSend: onDialogSend }) : (0, import_react21.createElement)(TaskDialog, { dialog, busy, error: dialogError, onClose: onDialogClose, onSend: onDialogSend }) : null
   );
 }
-function TaskBoard({ tasks = [], employees = [], preview = false, loading = false, error: loadError = "", onCommand, onChat }) {
+function TaskBoard({ tasks = [], employees = [], members = [], projectId = "", workspaceRef = "", preview = false, loading = false, error: loadError = "", onCommand, onChat }) {
   const [selectedId, setSelectedId] = (0, import_react21.useState)("");
   const [tab, setTab] = (0, import_react21.useState)("detail");
   const [busy, setBusy] = (0, import_react21.useState)(false);
@@ -12630,16 +12814,21 @@ function TaskBoard({ tasks = [], employees = [], preview = false, loading = fals
     if (request) void send(request[0], request[1]);
   };
   const dialogSend = async (fields) => {
-    const command = dialog.kind === "submit" ? "task.submit" : dialog.kind === "reopen" ? "task.reopen" : dialog.kind === "fail" ? "run.fail" : "acceptance.decide";
+    const command = dialog.kind === "create" ? "task.create" : dialog.kind === "submit" ? "task.submit" : dialog.kind === "reopen" ? "task.reopen" : dialog.kind === "fail" ? "run.fail" : "acceptance.decide";
     const ok = await send(command, fields, "dialog");
     if (ok) {
       setDialog(null);
       setDialogError("");
+      setError("");
     }
   };
   return (0, import_react21.createElement)(TaskBoardView, {
     tasks,
     employees,
+    members,
+    projectId,
+    workspaceRef,
+    preview,
     selectedId,
     tab,
     busy,
@@ -12649,6 +12838,11 @@ function TaskBoard({ tasks = [], employees = [], preview = false, loading = fals
     draggingId,
     dropTarget,
     showCancelled,
+    onCreate: () => {
+      setDialogError("");
+      setError("");
+      setDialog({ kind: "create" });
+    },
     onToggleCancelled: () => setShowCancelled((value) => !value),
     onSelect: (id) => {
       setSelectedId(id);
@@ -12746,6 +12940,15 @@ var TASK_BOARD_CSS = `
 .bc-tb-modal{position:fixed;inset:0;z-index:1400;display:flex;align-items:center;justify-content:center;padding:24px;background:color-mix(in srgb,var(--bt-ink) 26%,transparent)}
 .bc-tb-modalcard{width:min(460px,100%);max-height:calc(100vh - 48px);overflow:auto;padding:16px;border:1px solid var(--bt-line-2);border-radius:12px;background:var(--bt-card);box-shadow:0 18px 48px -16px color-mix(in srgb,var(--bt-ink) 34%,transparent)}
 .bc-tb-checks{display:flex;flex-direction:column;gap:10px;padding:10px;border:1px dashed var(--bt-line-2);border-radius:8px}
+.bc-tb-headtools{display:flex;align-items:center;gap:8px;flex:none}
+.bc-tb-section{margin:16px 0 0;padding-top:12px;border-top:1px solid var(--bt-line)}
+.bc-tb-section h4{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--bt-ink-3);margin:0 0 6px}
+.bc-tb-acceptstate{display:inline-flex;margin:0 0 6px;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);font-size:11px;font-weight:700;padding:3px 7px}
+.bc-tb-opinion{margin:6px 0;font-size:12px;line-height:18px;white-space:pre-wrap;overflow-wrap:anywhere}
+.bc-tb-submissions{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+.bc-tb-submissions>li{padding:10px 12px;border:1px solid var(--bt-line);border-radius:8px;background:var(--bt-main)}
+.bc-tb-subsummary{margin:0 0 6px;font-size:13px;line-height:19px;white-space:pre-wrap;overflow-wrap:anywhere}
+.bc-tb-submissions .bc-tb-list li{display:block;padding:3px 0;border-top:0;font-size:12px;color:var(--bt-ink-2);overflow-wrap:anywhere}
 @container bc-tb (max-width:720px){.bc-tb-cols{display:none}.bc-tb-listview{display:block}}
 @media (max-width:720px){.bc-tb-detail{width:100%;border-left:0}.bc-taskboard{padding:14px}}
 `;
@@ -12772,6 +12975,10 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
   const [actionError, setActionError] = (0, import_react22.useState)("");
   const [selectedEmployee, setSelectedEmployee] = (0, import_react22.useState)("");
   const [pendingRemove, setPendingRemove] = (0, import_react22.useState)(null);
+  const [archiveOpen, setArchiveOpen] = (0, import_react22.useState)(false);
+  const [archiveBusy, setArchiveBusy] = (0, import_react22.useState)(false);
+  const [archiveError, setArchiveError] = (0, import_react22.useState)("");
+  const [archiveResult, setArchiveResult] = (0, import_react22.useState)(null);
   const run2 = async (command, fields = {}) => {
     if (busy || preview || !project) return;
     setBusy(true);
@@ -12815,11 +13022,42 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
     !project.workspace_ref ? t("set a workspace folder") : null
   ].filter(Boolean);
   const candidates = data.employees.filter((employee) => employee.status === "active" && (project.source_department_ids ?? []).includes(employee.department_id) && !members.some((member) => member.employee_id === employee.id && ["active", "invited", "archived_readonly"].includes(member.membership_status)) && !data.projects.some((item) => item.id === employee.project_id && ["active", "paused", "delivering"].includes(item.status)));
+  const openTasks = tasks.filter((task) => !["done", "cancelled"].includes(task.stage ?? task.status));
+  const pendingAcceptances = tasks.reduce((total, task) => total + (Array.isArray(task.acceptances) ? task.acceptances : task.acceptance ? [task.acceptance] : []).filter((record) => record.state === "pending").length, 0);
+  const canArchive = ["setup", "active", "paused"].includes(project.status) && !preview;
+  const archive = async () => {
+    if (archiveBusy) return;
+    setArchiveBusy(true);
+    setArchiveError("");
+    try {
+      const result = await onCommand("project.archive", { project_id: project.id });
+      setArchiveResult(result?.body ?? { unresolved: [] });
+    } catch (failure) {
+      setArchiveError(failure?.message ? String(failure.message) : t("The project could not be archived."));
+    } finally {
+      setArchiveBusy(false);
+    }
+  };
+  const unresolved = archiveResult?.unresolved ?? [];
   return (0, import_react22.createElement)(
     "article",
     { className: "bc-page" },
     (0, import_react22.createElement)("button", { type: "button", className: "bc-back", onClick: onBack }, `← ${t("All projects")}`),
-    (0, import_react22.createElement)("div", { className: "bc-row" }, (0, import_react22.createElement)("div", null, (0, import_react22.createElement)("span", { className: "bc-kicker" }, t("Workspace / Project")), (0, import_react22.createElement)("h1", { className: "bc-detail-title" }, project.name)), (0, import_react22.createElement)("span", { className: `bc-status bc-${project.status}` }, label(project.status))),
+    (0, import_react22.createElement)(
+      "div",
+      { className: "bc-row" },
+      (0, import_react22.createElement)("div", null, (0, import_react22.createElement)("span", { className: "bc-kicker" }, t("Workspace / Project")), (0, import_react22.createElement)("h1", { className: "bc-detail-title" }, project.name)),
+      (0, import_react22.createElement)(
+        "div",
+        { className: "bc-actions" },
+        (0, import_react22.createElement)("span", { className: `bc-status bc-${project.status}` }, label(project.status)),
+        canArchive ? (0, import_react22.createElement)("button", { type: "button", className: "bc-button bc-danger", disabled: busy || archiveBusy, onClick: () => {
+          setArchiveError("");
+          setArchiveResult(null);
+          setArchiveOpen(true);
+        } }, t("Archive project")) : null
+      )
+    ),
     (0, import_react22.createElement)(
       "div",
       { className: "bc-section" },
@@ -12902,12 +13140,61 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
       (0, import_react22.createElement)(TaskBoard, {
         tasks,
         employees: data.employees,
+        members,
+        projectId: project.id,
+        workspaceRef: project.workspace_ref ?? "",
         preview,
         error: tasksError,
         onCommand: onTaskCommand,
         onChat: () => onChat?.()
       })
-    )
+    ),
+    archiveOpen ? (0, import_react22.createElement)(
+      "div",
+      { className: "bc-tb-modal" },
+      (0, import_react22.createElement)(
+        "div",
+        { className: "bc-tb-modalcard", role: "dialog", "aria-modal": "true", "aria-label": t("Archive project") },
+        (0, import_react22.createElement)(
+          "header",
+          { className: "bc-co-pop-head" },
+          (0, import_react22.createElement)("strong", null, t("Archive project")),
+          (0, import_react22.createElement)("span", { className: "bc-co-pop-name" }, project.name),
+          (0, import_react22.createElement)("button", { type: "button", className: "bc-co-pop-close", "aria-label": t("Close"), disabled: archiveBusy, onClick: () => setArchiveOpen(false) }, "×")
+        ),
+        (0, import_react22.createElement)(
+          "div",
+          { className: "bc-co-create-fields" },
+          archiveResult ? (0, import_react22.createElement)("p", null, t("The project is archived. The group history stays available to read.")) : (0, import_react22.createElement)("p", null, t("This will close {tasks} unfinished tasks and {acceptances} pending acceptances.", { tasks: openTasks.length, acceptances: pendingAcceptances })),
+          archiveResult ? (0, import_react22.createElement)("p", { className: "bc-muted" }, t("Closed {tasks} tasks and {acceptances} acceptances. This cannot be undone.", { tasks: archiveResult.closed_tasks?.length ?? openTasks.length, acceptances: pendingAcceptances })) : (0, import_react22.createElement)("p", { className: "bc-muted" }, t("The project and its group history are kept. Nothing can be added after archiving, and this cannot be undone.")),
+          archiveResult && unresolved.length ? (0, import_react22.createElement)(
+            "div",
+            null,
+            (0, import_react22.createElement)("p", { className: "bc-detail-label" }, t("Closed on archive")),
+            (0, import_react22.createElement)("ul", { className: "bc-tb-list" }, unresolved.map((item, index) => (0, import_react22.createElement)(
+              "li",
+              { key: item.task_id ?? item.acceptance_id ?? index },
+              (0, import_react22.createElement)("span", null, item.kind === "acceptance" ? t("Acceptance: {title}", { title: item.title }) : item.title),
+              (0, import_react22.createElement)("span", null, item.stage ?? "")
+            )))
+          ) : null,
+          !archiveResult && openTasks.length ? (0, import_react22.createElement)(
+            "div",
+            null,
+            (0, import_react22.createElement)("p", { className: "bc-detail-label" }, t("Will be closed")),
+            (0, import_react22.createElement)("ul", { className: "bc-tb-list" }, openTasks.map((task) => (0, import_react22.createElement)("li", { key: task.id }, (0, import_react22.createElement)("span", null, task.title), (0, import_react22.createElement)("span", null, task.stage ?? task.status ?? ""))))
+          ) : null,
+          archiveError ? (0, import_react22.createElement)("p", { className: "bc-exception", role: "alert" }, archiveError) : null
+        ),
+        (0, import_react22.createElement)(
+          "div",
+          { className: "bc-co-create-actions" },
+          (0, import_react22.createElement)("span", { className: "bc-co-spacer" }),
+          archiveResult ? (0, import_react22.createElement)("button", { type: "button", className: "bc-button bc-primary", onClick: () => setArchiveOpen(false) }, t("Close")) : (0, import_react22.createElement)("button", { type: "button", className: "bc-button", disabled: archiveBusy, onClick: () => setArchiveOpen(false) }, t("Cancel")),
+          archiveResult ? null : (0, import_react22.createElement)("button", { type: "button", className: "bc-button bc-danger", disabled: archiveBusy || busy, onClick: () => void archive() }, archiveBusy ? t("Archiving…") : t("Archive project"))
+        )
+      )
+    ) : null
   );
 }
 
@@ -14436,11 +14723,17 @@ function CompanySurface({ page, actions, roster }) {
     setTasksError("");
     void Promise.all([
       call("company-command", { command: "task.list", payload: { project_id: selected, operation_key: `task-list-${freshKey()}` } }),
-      call("company-command", { command: "acceptance.list", payload: { project_id: selected, state: "pending", limit: 200, operation_key: `acceptance-list-${freshKey()}` } }).catch(() => null),
+      call("company-command", { command: "acceptance.list", payload: { project_id: selected, limit: 200, operation_key: `acceptance-list-${freshKey()}` } }).catch(() => null),
       call("company-command", { command: "run.list", payload: { project_id: selected, limit: 200, operation_key: `run-list-${freshKey()}` } }).catch(() => null)
     ]).then(([result, acceptanceResult, runResult]) => {
       if (controller.signal.aborted) return;
-      const pending = new Map((acceptanceResult?.body?.acceptances ?? []).filter((row) => row.task_id).map((row) => [row.task_id, row]));
+      const acceptancesByTask = /* @__PURE__ */ new Map();
+      for (const row of acceptanceResult?.body?.acceptances ?? []) {
+        if (!row?.task_id) continue;
+        const list = acceptancesByTask.get(row.task_id) ?? [];
+        list.push(row);
+        acceptancesByTask.set(row.task_id, list);
+      }
       const runsByTask = /* @__PURE__ */ new Map();
       for (const run2 of runResult?.body?.runs ?? []) {
         if (!run2?.task_id) continue;
@@ -14451,9 +14744,11 @@ function CompanySurface({ page, actions, roster }) {
       setTasks((result?.body?.tasks ?? []).map((task) => {
         const runs = runsByTask.get(task.id) ?? [];
         const latest = runs[0];
+        const acceptances = (acceptancesByTask.get(task.id) ?? []).slice().sort((left, right) => (right.decided_at ?? right.updated_at ?? 0) - (left.decided_at ?? left.updated_at ?? 0));
+        const pending = acceptances.find((record) => record.state === "pending");
         return {
           ...task,
-          ...pending.has(task.id) ? { acceptance: pending.get(task.id) } : {},
+          ...acceptances.length ? { acceptances, acceptance: pending ?? acceptances[0] } : {},
           ...runs.length ? { runs, ...latest?.state === "failed" ? { last_run_status: "failed" } : {} } : {}
         };
       }));
@@ -15616,6 +15911,10 @@ var PROJECT_CHAT_CSS = `
 header[class*="_header"]:has(.pc-head){position:absolute;top:0;left:0;right:0;z-index:8;display:flex;justify-content:center;padding:0;background:transparent;pointer-events:none;height:auto!important;overflow:visible!important}
 header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inset:0 0 auto;height:calc(100% + 26px);background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
 .pc-frame{position:relative;display:flex;flex-direction:column;width:100%;pointer-events:none}
+.pc-archived{position:absolute;top:54px;left:50%;transform:translateX(-50%);z-index:9;pointer-events:auto;max-width:calc(100% - 24px);padding:6px 12px;border:.5px solid var(--bt-line-2);border-radius:999px;background:var(--bt-card);color:var(--bt-ink-2);font:500 12px/18px var(--bt-font);box-shadow:0 2px 8px -2px color-mix(in srgb,var(--bt-ink) 12%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.bc-project-archived [data-composer-card]{opacity:.6}
+body.bc-project-archived [data-composer-input]{pointer-events:none;user-select:none}
+body.bc-project-archived [data-composer-card] button{pointer-events:none}
 .pc-host-head{position:absolute;top:0;left:0;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .pc-page{--pc-main:var(--bt-main);--pc-ring:var(--bt-line-2);--pc-ink-3:var(--bt-ink-3);position:relative;display:flex;flex-direction:column;min-height:0;flex:1;background:var(--bt-main);color:var(--bt-ink);font-family:var(--bt-font)}
 .pc-page *{box-sizing:border-box}
@@ -15744,6 +16043,37 @@ var loadProjectEvents = async (projectId) => {
   }
 };
 function ProjectChatSurface({ props, project, members, pendingCount, pinned, pending, activity, open, onOpenDetails, onClose, onOpenConfig }) {
+  const archived3 = project?.status === "archived";
+  (0, import_react29.useEffect)(() => {
+    if (!archived3) return void 0;
+    document.body.classList.add("bc-project-archived");
+    const input = document.querySelector("[data-composer-input]");
+    if (input) {
+      input.textContent = "";
+      input.setAttribute("contenteditable", "false");
+      input.setAttribute("aria-disabled", "true");
+    }
+    const guard2 = (event) => {
+      if (event.target?.closest?.("[data-composer-card], [data-composer-input], [data-lexical-editor], [data-composer-send]")) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    document.addEventListener("beforeinput", guard2, true);
+    document.addEventListener("keydown", guard2, true);
+    document.addEventListener("paste", guard2, true);
+    return () => {
+      document.body.classList.remove("bc-project-archived");
+      document.removeEventListener("beforeinput", guard2, true);
+      document.removeEventListener("keydown", guard2, true);
+      document.removeEventListener("paste", guard2, true);
+      const current = document.querySelector("[data-composer-input]");
+      if (current) {
+        current.setAttribute("contenteditable", "true");
+        current.removeAttribute("aria-disabled");
+      }
+    };
+  }, [archived3]);
   return (0, import_react29.createElement)(
     import_react29.Fragment,
     null,
@@ -15765,6 +16095,7 @@ function ProjectChatSurface({ props, project, members, pendingCount, pinned, pen
         onOpenConfig,
         expanded: open
       }),
+      archived3 ? (0, import_react29.createElement)("div", { className: "pc-archived", role: "status" }, t("Project archived. The group history stays available to read.")) : null,
       Number(pendingCount) > 0 ? (0, import_react29.createElement)("div", { className: "pc-pin-layer" }, (0, import_react29.createElement)(ProjectChatPinned, { count: pendingCount, items: Array.isArray(pinned) ? pinned : [] })) : null,
       open ? (0, import_react29.createElement)(ProjectChatDrawer, {
         projectName: project.name,

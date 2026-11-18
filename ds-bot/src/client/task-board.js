@@ -50,21 +50,43 @@ export const taskRevision = task => {
   return Number.isInteger(task?.revision) ? task.revision : 0
 }
 export const taskOwnerId = task => task.owner_employee_id ?? task.assignee_id ?? task.owner_id ?? ''
-export const taskOwnerName = (task, employees = []) => {
-  const owner = employees.find(employee => employee.id === taskOwnerId(task))
+export const taskOwnerName = (task, employees = [], members = []) => {
+  const direct = taskOwnerId(task)
+  const assignment = direct ? null : members.find(member => member.id === task.owner_assignment_id)
+  const employeeId = direct || assignment?.employee_id || ''
+  const owner = employees.find(employee => employee.id === employeeId)
   return owner?.name ?? task.owner_name ?? ''
 }
 export const taskDependencyCount = task => {
   if (Number.isInteger(task.dependency_count)) return task.dependency_count
   return Array.isArray(task.dependencies) ? task.dependencies.length : 0
 }
-export const taskArtifacts = task => task.submission?.artifact_refs ?? task.result_refs ?? task.artifacts ?? []
+// `task.list` answers with `submissions[]` and a flat `artifact_refs[]`; older
+// fixtures carried one `submission`. Read all three shapes without inventing one.
+export const taskSubmissions = task => (Array.isArray(task?.submissions) ? task.submissions.filter(Boolean) : task?.submission ? [task.submission] : [])
+export const taskArtifacts = task => {
+  const fromSubmissions = taskSubmissions(task).flatMap(submission => submission.artifact_refs ?? [])
+  const own = task?.artifact_refs ?? task?.result_refs ?? task?.artifacts
+  return Array.isArray(own) && own.length ? own : fromSubmissions
+}
 export const taskRuns = task => task.runs ?? task.history ?? []
-export const taskAcceptance = task => task.acceptance ?? task.acceptance_record ?? null
+export const taskAcceptances = task => (Array.isArray(task?.acceptances) ? task.acceptances.filter(Boolean) : task?.acceptance ? [task.acceptance] : [])
+export const taskAcceptance = task => taskAcceptances(task)
+  .map((record, index) => ({ record, index }))
+  .sort((left, right) => ((right.record.decided_at ?? right.record.updated_at ?? 0) - (left.record.decided_at ?? left.record.updated_at ?? 0)) || right.index - left.index)[0]?.record ?? null
 export const taskChecks = task => (Array.isArray(task?.acceptance_checks) ? task.acceptance_checks : [])
+export const acceptanceState = record => record?.state ?? (record?.decision === 'accept' ? 'accepted' : record?.decision === 'return' ? 'returned' : '')
+export const acceptanceStateLabel = record => {
+  const state = acceptanceState(record)
+  if (state === 'pending') return t('Waiting for acceptance')
+  if (state === 'accepted') return t('Accepted')
+  if (state === 'returned') return t('Returned')
+  if (state === 'cancelled') return record?.close_reason === 'project_archived' ? t('Closed with the project') : t('Cancelled')
+  return t('Not recorded yet')
+}
 export const acceptanceReady = task => {
   const record = taskAcceptance(task)
-  return Boolean(record?.id) && Number.isInteger(record?.revision)
+  return Boolean(record?.id) && Number.isInteger(record?.revision) && acceptanceState(record) === 'pending'
 }
 export const taskBadges = task => [
   task.waiting_on === 'approval' || task.waiting === 'approval' ? t('Waiting for approval') : null,
@@ -163,8 +185,8 @@ export const taskWhen = value => {
   return `${date.getMonth() + 1}/${date.getDate()}`
 }
 
-function TaskCard({ task, employees, selected, busy, dragging, ...handlers }) {
-  const owner = taskOwnerName(task, employees)
+function TaskCard({ task, employees, members, selected, busy, dragging, ...handlers }) {
+  const owner = taskOwnerName(task, employees, members)
   const badges = taskBadges(task)
   const dependencies = taskDependencyCount(task)
   const next = task.next_step ?? ''
@@ -211,7 +233,7 @@ function TaskCard({ task, employees, selected, busy, dragging, ...handlers }) {
   )
 }
 
-function TaskColumn({ column, tasks, employees, selectedId, busy, dropTarget, ...handlers }) {
+function TaskColumn({ column, tasks, employees, members, selectedId, busy, dropTarget, ...handlers }) {
   return h('section', {
     className: `bc-tb-col${dropTarget === column.status ? ' is-drop' : ''}`,
     'data-status': column.status,
@@ -228,7 +250,7 @@ function TaskColumn({ column, tasks, employees, selectedId, busy, dropTarget, ..
       h('strong', null, t(column.label)),
       h('span', { className: 'bc-tb-count' }, String(tasks.length))),
     h('div', { className: 'bc-tb-cards' }, tasks.map(task => h(TaskCard, {
-      key: task.id, task, employees, selected: selectedId === task.id, busy,
+      key: task.id, task, employees, members, selected: selectedId === task.id, busy,
       dragging: handlers.draggingId === task.id, onSelect: handlers.onSelect, onMoveTo: handlers.onMoveTo,
       onDragStart: handlers.onDragStart, onDragEnd: handlers.onDragEnd,
     }))),
@@ -236,11 +258,14 @@ function TaskColumn({ column, tasks, employees, selectedId, busy, dropTarget, ..
   )
 }
 
-function TaskDetail({ task, employees, tab, busy, error, onTab, onClose, onAction, onChat }) {
+function TaskDetail({ task, employees, members = [], tab, busy, error, onTab, onClose, onAction, onChat }) {
   const acceptance = taskAcceptance(task)
   const artifacts = taskArtifacts(task)
   const runs = taskRuns(task)
-  const owner = taskOwnerName(task, employees)
+  const submissions = taskSubmissions(task)
+  const checks = taskChecks(task)
+  const owner = taskOwnerName(task, employees, members)
+  const employeeName = id => employees.find(employee => employee.id === id)?.name ?? ''
   const stage = taskStage(task)
   const actions = []
   if (stage === 'draft') actions.push(['to-ready', t('Move to Ready')])
@@ -251,11 +276,11 @@ function TaskDetail({ task, employees, tab, busy, error, onTab, onClose, onActio
   const blocked = stage === 'review' && !acceptanceReady(task)
   const canFail = stage !== 'doing' || Boolean(task.latest_run_id)
   const rows = [
-    [t('Owner'), owner || t('Not assigned')],
+    [t('Assignee'), owner || t('Not assigned')],
     [t('Priority'), task.priority ? String(task.priority) : t('Not set')],
     [t('Dependencies'), taskDependencyCount(task) ? String(taskDependencyCount(task)) : t('None')],
     [t('Next step'), task.next_step || '—'],
-    [t('Acceptance'), acceptance ? t('Recorded') : t('Not recorded yet')],
+    [t('Acceptance state'), acceptanceStateLabel(acceptance)],
   ]
   return h('div', { className: 'bc-tb-detailwrap' },
     h('div', { className: 'bc-tb-detailmask', onClick: onClose }),
@@ -272,10 +297,25 @@ function TaskDetail({ task, employees, tab, busy, error, onTab, onClose, onActio
       tab === 'detail' ? h('div', { className: 'bc-tb-panel', role: 'tabpanel' },
         task.goal || task.description ? h('p', { className: 'bc-tb-doc' }, task.goal ?? task.description) : h('p', { className: 'bc-muted' }, t('No description yet.')),
         h('dl', { className: 'bc-tb-kv' }, rows.map(([label, value]) => h('div', { key: label }, h('dt', null, label), h('dd', null, value)))),
+        checks.length ? h('section', { className: 'bc-tb-section' },
+          h('h4', null, t('Acceptance checks')),
+          h('ul', { className: 'bc-tb-list' }, checks.map((check, index) => h('li', { key: index }, check)))) : null,
+        acceptance ? h('section', { className: 'bc-tb-section' },
+          h('h4', null, t('Acceptance record')),
+          h('p', { className: 'bc-tb-acceptstate' }, acceptanceStateLabel(acceptance)),
+          acceptance.acceptance_criteria ? h('p', { className: 'bc-muted' }, acceptance.acceptance_criteria) : null,
+          acceptance.opinion ? h('p', { className: 'bc-tb-opinion' }, acceptance.opinion) : null,
+          acceptance.decided_at ? h('p', { className: 'bc-muted' }, taskWhen(acceptance.decided_at)) : null) : null,
         blocked ? h('p', { className: 'bc-muted bc-tb-hint' }, t('This task has no acceptance record yet. Submit it for review, then accept it — Done cannot be reached by dragging.')) : null,
         stage === 'doing' && !task.latest_run_id ? h('p', { className: 'bc-muted bc-tb-hint' }, t('This task was moved to Doing without a dispatch, so there is no run to mark failed.')) : null) : null,
       tab === 'results' ? h('div', { className: 'bc-tb-panel', role: 'tabpanel' },
-        artifacts.length ? h('ul', { className: 'bc-tb-list' }, artifacts.map((artifact, index) => h('li', { key: artifact.id ?? artifact.path ?? index },
+        submissions.length ? h('ol', { className: 'bc-tb-submissions' }, submissions.map((submission, index) => h('li', { key: submission.id ?? index },
+          h('p', { className: 'bc-tb-subsummary' }, submission.summary || t('No summary.')),
+          Array.isArray(submission.check_notes) && submission.check_notes.length
+            ? h('ul', { className: 'bc-tb-list' }, submission.check_notes.map((note, position) => h('li', { key: position }, note))) : null,
+          Array.isArray(submission.artifact_refs) && submission.artifact_refs.length
+            ? h('ul', { className: 'bc-tb-list' }, submission.artifact_refs.map((ref, position) => h('li', { key: position }, h('code', null, String(ref))))) : null,
+          h('p', { className: 'bc-muted' }, [employeeName(submission.submitted_by_employee_id), submission.submitted_at ? taskWhen(submission.submitted_at) : ''].filter(Boolean).join(' · '))))) : artifacts.length ? h('ul', { className: 'bc-tb-list' }, artifacts.map((artifact, index) => h('li', { key: artifact.id ?? artifact.path ?? index },
           h('strong', null, artifact.name ?? artifact.title ?? artifact.path ?? String(artifact)),
           artifact.at || artifact.created_at ? h('span', null, taskWhen(artifact.at ?? artifact.created_at)) : null))) : h('p', { className: 'bc-muted' }, t('No results yet.'))) : null,
       tab === 'history' ? h('div', { className: 'bc-tb-panel', role: 'tabpanel' },
@@ -295,6 +335,63 @@ function TaskDetail({ task, employees, tab, busy, error, onTab, onClose, onActio
         onClick: () => onAction(action, task),
       }, label))) : null,
     ))
+}
+
+function TaskCreateDialog({ projectId, workspaceRef = '', employees = [], members = [], busy, error, onClose, onSend }) {
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [owner, setOwner] = useState('')
+  const [stage, setStage] = useState('draft')
+  const [checks, setChecks] = useState('')
+  const [scope, setScope] = useState(workspaceRef ?? '')
+  const checkList = checks.split('\n').map(line => line.trim()).filter(Boolean)
+  const ready = stage === 'ready'
+  const canCreate = Boolean(title.trim()) && title.trim().length <= 200 && (!ready || (owner && checkList.length > 0 && scope.trim()))
+  const send = () => {
+    if (!canCreate) return
+    onSend({
+      project_id: projectId,
+      title: title.trim(),
+      ...(description.trim() ? { description: description.trim() } : {}),
+      source_ref: `ui:${projectId}`,
+      stage,
+      ...(owner ? { owner_assignment_id: owner } : {}),
+      ...(checkList.length ? { acceptance_checks: checkList } : {}),
+      ...(scope.trim() ? { authorization_scope_ref: scope.trim() } : {}),
+    })
+  }
+  return h('div', { className: 'bc-tb-modal' },
+    h('div', { className: 'bc-tb-modalcard', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('New task') },
+      h('header', { className: 'bc-co-pop-head' },
+        h('strong', null, t('New task')),
+        h('span', { className: 'bc-co-pop-name' }, t('The card stays in the column you choose.')),
+        h('button', { type: 'button', className: 'bc-co-pop-close', 'aria-label': t('Close'), onClick: onClose }, '×')),
+      h('div', { className: 'bc-co-create-fields' },
+        h('label', { className: 'bc-field' }, h('span', null, t('Title')),
+          h('input', { value: title, maxLength: 200, onChange: event => setTitle(event.target.value) })),
+        h('label', { className: 'bc-field' }, h('span', null, t('Description')),
+          h('textarea', { rows: 3, maxLength: 4000, value: description, onChange: event => setDescription(event.target.value) })),
+        h('label', { className: 'bc-field' }, h('span', null, t('Create in')),
+          h('select', { value: stage, onChange: event => setStage(event.target.value) },
+            h('option', { value: 'draft' }, t('Draft')),
+            h('option', { value: 'ready' }, t('Ready')))),
+        h('label', { className: 'bc-field' }, h('span', null, t('Assignee')),
+          h('select', { value: owner, onChange: event => setOwner(event.target.value) },
+            h('option', { value: '' }, t('Not assigned')),
+            members.filter(member => member.membership_status === 'active' || member.status === 'active').map(member => h('option', { key: member.id, value: member.id }, employees.find(employee => employee.id === member.employee_id)?.name ?? member.name ?? member.employee_id)))),
+        h('label', { className: 'bc-field' }, h('span', null, t('Acceptance checks')),
+          h('textarea', { rows: 3, value: checks, placeholder: t('One check per line.'), onChange: event => setChecks(event.target.value) })),
+        h('label', { className: 'bc-field' }, h('span', null, t('Authorization scope')),
+          h('input', { value: scope, maxLength: 500, placeholder: t('Folder or reference the Bot may work in.'), onChange: event => setScope(event.target.value) })),
+        ready && !canCreate ? h('p', { className: 'bc-muted bc-tb-hint' }, t('A Ready card needs an owner, at least one acceptance check and an authorization scope.')) : null,
+        error ? h('p', { className: 'bc-exception', role: 'alert' }, error) : null,
+      ),
+      h('div', { className: 'bc-co-create-actions' },
+        h('span', { className: 'bc-co-spacer' }),
+        h('button', { type: 'button', className: 'bc-button', onClick: onClose }, t('Cancel')),
+        h('button', { type: 'button', className: 'bc-button bc-primary', disabled: busy || !canCreate, onClick: send },
+          busy ? t('Saving…') : t('Create task')))),
+  )
 }
 
 function TaskDialog({ dialog, busy, error, onClose, onSend }) {
@@ -358,19 +455,22 @@ function TaskDialog({ dialog, busy, error, onClose, onSend }) {
 }
 
 export function TaskBoardView({
-  tasks = [], employees = [], selectedId = '', tab = 'detail', busy = false, error = '', dialog = null, dialogError = '',
-  draggingId = '', dropTarget = '', showCancelled = false, onToggleCancelled, onSelect, onClose,
+  tasks = [], employees = [], members = [], projectId = '', workspaceRef = '', preview = false,
+  selectedId = '', tab = 'detail', busy = false, error = '', dialog = null, dialogError = '',
+  draggingId = '', dropTarget = '', showCancelled = false, onToggleCancelled, onCreate, onSelect, onClose,
   onTab, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop, onMoveTo, onAction, onChat,
   onDialogClose, onDialogSend,
 }) {
   const live = tasks.filter(task => taskStage(task) !== 'cancelled')
   const cancelled = tasks.filter(task => taskStage(task) === 'cancelled')
   const selected = tasks.find(task => task.id === selectedId) ?? null
-  const handlers = { employees, selectedId, busy, draggingId, dropTarget, onSelect, onMoveTo, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop }
+  const handlers = { employees, members, selectedId, busy, draggingId, dropTarget, onSelect, onMoveTo, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop }
   return h('section', { className: 'bc-taskboard' },
     h('div', { className: 'bc-tb-head' },
       h('div', null, h('h2', null, t('Tasks')), h('p', { className: 'bc-sub' }, t('Drag a card to ask for a new status. The board does not move it until the service agrees.'))),
-      h('button', { type: 'button', className: 'bc-chip', 'aria-pressed': showCancelled ? 'true' : 'false', onClick: onToggleCancelled }, t('Show cancelled'))),
+      h('div', { className: 'bc-tb-headtools' },
+        h('button', { type: 'button', className: 'bc-button bc-primary', disabled: preview || !onCreate, onClick: onCreate }, t('New task')),
+        h('button', { type: 'button', className: 'bc-chip', 'aria-pressed': showCancelled ? 'true' : 'false', onClick: onToggleCancelled }, t('Show cancelled')))),
     error ? h('p', { className: 'bc-exception', role: 'alert' }, error) : null,
     h('div', { className: 'bc-tb-cols' }, TASK_COLUMNS.map(column => h(TaskColumn, {
       key: column.status, column, tasks: live.filter(task => taskStage(task) === column.status), ...handlers,
@@ -387,12 +487,14 @@ export function TaskBoardView({
       h('h3', null, t('Cancelled')),
       cancelled.map(task => h('button', { key: task.id, type: 'button', className: 'bc-tb-listrow', onClick: () => onSelect(task.id) },
         h('strong', null, task.title), h('span', null, taskWhen(task.updated_at))))) : null,
-    selected ? h(TaskDetail, { task: selected, employees, tab, busy, error, onTab, onClose, onAction, onChat }) : null,
-    dialog ? h(TaskDialog, { dialog, busy, error: dialogError, onClose: onDialogClose, onSend: onDialogSend }) : null,
+    selected ? h(TaskDetail, { task: selected, employees, members, tab, busy, error, onTab, onClose, onAction, onChat }) : null,
+    dialog ? (dialog.kind === 'create'
+      ? h(TaskCreateDialog, { projectId, workspaceRef, employees, members, busy, error: dialogError, onClose: onDialogClose, onSend: onDialogSend })
+      : h(TaskDialog, { dialog, busy, error: dialogError, onClose: onDialogClose, onSend: onDialogSend })) : null,
   )
 }
 
-export function TaskBoard({ tasks = [], employees = [], preview = false, loading = false, error: loadError = '', onCommand, onChat }) {
+export function TaskBoard({ tasks = [], employees = [], members = [], projectId = '', workspaceRef = '', preview = false, loading = false, error: loadError = '', onCommand, onChat }) {
   const [selectedId, setSelectedId] = useState('')
   const [tab, setTab] = useState('detail')
   const [busy, setBusy] = useState(false)
@@ -451,13 +553,14 @@ export function TaskBoard({ tasks = [], employees = [], preview = false, loading
     if (request) void send(request[0], request[1])
   }
   const dialogSend = async fields => {
-    const command = dialog.kind === 'submit' ? 'task.submit' : dialog.kind === 'reopen' ? 'task.reopen' : dialog.kind === 'fail' ? 'run.fail' : 'acceptance.decide'
+    const command = dialog.kind === 'create' ? 'task.create' : dialog.kind === 'submit' ? 'task.submit' : dialog.kind === 'reopen' ? 'task.reopen' : dialog.kind === 'fail' ? 'run.fail' : 'acceptance.decide'
     const ok = await send(command, fields, 'dialog')
-    if (ok) { setDialog(null); setDialogError('') }
+    if (ok) { setDialog(null); setDialogError(''); setError('') }
   }
   return h(TaskBoardView, {
-    tasks, employees, selectedId, tab, busy, error: error || loadError, dialog, dialogError,
+    tasks, employees, members, projectId, workspaceRef, preview, selectedId, tab, busy, error: error || loadError, dialog, dialogError,
     draggingId, dropTarget, showCancelled,
+    onCreate: () => { setDialogError(''); setError(''); setDialog({ kind: 'create' }) },
     onToggleCancelled: () => setShowCancelled(value => !value),
     onSelect: id => { setSelectedId(id); setTab('detail'); setError('') },
     onClose: () => { setSelectedId(''); setError('') },
@@ -538,6 +641,15 @@ export const TASK_BOARD_CSS = `
 .bc-tb-modal{position:fixed;inset:0;z-index:1400;display:flex;align-items:center;justify-content:center;padding:24px;background:color-mix(in srgb,var(--bt-ink) 26%,transparent)}
 .bc-tb-modalcard{width:min(460px,100%);max-height:calc(100vh - 48px);overflow:auto;padding:16px;border:1px solid var(--bt-line-2);border-radius:12px;background:var(--bt-card);box-shadow:0 18px 48px -16px color-mix(in srgb,var(--bt-ink) 34%,transparent)}
 .bc-tb-checks{display:flex;flex-direction:column;gap:10px;padding:10px;border:1px dashed var(--bt-line-2);border-radius:8px}
+.bc-tb-headtools{display:flex;align-items:center;gap:8px;flex:none}
+.bc-tb-section{margin:16px 0 0;padding-top:12px;border-top:1px solid var(--bt-line)}
+.bc-tb-section h4{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--bt-ink-3);margin:0 0 6px}
+.bc-tb-acceptstate{display:inline-flex;margin:0 0 6px;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);font-size:11px;font-weight:700;padding:3px 7px}
+.bc-tb-opinion{margin:6px 0;font-size:12px;line-height:18px;white-space:pre-wrap;overflow-wrap:anywhere}
+.bc-tb-submissions{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+.bc-tb-submissions>li{padding:10px 12px;border:1px solid var(--bt-line);border-radius:8px;background:var(--bt-main)}
+.bc-tb-subsummary{margin:0 0 6px;font-size:13px;line-height:19px;white-space:pre-wrap;overflow-wrap:anywhere}
+.bc-tb-submissions .bc-tb-list li{display:block;padding:3px 0;border-top:0;font-size:12px;color:var(--bt-ink-2);overflow-wrap:anywhere}
 @container bc-tb (max-width:720px){.bc-tb-cols{display:none}.bc-tb-listview{display:block}}
 @media (max-width:720px){.bc-tb-detail{width:100%;border-left:0}.bc-taskboard{padding:14px}}
 `

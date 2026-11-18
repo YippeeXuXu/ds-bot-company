@@ -126,3 +126,38 @@ test('a legacy member role reads as text and can still be removed', () => {
   assert.match(text(tree), /member · Active/)
   assert.ok(button(tree, 'Remove member'), 'the row still offers the hand-over')
 })
+
+test('archiving asks once and spells out what will close', () => {
+  mount({
+    tasks: [
+      { id: 't1', title: '画草图', stage: 'doing' },
+      { id: 't2', title: '写文案', stage: 'ready' },
+      { id: 't3', title: '已交的活', stage: 'review', acceptance: { id: 'acc_1', state: 'pending', revision: 1 } },
+    ],
+  })
+  click(button(tree, 'Archive project'))
+  const panel = text(tree)
+  assert.match(panel, /This will close 3 unfinished tasks and 1 pending acceptances/)
+  assert.match(panel, /Nothing can be added after archiving/)
+  assert.match(panel, /画草图/)
+  assert.match(panel, /写文案/)
+})
+
+test('confirming archive reports what the service closed', async () => {
+  const commands = []
+  mount({
+    tasks: [{ id: 't1', title: '画草图', stage: 'doing' }],
+    onCommand: (command, fields) => {
+      commands.push([command, fields])
+      return Promise.resolve({ body: { unresolved: [{ kind: 'task', task_id: 't1', title: '画草图', stage: 'doing' }], closed_tasks: [{ task_id: 't1' }] } })
+    },
+  })
+  click(button(tree, 'Archive project'))
+  const confirm = buttons(tree).filter(item => text(item).includes('Archive project')).pop()
+  click(confirm)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(JSON.parse(JSON.stringify(commands)), [['project.archive', { project_id: 'prj_1' }]])
+  assert.match(text(tree), /The project is archived/)
+  assert.match(text(tree), /Closed 1 tasks/)
+  assert.match(text(tree), /画草图/)
+})

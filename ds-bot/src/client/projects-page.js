@@ -147,22 +147,26 @@ export function CompanySurface({ page, actions, roster }) {
     setTasks([])
     setTasksError('')
     // Tasks live behind their own read command: the project answer does not carry the
-    // board, and the board must tell an empty project from a failed read. A reviewed card
-    // needs its pending acceptance to offer Accept/Return, and a Doing card needs its runs
-    // to show execution history and offer run.fail, so two extra reads attach the records
-    // by task id; either read failing leaves the board usable, only that part locked.
+    // board, and the board must tell an empty project from a failed read. A Review card
+    // needs its pending acceptance to offer Accept/Return, a Done card needs the accepted
+    // or returned record it ended on, and a Doing card needs its runs; the extra reads
+    // attach both histories by task id, and either failing leaves only that part locked.
     void Promise.all([
       call('company-command', { command: 'task.list', payload: { project_id: selected, operation_key: `task-list-${freshKey()}` } }),
-      call('company-command', { command: 'acceptance.list', payload: { project_id: selected, state: 'pending', limit: 200, operation_key: `acceptance-list-${freshKey()}` } })
+      call('company-command', { command: 'acceptance.list', payload: { project_id: selected, limit: 200, operation_key: `acceptance-list-${freshKey()}` } })
         .catch(() => null),
       call('company-command', { command: 'run.list', payload: { project_id: selected, limit: 200, operation_key: `run-list-${freshKey()}` } })
         .catch(() => null),
     ])
       .then(([result, acceptanceResult, runResult]) => {
         if (controller.signal.aborted) return
-        const pending = new Map((acceptanceResult?.body?.acceptances ?? [])
-          .filter(row => row.task_id)
-          .map(row => [row.task_id, row]))
+        const acceptancesByTask = new Map()
+        for (const row of acceptanceResult?.body?.acceptances ?? []) {
+          if (!row?.task_id) continue
+          const list = acceptancesByTask.get(row.task_id) ?? []
+          list.push(row)
+          acceptancesByTask.set(row.task_id, list)
+        }
         const runsByTask = new Map()
         for (const run of runResult?.body?.runs ?? []) {
           if (!run?.task_id) continue
@@ -173,9 +177,13 @@ export function CompanySurface({ page, actions, roster }) {
         setTasks((result?.body?.tasks ?? []).map(task => {
           const runs = runsByTask.get(task.id) ?? []
           const latest = runs[0]
+          const acceptances = (acceptancesByTask.get(task.id) ?? [])
+            .slice()
+            .sort((left, right) => (right.decided_at ?? right.updated_at ?? 0) - (left.decided_at ?? left.updated_at ?? 0))
+          const pending = acceptances.find(record => record.state === 'pending')
           return {
             ...task,
-            ...(pending.has(task.id) ? { acceptance: pending.get(task.id) } : {}),
+            ...(acceptances.length ? { acceptances, acceptance: pending ?? acceptances[0] } : {}),
             ...(runs.length ? { runs, ...(latest?.state === 'failed' ? { last_run_status: 'failed' } : {}) } : {}),
           }
         }))

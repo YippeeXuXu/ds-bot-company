@@ -191,7 +191,7 @@ test('the four stage words come from the stage, and cancelled keeps the word it 
 })
 
 test('submit, reopen and acceptance payloads only carry what the contract asks for', () => {
-  const item = { id: 't1', task_revision: 9, acceptance: { id: 'acc_1', revision: 2 } }
+  const item = { id: 't1', task_revision: 9, acceptance: { id: 'acc_1', revision: 2, state: 'pending' } }
   assert.deepEqual(plain(taskSubmitCommand(item, { summary: '做完了', artifacts: ['a.md'], notes: ['过了'] })),
     { task_id: 't1', expected_revision: 9, summary: '做完了', artifact_refs: ['a.md'], check_notes: ['过了'] })
   assert.deepEqual(plain(taskReopenCommand(item, '验收标准变了')), { task_id: 't1', expected_revision: 9, reason: '验收标准变了' })
@@ -273,6 +273,7 @@ test('task.list returns stage, and the board places it without a status field', 
 test('helpers tolerate the contract arriving in older shapes', () => {
   assert.equal(taskOwnerName({ assignee_id: 'emp_2' }, employees), '橙子')
   assert.equal(taskOwnerName({ owner_name: '小蓝' }), '小蓝')
+  assert.equal(taskOwnerName({ owner_assignment_id: 'pmm_2' }, employees, [{ id: 'pmm_2', employee_id: 'emp_2' }]), '橙子')
   assert.equal(taskDependencyCount({ dependencies: [1, 2, 3] }), 3)
   assert.equal(taskDependencyCount({}), 0)
   assert.deepEqual(plain(taskBadges({ waiting_on: 'input' })), ['Waiting for input'])
@@ -297,4 +298,47 @@ test('narrow containers switch to a list instead of squeezing the columns', () =
   assert.match(TASK_BOARD_CSS, /\.bc-tb-listview\{display:block\}/)
   const tree = view()
   assert.equal(byClass(tree, 'bc-tb-listrow').length, 5)
+})
+
+test('a done card shows the submissions that ended it, not an empty results tab', () => {
+  const done = task({
+    id: 'task_done', stage: 'done',
+    submissions: [
+      { task_revision: 4, summary: '首屏骨架排完了', artifact_refs: ['/tmp/skeleton.md'], check_notes: ['布局一致'], submitted_by_employee_id: 'emp_1', submitted_at: 1795006274047 },
+      { task_revision: 6, summary: '间距改成 24', artifact_refs: ['/tmp/skeleton-v2.md'], check_notes: ['24/24 对齐'], submitted_by_employee_id: 'emp_1', submitted_at: 1795006279147 },
+    ],
+    artifact_refs: ['/tmp/skeleton.md', '/tmp/skeleton-v2.md'],
+  })
+  const tree = view({ tasks: [done], selectedId: 'task_done', tab: 'results' })
+  const panel = text(tree)
+  assert.match(panel, /首屏骨架排完了/)
+  assert.match(panel, /间距改成 24/)
+  assert.match(panel, /\/tmp\/skeleton-v2.md/)
+  assert.match(panel, /键盘/)
+  assert.doesNotMatch(panel, /No results yet/)
+})
+
+test('a done card shows its acceptance record and checks in the detail tab', () => {
+  const done = task({
+    id: 'task_done', stage: 'done', acceptance_checks: ['布局与草图一致'],
+    acceptances: [{ id: 'acc_1', task_id: 'task_done', state: 'accepted', acceptance_criteria: '布局与草图一致', opinion: '间距核对通过', decided_at: 1795006279160, revision: 2 }],
+  })
+  const tree = view({ tasks: [done], selectedId: 'task_done', tab: 'detail' })
+  const panel = text(tree)
+  assert.match(panel, /布局与草图一致/)
+  assert.match(panel, /间距核对通过/)
+  assert.match(panel, /Accepted/)
+})
+
+test('a new task form asks for the scope and checks a Ready card needs', () => {
+  const tree = view({ dialogue: null, dialog: { kind: 'create' }, projectId: 'prj_1', workspaceRef: '/work/prj_1' })
+  const labels = collect(tree, node => node.type === 'label').map(text)
+  assert.ok(labels.some(value => /Title/.test(value)))
+  assert.ok(labels.some(value => /Acceptance checks/.test(value)))
+  assert.ok(labels.some(value => /Authorization scope/.test(value)))
+  const scope = collect(tree, node => node.type === 'input' && node.props.value === '/work/prj_1')
+  assert.equal(scope.length, 1)
+  const create = button(tree, 'Create task')
+  assert.ok(create)
+  assert.equal(create.props.disabled, true)
 })
