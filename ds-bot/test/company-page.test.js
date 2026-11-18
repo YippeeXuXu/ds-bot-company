@@ -155,15 +155,29 @@ test('an employee line shows the initial, the name and the role, and opens the p
   assert.deepEqual(chat, ['emp_1'])
 })
 
-test('an employee without a Bot stays focusable, says it is disabled, and opens nothing', () => {
+test('an employee without a Bot is not shown as disabled; a click explains why no chat opens', () => {
   const chat = []
-  const tree = view({ data: model({ employees: [employee({ bot_id: null })] }), onOpenEmployee: item => chat.push(item.id) })
+  const hints = []
+  const tree = view({ data: model({ employees: [employee({ bot_id: null })] }), onOpenEmployee: item => chat.push(item.id), onChatHint: text => hints.push(text) })
   const row = byClass(tree, 'bc-co-emp')[0]
-  assert.equal(row.props['aria-disabled'], 'true')
+  assert.equal(row.props['aria-disabled'], undefined)
+  assert.equal(String(row.props.className).includes('is-disabled'), false)
   assert.equal(row.props.tabIndex, 0)
   assert.equal(row.props.title, 'This employee has no Bot yet.')
   click(row)
   assert.deepEqual(chat, [])
+  assert.deepEqual(hints, ['This employee has no Bot yet.'])
+})
+
+test('a dismissed employee keeps the dismissed word but is not greyed out as disabled', () => {
+  const hints = []
+  const tree = view({ openDept: 'dep_1', data: model({ employees: [employee({ status: 'disabled' })] }), onChatHint: text => hints.push(text) })
+  const drawer = byClass(tree, 'bc-co-row')[0]
+  assert.equal(drawer.props['aria-disabled'], undefined)
+  assert.equal(String(drawer.props.className).includes('is-disabled'), false)
+  assert.match(text(drawer), /Dismissed employee/)
+  click(drawer)
+  assert.deepEqual(hints, ['This employee is dismissed. Reactivate them in the company chart first.'])
 })
 
 test('a company read that fails keeps the page and retries in place', () => {
@@ -325,11 +339,16 @@ test('a refused dismissal names the work to hand over and opens each place', () 
     onOpenDepartmentRef: id => went.push(['department', id]), onOpenProjectRef: id => went.push(['project', id]) })
   const refs = byClass(tree, 'bc-co-refs')[0]
   assert.match(text(refs), /研发部 · Department lead/)
-  assert.match(text(refs), /官网改版 · Coordinator、Independent acceptor/)
-  const [departmentButton, projectButton] = buttons(refs)
+  assert.match(text(refs), /官网改版 · Coordinator/)
+  assert.match(text(refs), /官网改版 · Independent acceptor/)
+  const [departmentButton, coordinatorButton, acceptorButton] = buttons(refs)
+  assert.match(text(departmentButton), /Open department settings/)
+  assert.match(text(coordinatorButton), /Change in the member area/)
+  assert.match(text(acceptorButton), /Change in the project editor/)
   click(departmentButton)
-  click(projectButton)
-  assert.deepEqual(went, [['department', 'dep_1'], ['project', 'prj_1']])
+  click(coordinatorButton)
+  click(acceptorButton)
+  assert.deepEqual(went, [['department', 'dep_1'], ['project', 'prj_1'], ['project', 'prj_1']])
 })
 
 
