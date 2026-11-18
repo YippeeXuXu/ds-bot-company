@@ -600,8 +600,8 @@ test('M1c: the archive handler reports what it closed to logs and tests, not to 
 
   // The separate list is what a log or a test reads; body and event keep the three arrays.
   assert.deepEqual(outcome.closed_acceptances, ['acc_pending'])
-  assert.deepEqual(Object.keys(outcome.body).sort(), ['archived_members', 'left_members', 'project', 'suspended_employees'])
-  assert.deepEqual(Object.keys(outcome.events[0].data).sort(), ['archived_members', 'left_members', 'suspended_employees'])
+  assert.deepEqual(Object.keys(outcome.body).sort(), ['archived_members', 'closed_tasks', 'group', 'left_members', 'project', 'suspended_employees', 'unresolved'])
+  assert.deepEqual(Object.keys(outcome.events[0].data).sort(), ['archived_members', 'closed_tasks', 'group', 'left_members', 'suspended_employees'])
   assert.equal(outcome.body.project.status, 'archived')
   assert.equal(state.acceptances.acc_pending.state, 'cancelled')
   assert.equal(state.acceptances.acc_pending.close_reason, 'project_archived')
