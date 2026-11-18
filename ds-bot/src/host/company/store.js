@@ -14,12 +14,12 @@ import { join } from 'node:path'
 import { replaceFile } from '../files.js'
 import { homeLock } from '../home-lock.js'
 
-export const COMPANY_VERSION = 4
+export const COMPANY_VERSION = 5
 // v1 files carry the same six tables; v2 adds the two to-do tables; v3 adds the employee
 // templates; v4 adds the project task table. An older file is read as the current version
 // in memory (revision untouched) and saved back as v4 on the next commit; `migration`
 // reports that upgrade once, so the caller can record one `company/migrated` event.
-const READABLE_VERSIONS = [1, 2, 3, 4]
+const READABLE_VERSIONS = [1, 2, 3, 4, 5]
 
 // Error codes follow the plugin's `area/kind` shape, so the HTTP layer (M1a-5) can turn
 // them into status codes without matching on message text.
@@ -44,10 +44,11 @@ export const emptyCompanyState = () => ({
   templates: {},
   // v4: project tasks (M1b-3.3), one row per card on a project's board.
   tasks: {},
+  runs: {},
 })
 
 const isTable = value => value !== null && typeof value === 'object' && !Array.isArray(value)
-const TABLES = ['companies', 'departments', 'employees', 'projects', 'members', 'operation_log', 'acceptances', 'todo_log', 'templates', 'tasks']
+const TABLES = ['companies', 'departments', 'employees', 'projects', 'members', 'operation_log', 'acceptances', 'todo_log', 'templates', 'tasks', 'runs']
 
 // A file written by a newer plugin is not a file this version can edit: its tables may
 // mean something else, so it counts as corrupt rather than being rewritten in the old

@@ -44,7 +44,7 @@ const MOVES = {
 
 const isTable = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 
-const text = (value, field, max = 120) => {
+export const text = (value, field, max = 120) => {
   const trimmed = typeof value === 'string' ? value.trim() : ''
   if (trimmed === '') throw companyFail('company/invalid', `${field} is required.`, { field })
   if (trimmed.length > max) throw companyFail('company/invalid', `${field} is longer than ${max} characters.`, { field, max })
@@ -53,7 +53,7 @@ const text = (value, field, max = 120) => {
 
 // Absent stays null: a screen has to tell "not filled in" from "". A wrong type is refused
 // rather than coerced, so a number in a text column never quietly becomes "42".
-const optionalText = (value, field, max = 2000) => {
+export const optionalText = (value, field, max = 2000) => {
   if (value === undefined || value === null) return null
   if (typeof value !== 'string') throw companyFail('company/invalid', `${field} must be text.`, { field })
   if (value.trim() === '') return null
@@ -75,7 +75,7 @@ const revisionOf = (payload) => {
   return payload.expected_revision
 }
 
-const projectOf = (state, id, { writable = true } = {}) => {
+export const projectOf = (state, id, { writable = true } = {}) => {
   const key = typeof id === 'string' ? id.trim() : ''
   if (key === '') throw companyFail('company/invalid', 'project_id is required.', { field: 'project_id' })
   const project = state.projects[key]
@@ -86,7 +86,7 @@ const projectOf = (state, id, { writable = true } = {}) => {
   return project
 }
 
-const taskOf = (state, id) => {
+export const taskOf = (state, id) => {
   const key = typeof id === 'string' ? id.trim() : ''
   if (key === '') throw companyFail('company/invalid', 'task_id is required.', { field: 'task_id' })
   const task = state.tasks?.[key]
@@ -94,7 +94,7 @@ const taskOf = (state, id) => {
   return task
 }
 
-const memberOf = (state, projectId, assignmentId, field) => {
+export const memberOf = (state, projectId, assignmentId, field) => {
   const id = text(assignmentId, field, 120)
   const member = state.members[id]
   if (member === undefined || member.project_id !== projectId || member.membership_status !== 'active') {
@@ -103,7 +103,7 @@ const memberOf = (state, projectId, assignmentId, field) => {
   return member
 }
 
-const employeeOf = (state, id, field) => {
+export const employeeOf = (state, id, field) => {
   const employee = state.employees[text(id, field, 120)]
   if (employee === undefined) throw companyFail('employee/not-found', `No employee ${id}.`, { field })
   if (employee.status !== 'active') throw companyFail('employee/inactive', `Employee ${employee.name} is not active.`, { field, employee_id: employee.id })
@@ -212,12 +212,12 @@ const holdFor = (state, task) => {
   return unmet ? 'dependency' : 'none'
 }
 
-const unmetDependencies = (state, task) => (task.dependencies ?? [])
+export const unmetDependencies = (state, task) => (task.dependencies ?? [])
   .map(id => state.tasks?.[id])
   .filter(dependency => dependency !== undefined && dependency.stage !== 'done')
   .map(dependency => ({ task_id: dependency.id, title: dependency.title, stage: dependency.stage }))
 
-const bump = (task, now) => {
+export const bump = (task, now) => {
   task.task_revision += 1
   task.updated_at = now()
 }

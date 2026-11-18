@@ -172,7 +172,7 @@ test('a version 3 company file is migrated once and its templates topped up (M1b
     try {
       const current = JSON.parse(readFileSync(stateFile, 'utf8'))
       const events = readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean)
-      return current.version === 4 && Object.keys(current.templates).length === 9 && events.length === 2
+      return current.version === 5 && Object.keys(current.templates).length === 9 && events.length === 2
     } catch {
       return false
     }
@@ -182,11 +182,11 @@ test('a version 3 company file is migrated once and its templates topped up (M1b
   assert.equal(Object.keys(saved.templates).length, 9)
   assert.equal(Object.values(saved.templates).every(template => template.source === 'builtin' && template.company_id === 'cmp_1'), true)
   // An upgrade is not a company change: a client's expected_revision still matches.
-  assert.equal(saved.version, 4)
+  assert.equal(saved.version, 5)
   assert.equal(saved.revision, 5)
   const events = readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
   assert.deepEqual(events.map(event => event.type), ['company/migrated', 'company/builtin-templates-seeded'])
-  assert.deepEqual(events[0].data, { from: 3, to: 4 })
+  assert.deepEqual(events[0].data, { from: 3, to: 5 })
   assert.deepEqual(events[1].data, { count: 9 })
   rt.company.close()
 
