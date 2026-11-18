@@ -17,6 +17,7 @@ import { spawnHandlers } from './spawn.js'
 import { companyFail, createCompanyStore } from './store.js'
 import { templateHandlers } from './templates.js'
 import { nameProblem } from '../../shared/mentions.js'
+import { templateIoHandlers } from './template-io.js'
 
 // The roster side of a project group. `members` returns undefined when the group is gone,
 // which is how the project commands tell "missing" from "drifted".
@@ -101,6 +102,7 @@ export function install(rt) {
       // The profile is written by the same handler `employee.create` uses, so the
       // one-active-profile rule and the role lists have one implementation.
       ...spawnHandlers({ roster: botRoster(rt, warn), createEmployee: org['employee.create'], warn }),
+      ...templateIoHandlers(),
     },
   })
   const execute = commands.execute

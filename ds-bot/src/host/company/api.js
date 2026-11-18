@@ -58,6 +58,9 @@ const STATUS = new Map([
   ['employee/capability-missing', 422],
   ['employee/capability-failed', 422],
   ['employee/bot-create-failed', 422],
+  // Template files (M1b-3.5): one bad row refuses the whole file, so a half-imported set of
+  // jobs never looks like success on the second profile.
+  ['template/import-invalid', 422],
   ['employee.bot_already_employed', 409],
   ['project/member-exists', 409],
   ['project/member-busy', 409],

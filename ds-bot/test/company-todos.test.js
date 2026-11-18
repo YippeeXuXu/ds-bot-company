@@ -494,8 +494,18 @@ test('A10: a writable install saves a v1 file back once, with one migration even
   const rt = rtOf()
   install(rt)
   const stateFile = join(home, 'company', 'state.json')
+  const eventsFile = join(home, 'company', 'events.jsonl')
+  const eventCount = () => {
+    try {
+      return readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean).length
+    } catch {
+      return 0
+    }
+  }
+  // The state file is written just before the migration event is appended; waiting on the
+  // version alone can read the event log mid-upgrade while the suite runs its files at once.
   const deadline = Date.now() + 2000
-  while (Date.now() < deadline && JSON.parse(readFileSync(stateFile, 'utf8')).version !== 3) {
+  while (Date.now() < deadline && !(JSON.parse(readFileSync(stateFile, 'utf8')).version === 3 && eventCount() === 1)) {
     await new Promise(resolve => setTimeout(resolve, 10))
   }
   const saved = JSON.parse(readFileSync(stateFile, 'utf8'))
@@ -503,7 +513,6 @@ test('A10: a writable install saves a v1 file back once, with one migration even
   assert.equal(saved.revision, 7)
   assert.deepEqual(saved.acceptances, {})
   assert.deepEqual(saved.templates, {})
-  const eventsFile = join(home, 'company', 'events.jsonl')
   const events = readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
   assert.deepEqual(events.map(event => event.type), ['company/migrated'])
   assert.deepEqual(events[0].data, { from: 1, to: 3 })
