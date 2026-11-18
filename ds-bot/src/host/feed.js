@@ -20,12 +20,21 @@ export function install(rt) {
   const encoder = new TextEncoder()
   /** @type {Set<ReadableStreamDefaultController<Uint8Array>>} */
   const clients = new Set()
+  /** @type {Map<ReadableStreamDefaultController<Uint8Array>, Request>} */
+  const requests = new Map()
+  // A Request's signal is a dependent signal and is only linked to its source while
+  // the Request exists. The host may not keep the Request alive once the response
+  // starts, so keep it here until the stream closes; otherwise aborting the window
+  // never reaches the feed and the stream does not end.
   const send = (controller, chunk) => {
     if ((controller.desiredSize ?? 0) < -MAX_QUEUED) {
       leave(controller)
       return
     }
-    try { controller.enqueue(chunk) } catch { clients.delete(controller) }
+    try { controller.enqueue(chunk) } catch {
+      clients.delete(controller)
+      requests.delete(controller)
+    }
   }
   const publish = (event, data) => {
     const chunk = encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
@@ -77,6 +86,7 @@ export function install(rt) {
   })
 
   const leave = (controller) => {
+    requests.delete(controller)
     clients.delete(controller)
     if (clients.size === 0) writing.clear()
     try { controller.close() } catch { /* already closed or errored */ }
@@ -96,6 +106,7 @@ export function install(rt) {
         },
         cancel() { leave(controller) },
       })
+      requests.set(controller, request)
       request.signal.addEventListener('abort', () => leave(controller), { once: true })
       return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store' } })
     },
