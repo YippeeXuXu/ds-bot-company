@@ -1,6 +1,6 @@
 // Generated from src/client by `npm run build` (scripts/build-client.mjs). Do not edit by hand.
 window.__ModuleLoader__.load({
-  id: 'ds-bot',
+  id: 'ds-company',
   factory: (require) => {
 const module = { exports: {} }
 var __create = Object.create;
@@ -18593,7 +18593,7 @@ function FeedbackPage({ actions, run: run2, Section, Row: Row3 }) {
     }));
   };
   const downloadLog = () => run2(actions.diagnosticsLog().then((text) => {
-    download("ds-bot-diagnostics.log", text || "No entries.\n");
+    download("ds-company-diagnostics.log", text || "No entries.\n");
     setNote(t("Downloaded the log. Keys, tokens, and your home folder are hidden in it."));
   }));
   const clearLog = () => run2(actions.diagnosticsClear().then(clearClientErrors).then(load).then(() => setNote(t("Cleared the error log."))));

@@ -14,6 +14,9 @@ import { build } from 'esbuild'
 
 const PLUGIN = dirname(dirname(fileURLToPath(import.meta.url)))
 const OUTPUT = join(PLUGIN, 'client.js')
+// The loader looks the factory up by the package name, so the wrapper reads it from there
+// instead of repeating a literal a rename would leave behind.
+const { name: PACKAGE_NAME } = JSON.parse(readFileSync(join(PLUGIN, 'package.json'), 'utf8'))
 const PLATFORM_MODULES = ['react', 'react-dom', '@deepseek-ai/dsh-client-ui-primitives']
 
 export async function bundleClient() {
@@ -37,7 +40,7 @@ export async function bundleClient() {
   return [
     '// Generated from src/client by `npm run build` (scripts/build-client.mjs). Do not edit by hand.',
     'window.__ModuleLoader__.load({',
-    '  id: \'ds-bot\',',
+    `  id: '${PACKAGE_NAME}',`,
     '  factory: (require) => {',
     'const module = { exports: {} }',
     result.outputFiles[0].text.trimEnd(),

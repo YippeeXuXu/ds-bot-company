@@ -5,6 +5,9 @@ import { runInNewContext } from 'node:vm'
 import { bundleClient } from '../scripts/build-client.mjs'
 
 const committed = () => readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+// The loader finds the factory by the package name; a rename must not leave the wrapper
+// registering under the old one.
+const packageName = () => JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).name
 
 test('client.js is the build of src/client', async () => {
   assert.equal(await bundleClient(), committed(), 'client.js is stale: run `npm run build` and commit it')
@@ -17,7 +20,7 @@ test('client.js registers a factory that exports apply and inject', () => {
   runInNewContext(committed(), { window: { __ModuleLoader__: { load: registration => registrations.push(registration) } } })
   assert.equal(registrations.length, 1)
   const [{ id, factory, ...rest }] = registrations
-  assert.equal(id, 'ds-bot')
+  assert.equal(id, packageName())
   assert.deepEqual(Object.keys(rest), [])
 
   const requested = []
