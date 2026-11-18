@@ -10,7 +10,7 @@ import { build } from 'esbuild'
 const PLUGIN = dirname(dirname(fileURLToPath(import.meta.url)))
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { CompanyPage, CompanyPageView, COMPANY_PAGE_CSS, botOpenable } from './src/client/company-page.js'\nexport { COMPANY_CSS } from './src/client/projects-page.js'",
+    contents: "export { CompanyPageView, COMPANY_PAGE_CSS, botOpenable } from './src/client/company-page.js'",
     resolveDir: PLUGIN,
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -24,9 +24,9 @@ const react = {
   useRef: current => ({ current }),
 }
 const module = { exports: {} }
-const sandbox = { module, exports: module.exports, require: name => (name === 'react' ? react : {}) }
+const sandbox = { module, exports: module.exports, require: name => (name === 'react' ? react : {}), window: {} }
 runInNewContext(outputFiles[0].text, sandbox)
-const { CompanyPage, CompanyPageView, COMPANY_PAGE_CSS, COMPANY_CSS, botOpenable } = module.exports
+const { CompanyPageView, COMPANY_PAGE_CSS, botOpenable } = module.exports
 
 const text = node => {
   if (node === null || node === undefined || node === false || node === true) return ''
@@ -43,11 +43,11 @@ const collect = (node, predicate, found = []) => {
   return found
 }
 const buttons = tree => collect(tree, node => node.type === 'button')
-const button = (tree, label) => buttons(tree).find(item => text(item) === label)
+const button = (tree, label) => buttons(tree).find(item => text(item).includes(label))
+const byClass = (tree, name) => collect(tree, node => String(node.props?.className ?? '').split(' ').includes(name))
 const click = node => node.props.onClick?.({ preventDefault() {}, stopPropagation() {} })
-const key = (node, name) => node.props.onKeyDown?.({ key: name, preventDefault() {}, stopPropagation() {} })
 
-const department = (patch = {}) => ({ id: 'dep_1', company_id: 'co_1', name: '工程部', description: '', chat_ref: null, status: 'active', created_at: 1, ...patch })
+const department = (patch = {}) => ({ id: 'dep_1', company_id: 'co_1', name: '工程部', description: '', chat_ref: null, status: 'active', lead_employee_id: null, created_at: 1, ...patch })
 const employee = (patch = {}) => ({ id: 'emp_1', company_id: 'co_1', bot_id: 'bot_1', department_id: 'dep_1', name: '键盘', role: '前端', acceptance_role: null, status: 'active', project_id: 'prj_1', ...patch })
 const project = (patch = {}) => ({ id: 'prj_1', company_id: 'co_1', name: '官网改版', status: 'active', created_at: 2, ...patch })
 const model = (patch = {}) => ({
@@ -57,342 +57,197 @@ const model = (patch = {}) => ({
   projects: [project()],
   ...patch,
 })
+const roster = { ready: true, byId: { bot_1: { id: 'bot_1', name: '键盘' } }, roomsById: {} }
 
-const view = (patch = {}) => CompanyPageView({
+const props = (patch = {}) => ({
   data: model(),
   loading: false,
   error: '',
-  todos: { counts: { waiting_total: 0 }, todos: [], read_at: null },
-  todoLoading: false,
-  todoError: '',
-  tab: 'overview',
-  deptId: null,
-  chain: null,
-  overflow: false,
-  wrapRef: { current: null },
-  tabRefs: { current: new Map() },
-  deptButtons: { current: new Map() },
-  backRef: { current: null },
-  onSelectTab() {},
-  onTabKey() {},
-  onShowDept() {},
-  onBackToOrg() {},
-  onChain() {},
+  roster,
+  openDept: null,
+  creating: null,
+  pan: { x: 0, y: 0 },
+  dragging: false,
+  canCreate: true,
+  canEdit: true,
+  draftName: '',
+  draftBot: '',
+  draftDept: 'dep_1',
+  draftRole: 'executor',
+  draftBusy: false,
+  draftError: '',
   onOpenEmployee() {},
+  onOpenDept() {},
+  onCloseDept() {},
+  onCreateOpen() {},
+  onCloseCreate() {},
+  onCreate() {},
+  onSetLead() {},
+  onOpenProjects() {},
   onRetry() {},
-  onRetryTodos() {},
   ...patch,
 })
+const view = (patch = {}) => CompanyPageView(props(patch))
 
-const cls = node => String(node.props?.className ?? '').split(/\s+/)
-const has = (node, name) => cls(node).includes(name)
-const cards = tree => collect(tree, node => node.type === 'div' && has(node, 'bc-co-stat'))
-const tabs = tree => collect(tree, node => node.props?.role === 'tab')
-const tablist = tree => collect(tree, node => node.props?.role === 'tablist')[0]
-const panels = (tree, name) => collect(tree, node => node.props?.['aria-labelledby'] === name)
-const chainNodes = tree => buttons(tree).filter(item => has(item, 'bc-co-node'))
-const allNodes = tree => collect(tree, node => has(node, 'bc-co-node'))
-
-test('two tabs only, in order, both in the Tab order and announcing their panel', () => {
+test('the header names the page, counts the workspace, and only offers creation when it can write', () => {
   const tree = view()
-  const list = tabs(tree)
-  assert.deepEqual(list.map(item => text(item)), ['Overview', 'Organization'])
-  assert.deepEqual(list.map(item => item.props['aria-selected']), ['true', 'false'])
-  assert.deepEqual(list.map(item => item.props.tabIndex), [0, 0])
-  assert.match(tablist(tree).props['aria-label'], /Company sections/)
-  assert.equal(panels(tree, 'bc-co-tab-overview').length, 1)
+  const head = byClass(tree, 'bc-co-head')[0]
+  assert.match(text(head), /Company/)
+  assert.match(text(head), /1 departments · 1 employees · 1 projects · 1 in progress/)
+  const opened = []
+  click(button(tree, 'New department'))
+  const readOnly = view({ canCreate: false })
+  assert.equal(byClass(readOnly, 'bc-co-actions').length, 0)
+  assert.equal(byClass(readOnly, 'bc-co-head').length, 1)
 })
 
-test('left and right arrows switch tabs, and only those two keys do', () => {
-  let next = null
-  const tree = view({ tab: 'overview', onSelectTab: value => { next = value } })
-  key(tablist(tree), 'ArrowRight')
-  assert.equal(next, 'org')
-  next = null
-  key(tablist(tree), 'ArrowLeft')
-  assert.equal(next, 'org')
-  next = null
-  key(tablist(tree), 'ArrowDown')
-  assert.equal(next, null)
-  key(tablist(tree), 'Enter')
-  assert.equal(next, null)
+test('the create buttons ask the surface for the right panel', () => {
+  const asked = []
+  const tree = view({ onCreateOpen: kind => asked.push(kind) })
+  click(button(tree, 'New department'))
+  click(button(tree, 'New employee'))
+  assert.deepEqual(asked, ['department', 'employee'])
 })
 
-test('the overview shows the four counts in the copy-spec order', () => {
-  const tree = view({ todos: { counts: { waiting_total: 2 } }, data: model({
-    departments: [department(), department({ id: 'dep_2', name: '设计部', created_at: 2 })],
-    employees: [employee(), employee({ id: 'emp_2', name: '橙子', project_id: null }), employee({ id: 'emp_3', name: '小蓝', project_id: null, department_id: 'dep_2' })],
-    projects: [project(), project({ id: 'prj_2', status: 'setup' }), project({ id: 'prj_3', status: 'archived' })],
-  }) })
-  const list = cards(tree)
-  assert.equal(list.length, 4)
-  assert.deepEqual(list.map(card => text(collect(card, node => node.type === 'span' && /bc-co-stat-label/.test(node.props.className))[0])),
-    ['Waiting for you', 'Projects in progress', 'Departments', 'Employees'])
-  assert.match(text(list[0]), /2/)
-  assert.match(text(list[0]), /Includes approvals and acceptances/)
-  assert.match(text(list[1]), /^Projects in progress1$/)
-  assert.match(text(list[2]), /^Departments2$/)
-  assert.match(text(list[3]), /3/)
-  assert.match(text(list[3]), /2 outside projects/)
-})
-
-test('a decided count of zero drops the sub-line and the accent', () => {
-  const tree = view({ data: model({}, {}) , todos: { counts: { waiting_total: 0 } } })
-  const first = cards(tree)[0]
-  assert.equal(first.props.className.includes('is-strong'), false)
-  assert.doesNotMatch(text(first), /Includes approvals and acceptances/)
-  assert.match(text(first), /^Waiting for you0$/)
-})
-
-test('a failed decision count dims only its own card and offers a retry there', () => {
-  let retried = 0
-  const tree = view({ todoError: 'network down', onRetryTodos: () => { retried += 1 } })
-  assert.equal(collect(tree, node => node.props?.role === 'alert').length, 0, 'no page-level error for one route')
-  const first = cards(tree)[0]
-  assert.match(text(first), /Waiting for you—/)
-  assert.doesNotMatch(text(first), /0/)
-  assert.equal(cards(tree).length, 4, 'the other three cards keep their numbers')
-  assert.match(text(cards(tree)[1]), /Projects in progress1/)
-  click(button(first, 'Could not read. Click to try again.'))
-  assert.equal(retried, 1)
-})
-
-test('the four cards sit in the Tab order and open nothing', () => {
+test('the old tab strip is gone: departments and staff live on one canvas', () => {
   const tree = view()
-  for (const card of cards(tree)) {
-    assert.equal(card.props.tabIndex, 0)
-    assert.equal(card.type, 'div', 'a card is not a button: it has no destination yet')
-    assert.equal(card.props.onClick, undefined)
-  }
+  assert.equal(byClass(tree, 'bc-co-tab').length, 0)
+  assert.equal(byClass(tree, 'bc-co-stat').length, 0)
+  assert.equal(byClass(tree, 'bc-co-canvas').length, 1)
+  assert.equal(byClass(tree, 'bc-co-cols').length, 1)
 })
 
-test('a failed company read keeps the header and tabs, and retries in place', () => {
-  let retried = 0
-  const tree = view({ error: 'network down', onRetry: () => { retried += 1 } })
-  assert.match(text(tree), /Company information could not be loaded\./)
-  assert.match(text(tree), /network down/)
-  assert.equal(tabs(tree).length, 2)
+test('the company node leads the chart and offers the project list', () => {
+  const tree = view()
+  assert.match(text(byClass(tree, 'bc-co-co-card')[0]), /小晚科技/)
+  const opened = []
+  const link = view({ onOpenProjects: () => opened.push(1) })
+  click(button(link, 'View projects'))
+  assert.equal(opened.length, 1)
+})
+
+test('a department card carries its name, group state, lead and staff count', () => {
+  const card = byClass(view(), 'bc-co-dept')[0]
+  assert.match(text(card), /工程部/)
+  assert.match(text(card), /Not built/)
+  assert.match(text(card), /No lead yet · 1 people/)
+  const led = view({ data: model({ departments: [department({ lead_employee_id: 'emp_1' })] }) })
+  assert.match(text(byClass(led, 'bc-co-dept')[0]), /Lead 键盘 · 1 people/)
+})
+
+test('the card name is the keyboard entry and opens the overview in place', () => {
+  const opened = []
+  const tree = view({ onOpenDept: id => opened.push(id) })
+  const name = byClass(tree, 'bc-co-dept-name')[0]
+  assert.equal(name.props['aria-expanded'], 'false')
+  click(name)
+  assert.deepEqual(opened, ['dep_1'])
+  const open = view({ openDept: 'dep_1' })
+  assert.equal(byClass(open, 'bc-co-dept-name')[0].props['aria-expanded'], 'true')
+})
+
+test('an employee line shows the initial, the name and the role, and opens the private chat', () => {
+  const chat = []
+  const tree = view({ onOpenEmployee: item => chat.push(item.id) })
+  const row = byClass(tree, 'bc-co-emp')[0]
+  assert.equal(row.props['aria-label'], 'Employee: 键盘, 前端')
+  assert.equal(text(byClass(row, 'bc-co-face')[0]), '键')
+  click(row)
+  assert.deepEqual(chat, ['emp_1'])
+})
+
+test('an employee without a Bot stays focusable, says it is disabled, and opens nothing', () => {
+  const chat = []
+  const tree = view({ data: model({ employees: [employee({ bot_id: null })] }), onOpenEmployee: item => chat.push(item.id) })
+  const row = byClass(tree, 'bc-co-emp')[0]
+  assert.equal(row.props['aria-disabled'], 'true')
+  assert.equal(row.props.tabIndex, 0)
+  assert.equal(row.props.title, 'This employee has no Bot yet.')
+  click(row)
+  assert.deepEqual(chat, [])
+})
+
+test('a company read that fails keeps the page and retries in place', () => {
+  const retried = []
+  const tree = view({ error: 'boom', onRetry: () => retried.push(1) })
+  assert.equal(collect(tree, node => node.props?.role === 'alert').length, 1)
+  assert.match(text(tree), /boom/)
   click(button(tree, 'Try again'))
-  assert.equal(retried, 1)
+  assert.equal(retried.length, 1)
 })
 
 test('loading and "no company yet" are separate states, never the same words', () => {
   const loading = view({ loading: true })
   assert.equal(collect(loading, node => node.props?.role === 'status').length, 1)
-  assert.doesNotMatch(text(loading), /No company information yet/)
-  const empty = view({ data: model({ company: null }) })
+  assert.equal(byClass(loading, 'bc-co-canvas').length, 0)
+  const empty = view({ data: { company: null, departments: [], employees: [], projects: [] } })
   assert.match(text(empty), /No company information yet/)
-  assert.equal(collect(empty, node => node.props?.role === 'alert').length, 0)
+  assert.equal(collect(empty, node => node.props?.role === 'status').length, 0)
 })
 
-test('the chart runs company, department, its employees, then the next department', () => {
-  const tree = view({ tab: 'org', data: model({
-    departments: [department(), department({ id: 'dep_2', name: '设计部', created_at: 3, chat_ref: 'room_1' })],
-    employees: [
-      employee({ id: 'emp_1', name: '键盘', department_id: 'dep_1' }),
-      employee({ id: 'emp_2', name: '橙子', department_id: 'dep_2', project_id: null }),
-      employee({ id: 'emp_3', name: '白菜', department_id: 'dep_1', project_id: null }),
-    ],
-  }) })
-  const nodes = allNodes(tree)
-  assert.deepEqual(nodes.map(item => collect(item, node => node.type === 'strong').map(text).join('')), ['小晚科技', '工程部', '键盘', '白菜', '设计部', '橙子'])
-  assert.deepEqual(nodes.map(item => item.type), ['div', 'button', 'button', 'button', 'button', 'button'])
-  assert.match(text(nodes[0]), /小晚科技2 departments · 3 employees · 1 active projects/)
-  assert.equal(nodes[0].props.tabIndex, undefined, 'the company node is a label, not a Tab stop')
-  assert.equal(nodes[0].props.onClick, undefined, 'and it opens nothing')
-  assert.match(nodes[1].props['aria-label'], /Department: 工程部, 2 people/)
-  assert.match(text(nodes[1]), /2 people · Department group not bound/)
-  assert.match(text(nodes[4]), /1 people · Department group bound/)
-  assert.equal(nodes[2].props.tabIndex, 0, 'every node stays reachable from the keyboard')
-})
-
-test('the Tab order starts at the first department, not at the company label', () => {
-  const stops = chainNodes(view({ tab: 'org' }))
-  assert.equal(has(stops[0], 'bc-co-dept'), true, 'the first Tab stop is the department')
-  assert.equal(stops.some(item => has(item, 'bc-co-company')), false)
-})
-
-test('an empty department keeps its head and says so out of the Tab order', () => {
-  const tree = view({ tab: 'org', data: model({ employees: [] }) })
-  assert.match(text(tree), /No employees yet/)
-  const none = collect(tree, node => has(node, 'bc-co-none'))[0]
-  assert.equal(none.type, 'span', 'the empty line is not a focus stop')
-})
-
-test('no departments at all is an empty state, not a broken chart', () => {
-  const tree = view({ tab: 'org', data: model({ departments: [], employees: [] }) })
-  assert.match(text(tree), /No departments yet/)
-  assert.match(text(tree), /Employees get a department once departments exist\./)
-  assert.equal(chainNodes(tree).length, 0)
-})
-
-test('archived departments, employees and projects stay out of the chart and the counts', () => {
-  const tree = view({ tab: 'org', data: model({
-    departments: [department(), department({ id: 'dep_2', name: '旧部门', status: 'archived' })],
-    employees: [employee(), employee({ id: 'emp_2', name: '旧人', status: 'archived' })],
-    projects: [project(), project({ id: 'prj_2', name: '旧项目', status: 'archived' })],
-  }) })
-  const body = text(tree)
-  assert.doesNotMatch(body, /旧部门/)
-  assert.doesNotMatch(body, /旧人/)
-  assert.match(body, /1 departments · 1 employees · 1 active projects/)
-})
-
-test('the employee line carries the role only when there is one, then the project', () => {
-  const withRole = view({ tab: 'org' })
-  assert.match(text(withRole), /键盘前端 · Project: 官网改版/)
-  const noRole = view({ tab: 'org', data: model({ employees: [employee({ role: null })] }) })
-  assert.match(text(noRole), /键盘Project: 官网改版/)
-  assert.doesNotMatch(text(noRole), /未分配|Not assigned/)
-  const outside = view({ tab: 'org', data: model({ employees: [employee({ project_id: null })] }) })
-  assert.match(text(outside), /键盘前端 · Outside projects/)
-  const missing = view({ tab: 'org', data: model({ employees: [employee({ project_id: 'prj_gone' })] }) })
-  assert.match(text(missing), /Project information missing/)
-  const archived = view({ tab: 'org', data: model({ employees: [employee({ project_id: 'prj_2' })], projects: [project(), project({ id: 'prj_2', name: '旧项目', status: 'archived' })] }) })
-  assert.match(text(archived), /Project: 旧项目 \(archived\)/)
-})
-
-test('an employee without a Bot stays focusable, announces itself as disabled, and opens nothing', () => {
-  let opened = 0
-  const tree = view({ tab: 'org', data: model({ employees: [employee({ bot_id: null })] }), onOpenEmployee: () => { opened += 1 } })
-  const node = buttons(tree).find(item => has(item, 'bc-co-emp'))
-  assert.equal(node.type, 'button')
-  assert.equal(node.props.disabled, undefined, 'native disabled would drop it out of the Tab order')
-  assert.equal(node.props['aria-disabled'], 'true')
-  assert.equal(node.props.tabIndex, 0)
-  assert.equal(node.props.title, 'This employee has no Bot yet.')
-  click(node)
-  assert.equal(opened, 0)
-})
-
-test('a bound Bot the roster cannot resolve takes the same disabled shape with its own title', () => {
-  let opened = 0
-  const tree = view({ tab: 'org', roster: { ready: true, byId: {} }, onOpenEmployee: () => { opened += 1 } })
-  const node = buttons(tree).find(item => has(item, 'bc-co-emp'))
-  assert.equal(node.props['aria-disabled'], 'true')
-  assert.equal(node.props.tabIndex, 0)
-  assert.equal(node.props.title, 'This employee cannot open a private chat right now.')
-  click(node)
-  assert.equal(opened, 0)
-})
-
-test('a roster that is still assembling is not a verdict, so nothing flashes disabled', () => {
-  assert.equal(botOpenable(employee(), { ready: false, byId: {} }), true, 'not ready is not "unknown Bot"')
-  assert.equal(botOpenable(employee(), undefined), true)
-  assert.equal(botOpenable(employee(), { ready: true, byId: { bot_1: { id: 'bot_1' } } }), true)
-  assert.equal(botOpenable(employee(), { ready: true, byId: {} }), false)
-  assert.equal(botOpenable(employee({ bot_id: null }), { ready: false, byId: {} }), false, 'no Bot is never openable')
-  const opening = view({ tab: 'org', roster: { ready: false, byId: {} } })
-  const node = buttons(opening).find(item => has(item, 'bc-co-emp'))
-  assert.equal(node.props['aria-disabled'], undefined)
-  assert.equal(node.props.title, 'Chat privately with 键盘')
-})
-
-test('an employee with a Bot opens the private chat', () => {
-  const opened = []
-  const tree = view({ tab: 'org', onOpenEmployee: item => opened.push(item) })
-  const node = buttons(tree).find(item => has(item, 'bc-co-emp'))
-  assert.equal(node.props['aria-disabled'], undefined)
-  assert.equal(node.props.title, 'Chat privately with 键盘')
-  click(node)
-  assert.equal(opened.length, 1)
-  assert.equal(opened[0].bot_id, 'bot_1')
-})
-
-test('a department node opens the department page on activation', () => {
-  let opened = null
-  const tree = view({ tab: 'org', onShowDept: id => { opened = id } })
-  click(buttons(tree).find(item => has(item, 'bc-co-dept')))
-  assert.equal(opened, 'dep_1')
-})
-
-test('hovering or focusing a branch lights only that chain', () => {
-  const chains = []
-  const tree = view({ tab: 'org', onChain: value => chains.push(value) })
-  const departmentNode = buttons(tree).find(item => has(item, 'bc-co-dept'))
-  departmentNode.props.onMouseEnter()
-  departmentNode.props.onFocus()
-  departmentNode.props.onMouseLeave()
-  departmentNode.props.onBlur()
-  assert.deepEqual(chains, ['dep_1', 'dep_1', null, null])
-  const lit = view({ tab: 'org', chain: 'dep_1' })
-  const chart = collect(lit, node => has(node, 'bc-co'))[0]
-  assert.match(chart.props.className, /is-dim/)
-  const nodes = allNodes(lit)
-  assert.match(nodes[1].props.className, /is-lit/)
-  assert.match(nodes[2].props.className, /is-lit/)
-  assert.equal(nodes[0].props.className.includes('is-lit'), true, 'the company end of the chain stays lit')
-})
-
-test('a narrow chart says how to reach the rest, and only when it really overflows', () => {
-  assert.doesNotMatch(text(view({ tab: 'org' })), /Scroll sideways/)
-  assert.match(text(view({ tab: 'org', overflow: true })), /Scroll sideways on a narrow screen to see the whole structure\./)
-  assert.match(COMPANY_PAGE_CSS, /\.bc-co\{[^}]*min-width:720px/)
-  assert.match(COMPANY_PAGE_CSS, /\.bc-co-branch::before\{[^}]*height:1px/, 'a line joins each department row to the company node')
-  assert.doesNotMatch(COMPANY_PAGE_CSS, /bc-co-pill/, 'the department header pill is gone')
-  assert.match(COMPANY_PAGE_CSS, /\.bc-co-wrap\{[^}]*overflow-x:auto/)
-  assert.match(COMPANY_CSS, /^\n?\.bc-co-page/, 'the page styles ship with the surface styles')
-})
-
-test('the department page shows the group state, the staff, and nothing it cannot fill', () => {
-  let back = 0
-  const tree = view({ tab: 'org', deptId: 'dep_1', onBackToOrg: () => { back += 1 }, data: model({
-    departments: [department({ chat_ref: 'room_1' })],
-    employees: [employee({ name: '键盘' }), employee({ id: 'emp_2', name: '橙子', role: null, project_id: null })],
-  }) })
-  assert.match(text(tree), /工程部/)
-  assert.match(text(tree), /2 people/)
-  assert.match(text(tree), /Department group bound/)
-  assert.doesNotMatch(text(tree), /Linked/, 'the header does not repeat the group state')
-  assert.doesNotMatch(text(tree), /Not bound yet/)
-  assert.match(text(tree), /键盘前端 · Project: 官网改版/)
-  assert.match(text(tree), /橙子Outside projects/)
-  assert.doesNotMatch(text(tree), /Owner|Capability|Memory keeper/)
-  assert.equal(collect(tree, node => node.type === 'h3').length, 2, 'only the group and employee blocks exist')
-  click(button(tree, '←'))
-  assert.equal(back, 1)
-})
-
-test('the department page reads the project the same way the chart does', () => {
-  const tree = view({ tab: 'org', deptId: 'dep_1', data: model({
-    employees: [employee({ project_id: 'prj_2' }), employee({ id: 'emp_2', name: '橙子', project_id: 'prj_gone' })],
-    projects: [project(), project({ id: 'prj_2', name: '旧项目', status: 'archived' })],
-  }) })
-  assert.match(text(tree), /Project: 旧项目 \(archived\)/)
-  assert.match(text(tree), /Project information missing/)
-})
-
-test('a department that vanished from the read model says so and offers the way back', () => {
-  let back = 0
-  const tree = view({ tab: 'org', deptId: 'dep_gone', onBackToOrg: () => { back += 1 } })
-  assert.match(text(tree), /This department no longer exists\./)
-  click(button(tree, 'Back to organization'))
-  assert.equal(back, 1)
-})
-
-test('the department page keeps its employees openable, including the ones without a Bot', () => {
-  const opened = []
-  const tree = view({ tab: 'org', deptId: 'dep_1', data: model({ employees: [employee({ bot_id: null })] }), onOpenEmployee: item => opened.push(item) })
-  const row = buttons(tree).find(item => has(item, 'bc-co-row'))
-  assert.equal(row.props['aria-disabled'], 'true')
-  assert.equal(row.props.tabIndex, 0)
-  click(row)
-  assert.equal(opened.length, 0)
-})
-
-test('the stateful page opens on the overview and reads the decision count through the surface', () => {
-  const tree = CompanyPage({
-    data: model(),
-    loading: false,
-    error: '',
-    todos: { counts: { waiting_total: 3 } },
-    todoLoading: false,
-    todoError: '',
-    escapeGuard: { current: null },
-    onRetry() {},
-    onRetryTodos() {},
-    onOpenEmployee() {},
+test('archived departments and staff stay off the canvas and out of the count', () => {
+  const tree = view({
+    data: model({
+      departments: [department(), department({ id: 'dep_2', name: '旧部', status: 'archived' })],
+      employees: [employee(), employee({ id: 'emp_2', name: '旧人', status: 'archived' })],
+    }),
   })
-  assert.match(text(tree), /Waiting for you3/)
-  assert.deepEqual(tabs(tree).map(item => item.props['aria-selected']), ['true', 'false'])
+  assert.equal(byClass(tree, 'bc-co-dept').length, 1)
+  assert.match(text(byClass(tree, 'bc-co-head')[0]), /1 departments · 1 employees/)
+})
+
+test('an empty department keeps its head and says so', () => {
+  const tree = view({ data: model({ departments: [department(), department({ id: 'dep_2', name: '设计部' })] }) })
+  assert.equal(byClass(tree, 'bc-co-none').length, 1)
+  assert.match(text(byClass(tree, 'bc-co-none')[0]), /No employees yet/)
+})
+
+test('the overview lists the lead as a choice among the department staff', () => {
+  const tree = view({ openDept: 'dep_1' })
+  const pop = byClass(tree, 'bc-co-pop')[0]
+  assert.equal(pop.props['aria-label'], 'Department overview: 工程部')
+  const select = collect(pop, node => node.type === 'select')[0]
+  assert.equal(select.props.value, '')
+  assert.equal(select.props['aria-label'], 'Lead of 工程部')
+  assert.deepEqual(collect(select, node => node.type === 'option').map(option => text(option)), ['No lead assigned', '键盘'])
+  assert.match(text(pop), /Department group not bound/)
+  assert.match(text(pop), /1 people/)
+})
+
+test('the overview only reads who leads when the page cannot write', () => {
+  const tree = view({ openDept: 'dep_1', canEdit: false, data: model({ departments: [department({ lead_employee_id: 'emp_1' })] }) })
+  const pop = byClass(tree, 'bc-co-pop')[0]
+  assert.equal(collect(pop, node => node.type === 'select').length, 0)
+  assert.match(text(pop), /键盘/)
+})
+
+test('the overview says when a department has nobody to lead or show', () => {
+  const tree = view({ openDept: 'dep_1', data: model({ employees: [] }) })
+  const pop = byClass(tree, 'bc-co-pop')[0]
+  assert.match(text(pop), /This department has no employees yet\./)
+  assert.equal(collect(pop, node => node.type === 'option').length, 1)
+})
+
+test('the create panel asks for a name for a department and for a Bot when hiring', () => {
+  const newDept = view({ creating: 'department' })
+  const panel = byClass(newDept, 'bc-co-create')[0]
+  assert.equal(panel.props.role, 'dialog')
+  assert.match(text(panel), /Department name/)
+  const hire = view({ creating: 'employee' })
+  assert.match(text(byClass(hire, 'bc-co-create')[0]), /Bot/)
+})
+
+test('the stylesheet lays the canvas out as five columns that narrow with the viewport', () => {
+  assert.match(COMPANY_PAGE_CSS, /\.bc-co-canvas/)
+  assert.match(COMPANY_PAGE_CSS, /radial-gradient/)
+  assert.match(COMPANY_PAGE_CSS, /\.bc-co-cols\{[^}]*repeat\(5,minmax\(0,1fr\)\)/)
+  assert.match(COMPANY_PAGE_CSS, /@media \(max-width:1180px\)/)
+  assert.match(COMPANY_PAGE_CSS, /@media \(max-width:860px\)/)
+})
+
+test('botOpenable: no Bot, an unresolved roster and a ready roster each read differently', () => {
+  assert.equal(botOpenable(employee({ bot_id: null }), roster), false)
+  assert.equal(botOpenable(employee(), { ready: false, byId: {} }), true)
+  assert.equal(botOpenable(employee(), roster), true)
+  assert.equal(botOpenable(employee(), { ready: true, byId: {} }), false)
 })

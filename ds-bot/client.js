@@ -1228,6 +1228,29 @@ Object.assign(ZH, HOST_ZH, {
   Projects: "项目组",
   Chats: "聊天",
   "Workspace navigation": "工作区导航",
+  "Company overview": "公司概况",
+  "Org chart": "组织架构",
+  "Active projects": "进行中项目",
+  Team: "团队",
+  "Enterprise services · Intelligent workspace": "企业服务 · 智能工作台",
+  "{count} departments": "{count} 个部门",
+  "{count} projects": "{count} 个项目组",
+  "{count} people": "{count} 人",
+  "{departments} departments · {employees} employees · {projects} projects": "{departments} 个部门 · {employees} 名员工 · {projects} 个项目",
+  "Search chats": "搜索聊天",
+  "All conversations": "全部会话",
+  Pinned: "置顶",
+  "No chats match this search.": "没有匹配的聊天。",
+  "This project": "本项目",
+  "Project overview": "项目概况",
+  New: "新建",
+  Paused: "已暂停",
+  Reviewer: "独立验收",
+  "No coordinator yet": "未设协调员",
+  Stage: "阶段",
+  "Source department": "来源部门",
+  Advanced: "高级配置",
+  "Search a project name or goal": "搜索项目名或目标",
   "Company workspace": "公司工作区",
   "Close projects": "关闭项目页",
   "Local sample only. Nothing has been saved.": "仅本地示例，未保存任何数据。",
@@ -1250,6 +1273,7 @@ Object.assign(ZH, HOST_ZH, {
   "Last activity": "最近活动",
   "No recent activity": "暂无最近活动",
   "All clear": "暂无待办",
+  "{count} cards": "{count} 张",
   "Project details": "项目详情",
   "Open project details": "打开项目详情",
   "Open project settings": "打开项目配置",
@@ -1334,7 +1358,6 @@ Object.assign(ZH, HOST_ZH, {
   "Coordinator assigned": "已指定协调员",
   Setup: "待配置",
   "In progress": "进行中",
-  Paused: "已暂停",
   "Unknown status": "状态未知",
   "Saved, but the project group needs reconciliation.": "已保存，但项目群需要对账。",
   "Sample chat is unavailable. Nothing has been saved.": "示例聊天不可用，未保存任何内容。",
@@ -1366,7 +1389,6 @@ Object.assign(ZH, HOST_ZH, {
   "Add a project member": "添加项目成员",
   "Add member": "加入项目",
   "Current state": "当前状态",
-  Stage: "阶段",
   Group: "群聊",
   "Needs attention": "待处理",
   Linked: "已绑定",
@@ -1465,7 +1487,6 @@ Object.assign(ZH, HOST_ZH, {
   "Company: {name}, {line}": "公司：{name}，{line}",
   "Department: {name}, {count} people": "部门：{name}，{count} 人",
   "Employee: {name}, {detail}": "员工：{name}，{detail}",
-  "{count} people": "{count} 人",
   "Department group": "部门群",
   "Department group bound": "部门群已绑定",
   "Department group not bound": "部门群尚未绑定",
@@ -1486,7 +1507,23 @@ Object.assign(ZH, HOST_ZH, {
   "Company information could not be loaded.": "公司信息加载失败",
   "Loading company information…": "正在加载公司信息…",
   "No company information yet": "还没有公司信息",
-  "Scroll sideways on a narrow screen to see the whole structure.": "窄屏可左右滑动查看完整关系。"
+  "Scroll sideways on a narrow screen to see the whole structure.": "窄屏可左右滑动查看完整关系。",
+  "New employee": "新建员工",
+  Create: "创建",
+  "Group built": "已建群",
+  "Not built": "未建群",
+  "Lead": "负责人",
+  "No lead assigned": "未设负责人",
+  "Lead {name} · {count} people": "负责人 {name} · {count} 人",
+  "No lead yet · {count} people": "未设负责人 · {count} 人",
+  "Lead of {name}": "{name} 的负责人",
+  "Members": "成员",
+  "View projects": "查看项目组",
+  "{d} departments · {e} employees · {p} projects · {a} in progress": "{d} 个部门 · {e} 名员工 · {p} 个项目 · {a} 个进行中",
+  "Drag empty space to pan · Click a department for its overview": "拖动空白处平移画布 · 点击部门查看概况",
+  "Department overview": "部门概况",
+  "Department overview: {name}": "部门概况：{name}",
+  Executor: "执行者"
 });
 var fill = (text, params) => params ? text.replace(/\{(\w+)\}/g, (match, name) => name in params ? String(params[name]) : match) : text;
 var service = null;
@@ -2843,6 +2880,7 @@ html[data-bt-collapsing] [class*="_frame"]:has(>[class*="_sidebarCol"]){transiti
 .bt-pill:hover{background:color-mix(in srgb,var(--bt-main),#777 9%)}
 .bt-pill:active{transform:scale(.965)}
 .bt-pill-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.bt-pill-sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--bt-ink-3);font-size:12px;line-height:16px;padding-left:8px;border-left:.5px solid var(--bt-line-2)}
 .bt-pill-mem{flex:none;display:inline-flex;width:0;margin-left:-8px;overflow:hidden;transition:${spring(SPRING_SHAPE, "width", "margin-left")}}
 .bt-pill[data-memory=updated] .bt-pill-mem{width:var(--bt-mem-w);margin-left:0;transition:${spring(SPRING_STRETCH, "width", "margin-left")}}
 .bt-pill-mem-in{flex:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:var(--bt-ink-2);font-size:13px;font-weight:500;opacity:0;filter:blur(6px);transform:translateX(-8px);transition:opacity .14s ease,filter .18s ease,${spring(SPRING_SHAPE, "transform")}}
@@ -4661,7 +4699,7 @@ var HANDOFF_CSS = `
 .bt-handoff .bt-q-foot{flex-wrap:wrap}
 `;
 
-// node_modules/deep-view/src/react/ui.js
+// ../../../ds-bot/node_modules/deep-view/src/react/ui.js
 var import_react8 = require("react");
 var FallbackMarkdown = ({ text }) => (0, import_react8.createElement)("span", null, String(text ?? ""));
 var ViewUi = (0, import_react8.createContext)({ t: (key) => key, Markdown: FallbackMarkdown });
@@ -4728,7 +4766,7 @@ function useOptionKeys2(count, onPick, ownRef) {
   return count > 0 && listening <= 1;
 }
 
-// node_modules/deep-view/src/core/formula.js
+// ../../../ds-bot/node_modules/deep-view/src/core/formula.js
 var FUNCTIONS = {
   min: { args: [1, Infinity], run: (...values) => Math.min(...values.map(num)) },
   max: { args: [1, Infinity], run: (...values) => Math.max(...values.map(num)) },
@@ -5009,7 +5047,7 @@ function evaluate(tree, lookup) {
   }
 }
 
-// node_modules/deep-view/src/core/views.js
+// ../../../ds-bot/node_modules/deep-view/src/core/views.js
 var LAYOUT = ["stack", "row"];
 var DISPLAY = ["text", "metric", "table", "chart", "progress", "callout", "sources", "html"];
 var INPUT_TYPES = ["slider", "choice", "toggle", "number"];
@@ -5629,7 +5667,7 @@ function validateForm(node, values) {
   return { fields };
 }
 
-// node_modules/deep-view/src/react/chart.js
+// ../../../ds-bot/node_modules/deep-view/src/react/chart.js
 var import_react9 = require("react");
 var PALETTE = ["var(--dv-accent)", "var(--dv-ink-tangerine)", "var(--dv-ink-green)", "var(--dv-ink-violet)", "var(--dv-ink-sky)", "var(--dv-ink-rose)", "var(--dv-ink-yellow)", "var(--dv-ink-cyan)", "var(--dv-ink-magenta)"];
 var colorAt = (index) => PALETTE[index % PALETTE.length];
@@ -6068,7 +6106,7 @@ var CHART_CSS = `
 @media (prefers-reduced-motion:reduce){.dv-chart-mark,.dv-chart-dot{transition:none}.dv-chart-tip{animation:none}}
 `;
 
-// node_modules/deep-view/src/react/frame.js
+// ../../../ds-bot/node_modules/deep-view/src/react/frame.js
 var import_react10 = require("react");
 var THEME_VARS = [
   ["--view-ink", "--bt-ink", "--dv-ink"],
@@ -6150,7 +6188,7 @@ var HTML_CSS = `
 .dv-view-frame-stopped{margin:0;font-size:13px;line-height:18px;color:var(--dv-ink-2)}
 `;
 
-// node_modules/deep-view/src/react/card.js
+// ../../../ds-bot/node_modules/deep-view/src/react/card.js
 var import_react11 = require("react");
 var mdLabels = (ui2) => ({ code: { copyLabel: ui2.t("Copy"), copiedLabel: ui2.t("Copied") }, footnotes: ui2.t("Footnotes") });
 var TONES2 = ["good", "warn", "bad"];
@@ -6819,7 +6857,7 @@ ${CHART_CSS}
 ${HTML_CSS}
 `;
 
-// node_modules/deep-view/src/react/styles.js
+// ../../../ds-bot/node_modules/deep-view/src/react/styles.js
 var THEME_CSS = `
 body{
 --dv-ink:var(--dsw-alias-label-primary);
@@ -6916,10 +6954,10 @@ button.dv-q-opt:active{background:var(--dv-active)}
 @media (prefers-reduced-motion:reduce){.dv-q,.dv-view-bare,.dv-q-submit,.dv-menu,.dv-q-check{animation:none}}
 `;
 
-// node_modules/deep-view/src/react/index.js
+// ../../../ds-bot/node_modules/deep-view/src/react/index.js
 var DEEP_VIEW_CSS = THEME_CSS + QUESTION_CSS + WIDGET_CSS;
 
-// node_modules/deep-view/src/core/reply.js
+// ../../../ds-bot/node_modules/deep-view/src/core/reply.js
 var REPLY_KIND = "user-question-reply";
 function viewCardText(args) {
   let card = args;
@@ -9922,12 +9960,74 @@ var bootHint = () => {
   const last = clientErrors().at(-1)?.text;
   return last === void 0 ? t("The Bot team could not start. The engine’s startup output — its console, or the app’s startup error box — has the cause.") : t("The Bot team could not start. {error}. The engine’s startup output — its console, or the app’s startup error box — has the cause.", { error: last });
 };
+function useCompanyModel(pageKey) {
+  const [model, setModel] = (0, import_react19.useState)(null);
+  (0, import_react19.useEffect)(() => {
+    let live = true;
+    const load = () => {
+      call("company-model", {}, void 0).then((value) => {
+        if (live) setModel(value);
+      }, () => {
+      });
+    };
+    load();
+    const onChange = () => load();
+    window.addEventListener("bt-company-changed", onChange);
+    return () => {
+      live = false;
+      window.removeEventListener("bt-company-changed", onChange);
+    };
+  }, [pageKey]);
+  return model;
+}
+function useCompanyTodos(pageKey) {
+  const [data, setData] = (0, import_react19.useState)(null);
+  (0, import_react19.useEffect)(() => {
+    let live = true;
+    const load = () => {
+      call("company-todos", {}, void 0).then((value) => {
+        if (live) setData(value);
+      }, () => {
+      });
+    };
+    load();
+    const onChange = () => load();
+    window.addEventListener("bt-company-changed", onChange);
+    return () => {
+      live = false;
+      window.removeEventListener("bt-company-changed", onChange);
+    };
+  }, [pageKey]);
+  return data;
+}
+var NAV_PATHS = {
+  company: "M4 20V6.5A2.5 2.5 0 0 1 6.5 4H14a2 2 0 0 1 2 2v14M16 10h2.5A1.5 1.5 0 0 1 20 11.5V20M2 20h20M7 8h4M7 12h4M7 16h4",
+  projects: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
+  chats: "M20 12a8 8 0 0 1-8 8H7l-4 3v-6.5A8 8 0 0 1 11 4h1a8 8 0 0 1 8 8z"
+};
+var CoIcon = ({ name }) => (0, import_react19.createElement)("svg", {
+  className: "bt-co-ico",
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.7,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+  "aria-hidden": true
+}, (0, import_react19.createElement)("path", { d: NAV_PATHS[name] }));
+var projectStage = (status) => status === "active" ? t("In progress") : status === "archived" ? t("Archived") : status === "paused" ? t("Paused") : t("Setup");
 function TeamSidebar(props) {
   const { wide, useRoster, useUi, useSessions, actions } = props;
   const listRef = (0, import_react19.useRef)(null);
   const roster = useRoster((value) => value);
   const markedUnread = useUi((value) => value.unread);
   const uiNow = useUi((value) => value);
+  const pageKey = uiNow.companyPage ? `${uiNow.companyPage.kind}:${uiNow.companyPage.id ?? ""}` : "chat";
+  const company = useCompanyModel(pageKey);
+  const companyTodos = useCompanyTodos(pageKey);
+  const activeSession = useSessions((list) => Object.values(list.byId ?? {}).find((session) => (session?.retainedBy?.mainView ?? 0) > 0)?.id ?? null);
+  const [projectFilter, setProjectFilter] = (0, import_react19.useState)("active");
+  const [chatQuery, setChatQuery] = (0, import_react19.useState)("");
   props.useRegistry((value) => value);
   const frameSnap = props.useFrame ? props.useFrame((value) => value) : { viewport: typeof window === "undefined" ? 0 : window.innerWidth, sidebarWidth: FALLBACK_SIDEBAR_WIDTH, collapsedWidth: 0 };
   const pref = props.useSidebarPref ? props.useSidebarPref((value) => value) : "open";
@@ -9965,9 +10065,12 @@ function TeamSidebar(props) {
   (0, import_react19.useLayoutEffect)(() => {
     if (typeof document === "undefined") return;
     chatRoom.setLeft(Math.max(0, pushed - (frameSnap.collapsedWidth ?? 0)));
+    document.documentElement.style.setProperty("--bt-company-left", `${pushed}px`);
   }, [pushed, frameSnap.collapsedWidth]);
   (0, import_react19.useEffect)(() => () => {
-    if (typeof document !== "undefined") chatRoom.setLeft(null);
+    if (typeof document === "undefined") return;
+    chatRoom.setLeft(null);
+    document.documentElement.style.removeProperty("--bt-company-left");
   }, []);
   const settleTimer = (0, import_react19.useRef)(0);
   const springTimer = (0, import_react19.useRef)(0);
@@ -10154,13 +10257,180 @@ function TeamSidebar(props) {
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
   }, []);
+  const page = uiNow.companyPage;
+  const companyData = company ?? {};
+  const companyInfo = companyData.company ?? null;
+  const departments = companyData.departments ?? [];
+  const employees = companyData.employees ?? [];
+  const projects = companyData.projects ?? [];
+  const activeProjects = projects.filter((item) => item.status === "active").length;
+  const activeRoom = activeSession ? roster.roomsById?.[activeSession] : null;
+  const activeProject = !page && activeRoom ? projects.find((item) => item.group_chat_ref === activeSession) ?? null : null;
+  const kind = activeProject ? "projectchat" : page?.kind ?? "chat";
+  const currentProject = activeProject ?? (kind === "detail" ? projects.find((item) => item.id === page?.id) : null);
+  const todoCount = companyTodos?.counts?.waiting_total ?? 0;
+  const companyName = companyInfo?.name ?? "DS Company";
+  const wantedChat = chatQuery.trim().toLowerCase();
+  const chatEntries = order.filter((entry) => !wantedChat || String(entry.item.name ?? "").toLowerCase().includes(wantedChat));
+  const pinnedEntries = chatEntries.filter((entry) => entry.item.pinned);
+  const otherEntries = chatEntries.filter((entry) => !entry.item.pinned);
+  const mainEntry = main ? { kind: "bot", item: main, at: 0 } : null;
+  const allEntries = mainEntry ? [mainEntry, ...otherEntries.filter((entry) => entry.item.id !== main.id)] : otherEntries;
+  const renderEntry = (entry) => entry.kind === "bot" ? (0, import_react19.createElement)(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true }) : entry.kind === "room" ? (0, import_react19.createElement)(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true }) : (0, import_react19.createElement)(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true });
+  const navButton = (mark, label2, count, active, onClick) => (0, import_react19.createElement)(
+    "button",
+    {
+      type: "button",
+      className: active ? "is-active" : "",
+      "aria-current": active ? "page" : void 0,
+      onClick
+    },
+    (0, import_react19.createElement)(CoIcon, { name: mark }),
+    (0, import_react19.createElement)("span", { className: "bt-co-nav-label" }, label2),
+    count === null ? null : (0, import_react19.createElement)("span", { className: "bt-co-count" }, count)
+  );
+  const companyLink = (label2, meta, active, onClick) => (0, import_react19.createElement)(
+    onClick ? "button" : "div",
+    {
+      type: onClick ? "button" : void 0,
+      className: "bt-co-link" + (active ? " is-active" : ""),
+      onClick
+    },
+    (0, import_react19.createElement)("span", { className: "bt-co-link-label" }, label2),
+    meta === null ? null : (0, import_react19.createElement)("span", { className: "bt-co-meta" }, meta)
+  );
+  const projectVisible = (item) => projectFilter === "all" || (projectFilter === "archived" ? item.status === "archived" : projectFilter === "active" ? item.status === "active" : item.status === "setup");
+  const projectRow = (item) => {
+    const department = (item.source_department_ids ?? []).map((id) => departments.find((entry) => entry.id === id)?.name).filter(Boolean)[0] ?? "";
+    const coordinator = employees.find((entry) => entry.id === item.acceptance_actor) ?? null;
+    return (0, import_react19.createElement)(
+      "button",
+      {
+        type: "button",
+        key: item.id,
+        className: "bt-co-proj" + (currentProject?.id === item.id ? " is-active" : ""),
+        title: item.goal || void 0,
+        onClick: () => {
+          if (item.group_binding?.status === "bound" && item.group_chat_ref && roster.roomsById?.[item.group_chat_ref]) actions.openSession(item.group_chat_ref);
+          else actions.openCompanyPage("detail", item.id);
+        }
+      },
+      (0, import_react19.createElement)("span", { className: "bt-co-proj-top" }, (0, import_react19.createElement)("strong", null, item.name), (0, import_react19.createElement)("span", { className: "bt-co-proj-stage" }, projectStage(item.status))),
+      (0, import_react19.createElement)("span", { className: "bt-co-proj-sub" }, [department, coordinator?.name].filter(Boolean).join(" · ") || t("No coordinator yet"))
+    );
+  };
+  const companySection = (0, import_react19.createElement)(
+    "section",
+    { className: "bt-co-sec", "aria-label": t("Company overview") },
+    (0, import_react19.createElement)("header", { className: "bt-co-sec-head" }, (0, import_react19.createElement)("span", null, t("Company overview"))),
+    (0, import_react19.createElement)(
+      "div",
+      { className: "bt-co-summary" },
+      (0, import_react19.createElement)("strong", null, companyName),
+      (0, import_react19.createElement)("span", null, t("{departments} departments · {employees} employees · {projects} projects", { departments: departments.length, employees: employees.length, projects: projects.length }))
+    ),
+    (0, import_react19.createElement)(
+      "div",
+      { className: "bt-co-links" },
+      companyLink(t("Org chart"), t("{count} departments", { count: departments.length }), true, () => actions.openCompanyPage("company")),
+      companyLink(t("Projects"), t("{count} projects", { count: projects.length }), false, () => actions.openCompanyPage("list")),
+      companyLink(t("Active projects"), String(activeProjects), false, () => actions.openCompanyPage("list")),
+      companyLink(t("Team"), t("{count} people", { count: employees.length }), false, null)
+    )
+  );
+  const projectSection = (0, import_react19.createElement)(
+    "section",
+    { className: "bt-co-sec", "aria-label": t("Projects") },
+    (0, import_react19.createElement)(
+      "header",
+      { className: "bt-co-sec-head" },
+      (0, import_react19.createElement)("span", null, t("Projects")),
+      (0, import_react19.createElement)("button", { type: "button", className: "bt-co-linkbtn", onClick: () => actions.openCompanyPage("list") }, t("Project list"), " ›")
+    ),
+    (0, import_react19.createElement)(
+      "div",
+      { className: "bt-co-chips", role: "group", "aria-label": t("Project status") },
+      [["active", "In progress"], ["setup", "Setup"], ["archived", "Archived"], ["all", "All"]].map(([value, label2]) => (0, import_react19.createElement)("button", {
+        type: "button",
+        key: value,
+        className: "bt-co-chip",
+        "aria-pressed": projectFilter === value,
+        onClick: () => {
+          setProjectFilter(value);
+          window.dispatchEvent(new CustomEvent("bt-company-filter", { detail: value }));
+        }
+      }, t(label2)))
+    ),
+    (0, import_react19.createElement)(
+      "div",
+      { className: "bt-co-plist" },
+      projects.filter(projectVisible).length === 0 ? (0, import_react19.createElement)("p", { className: "bt-co-empty" }, t("No projects in this view.")) : projects.filter(projectVisible).map(projectRow)
+    ),
+    currentProject ? (0, import_react19.createElement)(
+      "div",
+      { className: "bt-co-current" },
+      (0, import_react19.createElement)("span", { className: "bt-co-group-label" }, t("This project")),
+      (0, import_react19.createElement)("strong", null, currentProject.name),
+      (0, import_react19.createElement)("button", { type: "button", className: "bt-co-linkbtn", onClick: () => actions.openCompanyPage("detail", currentProject.id) }, t("Project overview"), " ›")
+    ) : null
+  );
+  const projectChatSection = (0, import_react19.createElement)(
+    "section",
+    { className: "bt-co-sec", "aria-label": t("Projects") },
+    (0, import_react19.createElement)(
+      "header",
+      { className: "bt-co-sec-head" },
+      (0, import_react19.createElement)("span", null, t("Projects")),
+      (0, import_react19.createElement)("button", { type: "button", className: "bt-co-linkbtn", onClick: () => actions.openCompanyPage("list") }, t("Project list"), " ›")
+    ),
+    (0, import_react19.createElement)("div", { className: "bt-co-plist" }, projects.map(projectRow)),
+    activeProject ? (0, import_react19.createElement)(
+      "div",
+      { className: "bt-co-current" },
+      (0, import_react19.createElement)("span", { className: "bt-co-group-label" }, t("This project")),
+      (0, import_react19.createElement)("strong", null, activeProject.name),
+      (0, import_react19.createElement)(
+        "div",
+        { className: "bt-co-links" },
+        companyLink(t("Project overview"), null, false, () => actions.openCompanyPage("detail", activeProject.id)),
+        companyLink(t("Waiting for you"), t("{count} cards", { count: todoCount }), false, () => actions.openCompanyPage("todos")),
+        companyLink(t("Last activity"), t("Today"), false, null)
+      )
+    ) : null
+  );
+  const chatSection = (0, import_react19.createElement)(
+    "section",
+    { className: "bt-co-sec bt-co-chatsec", "aria-label": t("Chats") },
+    (0, import_react19.createElement)(
+      "header",
+      { className: "bt-co-sec-head" },
+      (0, import_react19.createElement)("span", null, t("Chats")),
+      (0, import_react19.createElement)("button", { type: "button", className: "bt-co-linkbtn", onClick: () => actions.openNewChat("new") }, "+ ", t("New"))
+    ),
+    (0, import_react19.createElement)(
+      "label",
+      { className: "bt-co-search" },
+      (0, import_react19.createElement)(SearchIcon),
+      (0, import_react19.createElement)("input", { type: "search", value: chatQuery, onChange: (event) => setChatQuery(event.target.value), placeholder: t("Search chats"), "aria-label": t("Search chats") })
+    ),
+    pinnedEntries.length > 0 ? (0, import_react19.createElement)(
+      "div",
+      { className: "bt-co-group" },
+      (0, import_react19.createElement)("span", { className: "bt-co-group-label" }, t("Pinned")),
+      pinnedEntries.map(renderEntry)
+    ) : null,
+    (0, import_react19.createElement)(
+      "div",
+      { className: "bt-co-group" },
+      (0, import_react19.createElement)("span", { className: "bt-co-group-label" }, t("All conversations")),
+      allEntries.length > 0 ? allEntries.map(renderEntry) : (0, import_react19.createElement)("p", { className: "bt-co-empty" }, t("No chats match this search."))
+    )
+  );
   const top = wideContent ? (0, import_react19.createElement)(
     "div",
-    { className: "bt-side-top" },
-    (0, import_react19.createElement)("span", { className: "bt-brand" }, (0, import_react19.createElement)(BrandMark, { size: 22 }), (0, import_react19.createElement)(BrandName)),
-    (0, import_react19.createElement)(UpdateButton, { useUpdate: props.useUpdate, actions }),
-    (0, import_react19.createElement)("button", { type: "button", className: "bt-round", "aria-label": t("Search"), title: t("Search"), onClick: () => actions.openPalette() }, (0, import_react19.createElement)(SearchIcon)),
-    (0, import_react19.createElement)("button", { type: "button", className: "bt-round", "aria-label": t("New…"), title: t("New…"), onClick: () => actions.openNewChat("new") }, (0, import_react19.createElement)(PlusIcon)),
+    { className: "bt-co-brand" },
+    (0, import_react19.createElement)("span", { className: "bt-co-mark", "aria-hidden": true }, companyName.slice(0, 1)),
+    (0, import_react19.createElement)("span", { className: "bt-co-brandtext" }, (0, import_react19.createElement)("strong", null, companyName), (0, import_react19.createElement)("small", null, t("Enterprise services · Intelligent workspace"))),
     (0, import_react19.createElement)("button", { type: "button", className: "bt-round bt-side-collapse", "aria-label": t("Collapse sidebar"), title: t("Collapse sidebar"), onClick: onToggle }, (0, import_react19.createElement)(SidebarIcon))
   ) : (0, import_react19.createElement)(
     "div",
@@ -10176,24 +10446,33 @@ function TeamSidebar(props) {
     (0, import_react19.createElement)("button", { type: "button", className: "bt-round", "aria-label": t("New…"), title: t("New…"), onClick: () => actions.openNewChat("new") }, (0, import_react19.createElement)(PlusIcon)),
     (0, import_react19.createElement)(AccountLauncher, { seat: false, actions })
   );
+  const railNav = (0, import_react19.createElement)(
+    "nav",
+    { className: "bt-company-nav bt-company-rail", "aria-label": t("Workspace navigation") },
+    (0, import_react19.createElement)("button", { type: "button", "aria-label": t("Company"), "aria-current": kind === "company" ? "page" : void 0, title: t("Company"), onClick: () => actions.openCompanyPage("company") }, (0, import_react19.createElement)("span", { "aria-hidden": true }, "⌂")),
+    (0, import_react19.createElement)("button", { type: "button", "aria-label": t("Projects"), "aria-current": kind !== "company" && kind !== "chat" ? "page" : void 0, title: t("Projects"), onClick: () => actions.openCompanyPage("list") }, (0, import_react19.createElement)("span", { "aria-hidden": true }, "▦")),
+    (0, import_react19.createElement)("button", { type: "button", "aria-label": t("Chats"), "aria-current": kind === "chat" ? "page" : void 0, title: t("Chats"), onClick: () => actions.closeCompanyPage() }, (0, import_react19.createElement)("span", { "aria-hidden": true }, "◉"))
+  );
   const content = (0, import_react19.createElement)(
     "div",
-    { className: wideContent ? "bt-side" : "bt-side bt-rail", onKeyDown: typeToSearch },
+    { className: wideContent ? "bt-side bt-side-company" : "bt-side bt-rail", onKeyDown: typeToSearch },
     top,
-    (0, import_react19.createElement)(
+    wideContent ? (0, import_react19.createElement)(
       "nav",
-      { className: wideContent ? "bt-company-nav" : "bt-company-nav bt-company-rail", "aria-label": t("Workspace navigation") },
-      (0, import_react19.createElement)("button", { type: "button", "aria-label": t("Company"), "aria-current": uiNow.companyPage?.kind === "company" ? "page" : void 0, title: wideContent ? void 0 : t("Company"), onClick: () => actions.openCompanyPage("company") }, (0, import_react19.createElement)("span", { "aria-hidden": true }, "⌂"), wideContent ? t("Company") : null),
-      (0, import_react19.createElement)("button", { type: "button", "aria-label": t("Projects"), "aria-current": uiNow.companyPage && uiNow.companyPage.kind !== "todos" && uiNow.companyPage.kind !== "company" ? "page" : void 0, title: wideContent ? void 0 : t("Projects"), onClick: () => actions.openCompanyPage("list") }, (0, import_react19.createElement)("span", { "aria-hidden": true }, "▦"), wideContent ? t("Projects") : null),
-      (0, import_react19.createElement)("button", { type: "button", "aria-label": t("Todos"), "aria-current": uiNow.companyPage?.kind === "todos" ? "page" : void 0, title: wideContent ? void 0 : t("Todos"), onClick: () => actions.openCompanyPage("todos") }, (0, import_react19.createElement)("span", { "aria-hidden": true }, "☑"), wideContent ? t("Todos") : null),
-      (0, import_react19.createElement)("button", { type: "button", "aria-label": t("Chats"), "aria-current": !uiNow.companyPage ? "page" : void 0, title: wideContent ? void 0 : t("Chats"), onClick: () => actions.closeCompanyPage() }, (0, import_react19.createElement)("span", { "aria-hidden": true }, "◉"), wideContent ? t("Chats") : null)
-    ),
+      { className: "bt-co-nav", "aria-label": t("Workspace navigation") },
+      navButton("company", t("Company"), null, kind === "company", () => actions.openCompanyPage("company")),
+      navButton("projects", t("Projects"), projects.length, kind !== "company" && kind !== "chat", () => actions.openCompanyPage("list")),
+      navButton("chats", t("Chats"), order.length + (main ? 1 : 0), kind === "chat", () => {
+        actions.closeCompanyPage();
+        if (activeProject && main?.id) actions.openSession(main.id);
+      })
+    ) : railNav,
     wideContent && roster.readOnly ? (0, import_react19.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
     (0, import_react19.createElement)(
       "div",
-      { ref: listRef, className: "bt-list", role: "region", "aria-label": t("Bot list") },
-      wideContent ? main ? (0, import_react19.createElement)(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : (0, import_react19.createElement)("div", { className: "bt-hint" }, uiNow.bootFailed ? bootHint() : t("Setting up your Main Bot…")) : null,
-      order.map((entry) => entry.kind === "bot" ? (0, import_react19.createElement)(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true }) : entry.kind === "room" ? (0, import_react19.createElement)(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true }) : (0, import_react19.createElement)(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true }))
+      { ref: listRef, className: wideContent ? "bt-list bt-co-scroll" : "bt-list", role: "region", "aria-label": t("Bot list") },
+      wideContent ? kind === "company" ? companySection : kind === "chat" ? chatSection : kind === "projectchat" ? projectChatSection : projectSection : main ? (0, import_react19.createElement)(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : (0, import_react19.createElement)("div", { className: "bt-hint" }, uiNow.bootFailed ? bootHint() : t("Setting up your Main Bot…")),
+      wideContent ? null : order.map(renderEntry)
     ),
     foot
   );
@@ -10670,11 +10949,75 @@ var SIDEBAR_CSS = `
 .bt-agent-sub[data-open] .bt-agent-sub-row{animation:bt-agent-row-in .24s ease both;animation-delay:calc(var(--i, 0)*30ms)}
 @keyframes bt-agent-row-in{from{opacity:0;filter:blur(4px)}to{opacity:1;filter:blur(0)}}
 @media (prefers-reduced-motion:reduce){.bt-agent-sub{transition:none}.bt-agent-sub .bt-agent-sub-row{animation:none}}
+
+/* The company shell: a quiet brand header, three primary destinations, and
+   one context section that follows the page the user is on. */
+.bt-side-company{padding:0 10px 8px 0}
+.bt-co-brand{display:flex;align-items:center;gap:10px;padding:14px 6px 12px 14px;flex:none}
+.bt-co-mark{flex:none;width:32px;height:32px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);font-size:14px;font-weight:600;line-height:1}
+.bt-co-brandtext{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.bt-co-brandtext strong{font-size:13.5px;line-height:18px;font-weight:600;color:var(--bt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-co-brandtext small{font-size:10.5px;line-height:14px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-co-brand .bt-side-collapse{width:28px;height:28px;flex:none}
+.bt-co-nav{display:flex;flex-direction:column;gap:1px;padding:0 6px 8px;flex:none}
+.bt-co-nav button{display:flex;align-items:center;gap:10px;width:100%;height:34px;padding:0 10px;border:0;border-radius:8px;background:none;color:var(--bt-ink-2);font:inherit;font-size:13px;line-height:18px;text-align:left;cursor:pointer}
+.bt-co-nav button:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.bt-co-nav button.is-active{background:var(--bt-active);color:var(--bt-ink);font-weight:500}
+.bt-co-ico{flex:none;width:16px;height:16px;opacity:.9}
+.bt-co-nav-label{flex:1;min-width:0}
+.bt-co-count{flex:none;font-size:11px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
+.bt-co-scroll{display:flex;flex-direction:column;min-height:0;padding:0 6px}
+.bt-co-sec{padding:10px 0 12px;border-top:.5px solid var(--bt-line)}
+.bt-co-sec:first-child{border-top:0;padding-top:2px}
+.bt-co-sec-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:24px;padding:2px 6px 6px;font-size:11px;line-height:16px;font-weight:600;color:var(--bt-ink-3)}
+.bt-co-linkbtn{border:0;background:none;padding:2px 0;color:var(--bt-ink-2);font:inherit;font-size:11px;line-height:16px;cursor:pointer;white-space:nowrap}
+.bt-co-linkbtn:hover{color:var(--bt-ink)}
+.bt-co-summary{display:flex;flex-direction:column;gap:2px;padding:0 6px 8px}
+.bt-co-summary strong{font-size:13px;line-height:18px;font-weight:600;color:var(--bt-ink)}
+.bt-co-summary span{font-size:11px;line-height:15px;color:var(--bt-ink-3)}
+.bt-co-links{display:flex;flex-direction:column;gap:1px}
+.bt-co-link{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:30px;padding:0 6px;border:0;border-radius:6px;background:none;color:var(--bt-ink-2);font:inherit;font-size:12.5px;line-height:18px;text-align:left;cursor:pointer}
+.bt-co-link:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.bt-co-link.is-active{color:var(--bt-ink);font-weight:500}
+.bt-co-link-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-co-meta{flex:none;font-size:11px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
+.bt-co-chips{display:flex;flex-wrap:wrap;gap:4px;padding:0 4px 8px}
+.bt-co-chip{height:24px;padding:0 9px;border:.5px solid var(--bt-line-2);border-radius:6px;background:none;color:var(--bt-ink-2);font:inherit;font-size:11px;line-height:16px;cursor:pointer}
+.bt-co-chip:hover{background:var(--bt-hover)}
+.bt-co-chip[aria-pressed=true]{background:var(--bt-accent);border-color:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
+.bt-co-plist{display:flex;flex-direction:column;gap:1px}
+.bt-co-proj{display:flex;flex-direction:column;gap:1px;width:100%;padding:7px 8px;border:0;border-radius:7px;background:none;color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer}
+.bt-co-proj:hover{background:var(--bt-hover)}
+.bt-co-proj.is-active{background:var(--bt-active)}
+.bt-co-proj-top{display:flex;align-items:center;gap:8px;min-width:0}
+.bt-co-proj-top strong{flex:1;min-width:0;font-size:12.5px;line-height:18px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-co-proj-stage{flex:none;font-size:10px;line-height:15px;color:var(--bt-ink-3)}
+.bt-co-proj-sub{font-size:10.5px;line-height:15px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-co-current{display:flex;flex-direction:column;gap:2px;margin-top:6px;padding:8px 6px 0;border-top:.5px solid var(--bt-line)}
+.bt-co-current strong{font-size:12px;line-height:17px;font-weight:500;color:var(--bt-ink)}
+.bt-co-group{display:flex;flex-direction:column;gap:1px;margin:2px 0 6px}
+.bt-co-group-label{padding:4px 6px 4px;font-size:10.5px;line-height:15px;font-weight:600;color:var(--bt-ink-3)}
+.bt-co-search{display:flex;align-items:center;gap:7px;margin:0 2px 8px;padding:0 9px;height:30px;border:.5px solid var(--bt-line-2);border-radius:7px;background:var(--bt-card);color:var(--bt-ink-3)}
+.bt-co-search svg{flex:none;width:14px;height:14px}
+.bt-co-search input{flex:1;min-width:0;border:0;background:none;color:var(--bt-ink);font:inherit;font-size:12px;line-height:18px;outline:none}
+.bt-co-search input::placeholder{color:var(--bt-ink-3)}
+.bt-co-empty{margin:4px 6px;font-size:11px;line-height:16px;color:var(--bt-ink-3)}
 `;
 
 // src/client/company-page.js
 var import_react20 = require("react");
 var archived = (item) => item?.status === "archived";
+var initialOf = (name) => {
+  const text = typeof name === "string" ? name.trim() : "";
+  if (!text) return "·";
+  try {
+    const step = new Intl.Segmenter(void 0, { granularity: "grapheme" }).segment(text)[Symbol.iterator]().next();
+    const glyph = step.done ? text.slice(0, 1) : step.value.segment;
+    return String(glyph || text.slice(0, 1)).toUpperCase();
+  } catch {
+    return text.slice(0, 1).toUpperCase();
+  }
+};
 var projectText = (projects, employee) => {
   if (!employee.project_id) return t("Outside projects");
   const project = projects.find((item) => item.id === employee.project_id);
@@ -10682,29 +11025,24 @@ var projectText = (projects, employee) => {
   if (archived(project)) return t("Project: {name} (archived)", { name: project.name });
   return t("Project: {name}", { name: project.name });
 };
-var employeeDetail = (projects, employee) => [employee.role ? String(employee.role) : "", projectText(projects, employee)].filter(Boolean).join(" · ");
-var departmentLine = (staff, department) => `${t("{count} people", { count: staff.length })} · ${department.chat_ref ? t("Department group bound") : t("Department group not bound")}`;
-var companyLine = (departments, employees, projects) => t("{d} departments · {e} employees · {p} active projects", {
+var companyLine = (departments, employees, projects) => t("{d} departments · {e} employees · {p} projects · {a} in progress", {
   d: departments.length,
   e: employees.length,
-  p: projects.filter((item) => item.status === "active").length
+  p: projects.length,
+  a: projects.filter((item) => item.status === "active").length
 });
 var botOpenable = (employee, roster) => {
   if (!employee?.bot_id) return false;
   if (!roster?.ready) return true;
   return Boolean(roster.byId?.[employee.bot_id] ?? roster.bots?.find((bot) => bot.id === employee.bot_id));
 };
+var leadOf = (employees, department) => employees.find((item) => item.id === department.lead_employee_id) ?? null;
 function CompanyPageView(props) {
-  const { data, loading, error, todos, todoLoading, todoError, tab, deptId, chain, overflow, wrapRef, tabRefs, deptButtons, backRef } = props;
+  const { data, loading, error, roster, openDept, creating, pan, dragging } = props;
   const departments = (data.departments ?? []).filter((item) => !archived(item));
   const employees = (data.employees ?? []).filter((item) => !archived(item));
   const projects = data.projects ?? [];
-  const outside = employees.filter((item) => !item.project_id);
-  const waiting = !todoError && Number.isInteger(todos?.counts?.waiting_total) ? todos.counts.waiting_total : null;
-  const department = deptId === null ? null : departments.find((item) => item.id === deptId) ?? null;
-  const dim = chain !== null && chain !== "co";
-  const lit = (nodeDepartment) => chain === null || chain === "co" || chain === nodeDepartment;
-  const botReady = (employee) => botOpenable(employee, props.roster);
+  const botReady = (employee) => botOpenable(employee, roster);
   const openEmployee = (employee) => {
     if (botReady(employee)) props.onOpenEmployee(employee);
   };
@@ -10713,238 +11051,220 @@ function CompanyPageView(props) {
     if (!botReady(employee)) return t("This employee cannot open a private chat right now.");
     return t("Chat privately with {name}", { name: employee.name });
   };
-  const tabButton = (value, label2) => (0, import_react20.createElement)("button", {
-    key: value,
-    type: "button",
-    role: "tab",
-    id: `bc-co-tab-${value}`,
-    "aria-selected": tab === value ? "true" : "false",
-    "aria-controls": `bc-co-panel-${value}`,
-    tabIndex: 0,
-    className: "bc-co-tab" + (tab === value ? " is-active" : ""),
-    ref: (element) => {
-      if (element) tabRefs.current.set(value, element);
-    },
-    onClick: () => props.onSelectTab(value)
-  }, label2);
-  const onTabKey = (event) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    const next = tab === "overview" ? "org" : "overview";
-    props.onSelectTab(next);
-    tabRefs.current.get(next)?.focus?.();
-  };
-  const tabs = (0, import_react20.createElement)(
-    "div",
-    { className: "bc-co-tabs", role: "tablist", "aria-label": t("Company sections"), onKeyDown: onTabKey },
-    [tabButton("overview", t("Overview")), tabButton("org", t("Organization"))]
-  );
-  const statCard = (label2, value, sub, options = {}) => (0, import_react20.createElement)(
-    "div",
-    {
-      key: label2,
-      className: "bc-co-stat" + (options.strong ? " is-strong" : ""),
-      tabIndex: 0,
-      role: "group",
-      "aria-label": `${label2} ${value}${sub ? `，${sub}` : ""}${options.retry ? `，${t("Could not read. Click to try again.")}` : ""}`
-    },
-    (0, import_react20.createElement)("span", { className: "bc-co-stat-label" }, label2),
-    (0, import_react20.createElement)("span", { className: "bc-co-stat-value" }, value),
-    options.retry ? (0, import_react20.createElement)("button", { type: "button", className: "bc-co-stat-retry", onClick: options.retry }, t("Could not read. Click to try again.")) : sub ? (0, import_react20.createElement)("span", { className: "bc-co-stat-sub" }, sub) : null
-  );
-  const overview = (0, import_react20.createElement)(
-    "div",
-    { className: "bc-co-overview", role: "tabpanel", id: "bc-co-panel-overview", "aria-labelledby": "bc-co-tab-overview" },
-    (0, import_react20.createElement)(
-      "div",
-      { className: "bc-co-stats" },
-      // The decision count reads its own route: a failure here dims this card only and
-      // never replaces the whole page with an error.
-      statCard(t("Waiting for you"), waiting === null ? "—" : String(waiting), waiting > 0 ? t("Includes approvals and acceptances") : null, {
-        strong: waiting > 0,
-        retry: todoError ? props.onRetryTodos : null
-      }),
-      statCard(t("Projects in progress"), String(projects.filter((item) => item.status === "active").length)),
-      statCard(t("Departments"), String(departments.length)),
-      statCard(t("Employees"), String(employees.length), t("{count} outside projects", { count: outside.length }))
-    ),
-    todoLoading && !todos && !todoError ? (0, import_react20.createElement)("p", { className: "bc-co-hint", role: "status" }, t("Reading the decision count…")) : null
-  );
-  const employeeButton = (employee, staff) => {
+  const department = openDept === null ? null : departments.find((item) => item.id === openDept) ?? null;
+  const avatar = (employee, size = "sm") => (0, import_react20.createElement)("span", { className: `bc-co-face bc-co-face-${size}`, "aria-hidden": true }, initialOf(employee.name));
+  const employeeRow = (employee) => {
     const disabled = !botReady(employee);
-    const detail = employeeDetail(projects, employee);
+    const detail = employee.role ? String(employee.role) : projectText(projects, employee);
     return (0, import_react20.createElement)(
       "button",
       {
         key: employee.id,
         type: "button",
-        className: "bc-co-node bc-co-emp" + (lit(staff.id) ? " is-lit" : "") + (disabled ? " is-disabled" : ""),
+        className: "bc-co-emp" + (disabled ? " is-disabled" : ""),
         "aria-label": t("Employee: {name}, {detail}", { name: employee.name, detail }),
         "aria-disabled": disabled ? "true" : void 0,
-        // A native `disabled` button cannot take focus, and every node has to stay in the
-        // Tab order; `aria-disabled` keeps it focusable while blocking the action.
         tabIndex: 0,
         title: employeeTitle(employee),
-        onMouseEnter: () => props.onChain(staff.id),
-        onMouseLeave: () => props.onChain(null),
-        onFocus: () => props.onChain(staff.id),
-        onBlur: () => props.onChain(null),
-        onClick: () => openEmployee(employee)
+        onClick: (event) => {
+          event.stopPropagation();
+          openEmployee(employee);
+        }
       },
+      avatar(employee),
       (0, import_react20.createElement)(
         "span",
-        { className: "bc-co-node-text" },
+        { className: "bc-co-emp-text" },
         (0, import_react20.createElement)("strong", null, employee.name),
         (0, import_react20.createElement)("span", { className: "bc-co-sub" }, detail)
+      ),
+      (0, import_react20.createElement)("span", { className: "bc-co-emp-go", "aria-hidden": true }, "›")
+    );
+  };
+  const departmentCard = (department2) => {
+    const staff = employees.filter((item) => item.department_id === department2.id);
+    const lead = leadOf(employees, department2);
+    const bound2 = Boolean(department2.chat_ref);
+    return (0, import_react20.createElement)(
+      "div",
+      {
+        key: department2.id,
+        className: "bc-co-dept" + (openDept === department2.id ? " is-open" : ""),
+        onClick: () => props.onOpenDept(department2.id)
+      },
+      (0, import_react20.createElement)(
+        "div",
+        { className: "bc-co-dept-head" },
+        (0, import_react20.createElement)("button", {
+          type: "button",
+          className: "bc-co-dept-name",
+          "aria-expanded": openDept === department2.id ? "true" : "false",
+          onClick: (event) => {
+            event.stopPropagation();
+            props.onOpenDept(department2.id);
+          }
+        }, department2.name),
+        (0, import_react20.createElement)("span", { className: "bc-co-tag" + (bound2 ? " is-ok" : "") }, bound2 ? t("Group built") : t("Not built"))
+      ),
+      (0, import_react20.createElement)("p", { className: "bc-co-dept-meta" }, lead ? t("Lead {name} · {count} people", { name: lead.name, count: staff.length }) : t("No lead yet · {count} people", { count: staff.length })),
+      department2.description ? (0, import_react20.createElement)("p", { className: "bc-co-dept-desc" }, department2.description) : null,
+      (0, import_react20.createElement)(
+        "div",
+        { className: "bc-co-emps" },
+        staff.length ? staff.map((employee) => employeeRow(employee)) : (0, import_react20.createElement)("span", { className: "bc-co-none" }, t("No employees yet"))
       )
     );
   };
-  const departmentButton = (department2, staff) => (0, import_react20.createElement)(
-    "button",
-    {
-      key: department2.id,
-      type: "button",
-      className: "bc-co-node bc-co-dept" + (lit(department2.id) ? " is-lit" : ""),
-      "aria-label": t("Department: {name}, {count} people", { name: department2.name, count: staff.length }),
-      tabIndex: 0,
-      ref: (element) => {
-        if (element) deptButtons.current.set(department2.id, element);
-      },
-      onMouseEnter: () => props.onChain(department2.id),
-      onMouseLeave: () => props.onChain(null),
-      onFocus: () => props.onChain(department2.id),
-      onBlur: () => props.onChain(null),
-      onClick: () => props.onShowDept(department2.id)
-    },
-    (0, import_react20.createElement)(
-      "span",
-      { className: "bc-co-node-text" },
-      (0, import_react20.createElement)("strong", null, department2.name),
-      (0, import_react20.createElement)("span", { className: "bc-co-sub" }, departmentLine(staff, department2))
-    )
-  );
   const chart = !data.company ? null : (0, import_react20.createElement)(
     "div",
-    { className: "bc-co-wrap", ref: wrapRef },
+    {
+      className: "bc-co-canvas" + (dragging ? " is-panning" : ""),
+      role: "group",
+      "aria-label": t("Organization chart"),
+      ref: props.canvasRef,
+      onPointerDown: props.onPanStart,
+      onPointerMove: props.onPanMove,
+      onPointerUp: props.onPanEnd,
+      onPointerCancel: props.onPanEnd
+    },
     (0, import_react20.createElement)(
       "div",
-      { className: "bc-co" + (dim ? " is-dim" : ""), role: "group", "aria-label": t("Organization chart") },
-      // The company node is the root of the chart, not an action: it labels the
-      // structure, stays lit at all times and never takes focus or a click.
+      { className: "bc-co-band", style: { transform: `translate(${pan.x}px, ${pan.y}px)` } },
       (0, import_react20.createElement)(
         "div",
-        { className: "bc-co-node bc-co-company is-lit" },
+        { className: "bc-co-co" },
         (0, import_react20.createElement)(
-          "span",
-          { className: "bc-co-node-text" },
+          "div",
+          { className: "bc-co-co-card" },
           (0, import_react20.createElement)("strong", null, data.company.name),
           (0, import_react20.createElement)("span", { className: "bc-co-sub" }, companyLine(departments, employees, projects))
-        )
+        ),
+        props.onOpenProjects ? (0, import_react20.createElement)("button", { type: "button", className: "bc-co-co-link", onClick: props.onOpenProjects }, `${t("View projects")} ›`) : null
       ),
+      (0, import_react20.createElement)("div", { className: "bc-co-cols" }, departments.map(departmentCard))
+    ),
+    (0, import_react20.createElement)("p", { className: "bc-co-hint", role: "note" }, t("Drag empty space to pan · Click a department for its overview"))
+  );
+  const employeeDetailFor = (projects2, employee) => employee.role ? String(employee.role) : projectText(projects2, employee);
+  const overview = (department2) => {
+    const staff = employees.filter((item) => item.department_id === department2.id);
+    const lead = leadOf(employees, department2);
+    const bound2 = Boolean(department2.chat_ref);
+    const canLead = staff.filter((item) => item.status !== "archived");
+    return (0, import_react20.createElement)(
+      "aside",
+      {
+        className: "bc-co-pop",
+        role: "dialog",
+        "aria-label": t("Department overview: {name}", { name: department2.name }),
+        onClick: (event) => event.stopPropagation()
+      },
       (0, import_react20.createElement)(
         "div",
-        { className: "bc-co-branches" },
-        departments.map((department2) => {
-          const staff = employees.filter((item) => item.department_id === department2.id);
-          return (0, import_react20.createElement)(
-            "div",
-            { className: "bc-co-branch", key: department2.id },
-            departmentButton(department2, staff),
-            (0, import_react20.createElement)(
-              "div",
-              { className: "bc-co-emps" },
-              staff.length ? staff.map((employee) => employeeButton(employee, department2)) : (0, import_react20.createElement)("span", { className: "bc-co-none" }, t("No employees yet"))
-            )
-          );
-        })
-      )
-    ),
-    overflow ? (0, import_react20.createElement)("p", { className: "bc-co-hint", role: "note" }, t("Scroll sideways on a narrow screen to see the whole structure.")) : null
-  );
-  const organization = (0, import_react20.createElement)(
-    "div",
-    { className: "bc-co-org", role: "tabpanel", id: "bc-co-panel-org", "aria-labelledby": "bc-co-tab-org" },
-    departments.length ? chart : (0, import_react20.createElement)(
-      "div",
-      { className: "bc-state bc-co-state" },
-      (0, import_react20.createElement)("strong", null, t("No departments yet")),
-      (0, import_react20.createElement)("p", null, t("Employees get a department once departments exist."))
-    )
-  );
-  const departmentPage = (department2) => {
-    if (!department2) {
-      return (0, import_react20.createElement)(
-        "div",
-        { className: "bc-state bc-co-state" },
-        (0, import_react20.createElement)("strong", null, t("This department no longer exists.")),
-        (0, import_react20.createElement)("button", { type: "button", className: "bc-button", onClick: props.onBackToOrg }, t("Back to organization"))
-      );
-    }
-    const staff = employees.filter((item) => item.department_id === department2.id);
-    const bound2 = Boolean(department2.chat_ref);
-    const row = (employee) => {
-      const disabled = !botReady(employee);
-      const detail = employeeDetail(projects, employee);
-      return (0, import_react20.createElement)(
+        { className: "bc-co-pop-head" },
+        (0, import_react20.createElement)("strong", null, t("Department overview")),
+        (0, import_react20.createElement)("span", { className: "bc-co-pop-name" }, department2.name),
+        (0, import_react20.createElement)("button", { type: "button", className: "bc-co-pop-close", "aria-label": t("Close"), onClick: props.onCloseDept }, "×")
+      ),
+      (0, import_react20.createElement)(
+        "dl",
+        { className: "bc-co-kv" },
+        (0, import_react20.createElement)("dt", null, t("Lead")),
+        (0, import_react20.createElement)("dd", null, props.canEdit ? (0, import_react20.createElement)("select", {
+          value: department2.lead_employee_id ?? "",
+          "aria-label": t("Lead of {name}", { name: department2.name }),
+          onChange: (event) => props.onSetLead(department2, event.target.value)
+        }, (0, import_react20.createElement)("option", { value: "" }, t("No lead assigned")), canLead.map((item) => (0, import_react20.createElement)("option", { key: item.id, value: item.id }, item.name))) : lead?.name ?? t("No lead assigned")),
+        (0, import_react20.createElement)("dt", null, t("Members")),
+        (0, import_react20.createElement)("dd", null, t("{count} people", { count: staff.length })),
+        (0, import_react20.createElement)("dt", null, t("Department group")),
+        (0, import_react20.createElement)("dd", { className: bound2 ? void 0 : "bc-co-muted" }, bound2 ? t("Department group bound") : t("Department group not bound"))
+      ),
+      staff.length ? (0, import_react20.createElement)("div", { className: "bc-co-pop-emps" }, staff.map((employee) => (0, import_react20.createElement)(
         "button",
         {
           key: employee.id,
           type: "button",
-          className: "bc-co-row" + (disabled ? " is-disabled" : ""),
-          "aria-disabled": disabled ? "true" : void 0,
-          tabIndex: 0,
+          className: "bc-co-row" + (botReady(employee) ? "" : " is-disabled"),
+          "aria-disabled": botReady(employee) ? void 0 : "true",
           title: employeeTitle(employee),
           onClick: () => openEmployee(employee)
         },
-        (0, import_react20.createElement)(
-          "span",
-          { className: "bc-co-row-main" },
-          (0, import_react20.createElement)("strong", null, employee.name),
-          (0, import_react20.createElement)("span", { className: "bc-co-sub" }, detail)
-        ),
-        (0, import_react20.createElement)("span", { className: "bc-co-row-go", "aria-hidden": true }, "→")
-      );
-    };
+        avatar(employee),
+        (0, import_react20.createElement)("span", { className: "bc-co-row-main" }, (0, import_react20.createElement)("strong", null, employee.name), (0, import_react20.createElement)("span", { className: "bc-co-sub" }, employeeDetailFor(projects, employee))),
+        (0, import_react20.createElement)("span", { className: "bc-co-row-go", "aria-hidden": true }, "›")
+      ))) : (0, import_react20.createElement)("p", { className: "bc-co-muted" }, t("This department has no employees yet."))
+    );
+  };
+  const createPanel = () => {
+    if (!creating) return null;
+    const departmentOptions = departments.map((item) => (0, import_react20.createElement)("option", { key: item.id, value: item.id }, item.name));
+    const bots = (roster?.bots ?? []).filter((bot) => !employees.some((employee) => employee.bot_id === bot.id && employee.status === "active") && !bot.private);
     return (0, import_react20.createElement)(
-      "section",
-      { className: "bc-co-deptpage", "aria-label": department2.name },
+      "div",
+      { className: "bc-co-create", role: "dialog", "aria-label": creating === "department" ? t("New department") : t("New employee") },
       (0, import_react20.createElement)(
         "div",
-        { className: "bc-co-depthead" },
-        (0, import_react20.createElement)("button", {
-          type: "button",
-          className: "bc-co-back",
-          "aria-label": t("Back to organization"),
-          title: t("Back to organization"),
-          ref: backRef,
-          onClick: props.onBackToOrg
-        }, "←"),
+        { className: "bc-co-pop-head" },
+        (0, import_react20.createElement)("strong", null, creating === "department" ? t("New department") : t("New employee")),
+        (0, import_react20.createElement)("button", { type: "button", className: "bc-co-pop-close", "aria-label": t("Close"), onClick: props.onCloseCreate }, "×")
+      ),
+      creating === "department" ? (0, import_react20.createElement)(
+        "label",
+        { className: "bc-field" },
+        t("Department name"),
+        (0, import_react20.createElement)("input", { value: props.draftName, maxLength: 80, onChange: (event) => props.onDraftName(event.target.value), placeholder: t("Department name") })
+      ) : (0, import_react20.createElement)(
+        "div",
+        { className: "bc-co-create-fields" },
         (0, import_react20.createElement)(
-          "div",
-          { className: "bc-co-depttitle" },
-          (0, import_react20.createElement)("h2", null, department2.name),
-          (0, import_react20.createElement)("p", null, t("{count} people", { count: staff.length }))
+          "label",
+          { className: "bc-field" },
+          t("Bot"),
+          (0, import_react20.createElement)(
+            "select",
+            { value: props.draftBot, onChange: (event) => props.onDraftBot(event.target.value) },
+            (0, import_react20.createElement)("option", { value: "" }, t("Choose a Bot")),
+            bots.map((bot) => (0, import_react20.createElement)("option", { key: bot.id, value: bot.id }, bot.name))
+          )
+        ),
+        (0, import_react20.createElement)(
+          "label",
+          { className: "bc-field" },
+          t("Department"),
+          (0, import_react20.createElement)(
+            "select",
+            { value: props.draftDept, onChange: (event) => props.onDraftDept(event.target.value) },
+            (0, import_react20.createElement)("option", { value: "" }, t("Choose a department")),
+            departmentOptions
+          )
+        ),
+        (0, import_react20.createElement)(
+          "label",
+          { className: "bc-field" },
+          t("Employee display name (optional)"),
+          (0, import_react20.createElement)("input", { value: props.draftName, maxLength: 80, onChange: (event) => props.onDraftName(event.target.value), placeholder: t("Use Bot name") })
+        ),
+        (0, import_react20.createElement)(
+          "label",
+          { className: "bc-field" },
+          t("Employee role"),
+          (0, import_react20.createElement)(
+            "select",
+            { value: props.draftRole, onChange: (event) => props.onDraftRole(event.target.value) },
+            (0, import_react20.createElement)("option", { value: "executor" }, t("Executor")),
+            (0, import_react20.createElement)("option", { value: "coordinator" }, t("Coordinator")),
+            (0, import_react20.createElement)("option", { value: "acceptor" }, t("Independent acceptor")),
+            (0, import_react20.createElement)("option", { value: "memory_keeper" }, t("Memory keeper"))
+          )
         )
       ),
-      // Only the two blocks the read model can fill. Capability allocation and the
-      // department owner have no fields yet, so they render nothing rather than an
-      // empty shell.
+      props.draftError ? (0, import_react20.createElement)("p", { className: "bc-exception", role: "alert" }, props.draftError) : null,
       (0, import_react20.createElement)(
-        "section",
-        { className: "bc-co-block" },
-        (0, import_react20.createElement)("h3", null, t("Department group")),
-        bound2 ? (0, import_react20.createElement)("p", { className: "bc-co-line" }, t("Department group bound")) : (0, import_react20.createElement)(
-          "div",
-          null,
-          (0, import_react20.createElement)("p", { className: "bc-co-line" }, t("Department group not bound")),
-          (0, import_react20.createElement)("p", { className: "bc-co-muted" }, t("Department chats are needed before the project starts."))
-        )
-      ),
-      (0, import_react20.createElement)(
-        "section",
-        { className: "bc-co-block" },
-        (0, import_react20.createElement)("h3", null, t("Employees")),
-        staff.length ? (0, import_react20.createElement)("div", { className: "bc-co-rows" }, staff.map(row)) : (0, import_react20.createElement)("p", { className: "bc-co-muted" }, t("This department has no employees yet."))
+        "div",
+        { className: "bc-co-create-actions" },
+        (0, import_react20.createElement)("button", { type: "button", className: "bc-button", onClick: props.onCloseCreate }, t("Cancel")),
+        (0, import_react20.createElement)("button", { type: "button", className: "bc-button bc-primary", disabled: props.draftBusy || !props.draftName.trim(), onClick: props.onCreate }, props.draftBusy ? t("Saving…") : t("Create"))
       )
     );
   };
@@ -10964,156 +11284,235 @@ function CompanyPageView(props) {
       [0, 1, 2].map((index) => (0, import_react20.createElement)("span", { key: index, className: "bc-skel bc-skel-line" + (index === 2 ? " short" : "") }))
     );
   } else if (data.company === null) {
-    body = (0, import_react20.createElement)("div", { className: "bc-state bc-co-state" }, (0, import_react20.createElement)("strong", null, t("No company information yet")));
-  } else if (tab === "overview") {
-    body = overview;
-  } else if (deptId !== null) {
-    body = departmentPage(department);
+    body = (0, import_react20.createElement)(
+      "div",
+      { className: "bc-state bc-co-state" },
+      (0, import_react20.createElement)("strong", null, t("No company information yet")),
+      (0, import_react20.createElement)("p", null, t("Create the company before adding departments."))
+    );
   } else {
-    body = organization;
+    body = chart;
   }
-  return (0, import_react20.createElement)("section", { className: "bc-co-page", "aria-label": t("Company") }, tabs, body);
+  return (0, import_react20.createElement)(
+    "section",
+    { className: "bc-co-page", "aria-label": t("Company") },
+    data.company ? (0, import_react20.createElement)(
+      "div",
+      { className: "bc-co-head" },
+      (0, import_react20.createElement)(
+        "div",
+        { className: "bc-co-grow" },
+        (0, import_react20.createElement)("h1", null, t("Company")),
+        (0, import_react20.createElement)("p", null, companyLine(departments, employees, projects))
+      ),
+      props.canCreate ? (0, import_react20.createElement)(
+        "div",
+        { className: "bc-co-actions" },
+        (0, import_react20.createElement)("button", { type: "button", className: "bc-button", onClick: () => props.onCreateOpen("department") }, `＋ ${t("New department")}`),
+        (0, import_react20.createElement)("button", { type: "button", className: "bc-button", onClick: () => props.onCreateOpen("employee") }, `＋ ${t("New employee")}`)
+      ) : null
+    ) : null,
+    (0, import_react20.createElement)(
+      "div",
+      { className: "bc-co-stage" },
+      body,
+      department ? overview(department) : null,
+      createPanel()
+    )
+  );
 }
 function CompanyPage(props) {
   const { escapeGuard } = props;
-  const [tab, setTab] = (0, import_react20.useState)("overview");
-  const [deptId, setDeptId] = (0, import_react20.useState)(null);
-  const [chain, setChain] = (0, import_react20.useState)(null);
-  const [overflow, setOverflow] = (0, import_react20.useState)(false);
-  const tabRefs = (0, import_react20.useRef)(/* @__PURE__ */ new Map());
-  const deptButtons = (0, import_react20.useRef)(/* @__PURE__ */ new Map());
-  const wrapRef = (0, import_react20.useRef)(null);
-  const backRef = (0, import_react20.useRef)(null);
-  const pendingFocus = (0, import_react20.useRef)(null);
-  const selectTab = (next) => {
-    setTab(next);
-    setDeptId(null);
-    setChain(null);
+  const [openDept, setOpenDept] = (0, import_react20.useState)(null);
+  const [creating, setCreating] = (0, import_react20.useState)(null);
+  const [draftName, setDraftName] = (0, import_react20.useState)("");
+  const [draftBot, setDraftBot] = (0, import_react20.useState)("");
+  const [draftDept, setDraftDept] = (0, import_react20.useState)("");
+  const [draftRole, setDraftRole] = (0, import_react20.useState)("executor");
+  const [draftBusy, setDraftBusy] = (0, import_react20.useState)(false);
+  const [draftError, setDraftError] = (0, import_react20.useState)("");
+  const [pan, setPan] = (0, import_react20.useState)({ x: 0, y: 0 });
+  const [dragging, setDragging] = (0, import_react20.useState)(false);
+  const canvasRef = (0, import_react20.useRef)(null);
+  const drag = (0, import_react20.useRef)(null);
+  const closeDraft = () => {
+    setCreating(null);
+    setDraftError("");
+    setDraftName("");
+    setDraftBot("");
+    setDraftDept("");
   };
-  const showDept = (id) => {
-    setDeptId(id);
-    setChain(null);
-  };
-  const backToOrg = () => {
-    pendingFocus.current = deptId;
-    setDeptId(null);
-    setChain(null);
+  const openCreate = (kind) => {
+    closeDraft();
+    setCreating(kind);
   };
   if (escapeGuard) {
     escapeGuard.current = () => {
-      if (deptId === null) return false;
-      backToOrg();
-      return true;
+      if (creating) {
+        closeDraft();
+        return true;
+      }
+      if (openDept !== null) {
+        setOpenDept(null);
+        return true;
+      }
+      return false;
     };
   }
-  (0, import_react20.useEffect)(() => {
-    if (deptId !== null) {
-      backRef.current?.focus?.();
-      return;
+  const onPanStart = (event) => {
+    if (event.button !== 0) return;
+    const target = event.target;
+    if (target instanceof Element && target.closest("button, input, select, a, .bc-co-pop, .bc-co-create, .bc-co-dept")) return;
+    drag.current = { x: event.clientX, y: event.clientY, pan };
+    setDragging(true);
+    try {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    } catch {
     }
-    const target = pendingFocus.current;
-    if (target === null) return;
-    pendingFocus.current = null;
-    deptButtons.current.get(target)?.focus?.();
-  }, [deptId]);
-  (0, import_react20.useEffect)(() => {
-    const measure = () => {
-      const element = wrapRef.current;
-      if (!element) return;
-      setOverflow(Number(element.scrollWidth ?? 0) > Number(element.clientWidth ?? 0) + 1);
-    };
-    measure();
-    const observer = typeof ResizeObserver === "function" && wrapRef.current ? new ResizeObserver(measure) : null;
-    if (observer) observer.observe(wrapRef.current);
-    if (typeof window !== "undefined") window.addEventListener("resize", measure);
-    return () => {
-      if (observer) observer.disconnect();
-      if (typeof window !== "undefined") window.removeEventListener("resize", measure);
-    };
-  }, [tab, deptId, props.data.departments, props.data.employees, props.loading, props.error]);
+  };
+  const onPanMove = (event) => {
+    if (!drag.current) return;
+    setPan({ x: drag.current.pan.x + (event.clientX - drag.current.x), y: drag.current.pan.y + (event.clientY - drag.current.y) });
+  };
+  const onPanEnd = () => {
+    drag.current = null;
+    setDragging(false);
+  };
+  const setLead = async (department, employeeId) => {
+    if (!props.onCommand) return;
+    try {
+      await props.onCommand("department.update", { department_id: department.id, lead_employee_id: employeeId || null });
+    } catch (failure) {
+      setDraftError(failure?.message ?? String(failure));
+    }
+  };
+  const create = async () => {
+    if (!props.onCommand || draftBusy) return;
+    setDraftBusy(true);
+    setDraftError("");
+    try {
+      if (creating === "department") {
+        await props.onCommand("department.create", { name: draftName.trim() });
+      } else {
+        const bot = props.roster?.byId?.[draftBot];
+        await props.onCommand("employee.create", {
+          bot_id: draftBot,
+          name: draftName.trim() || bot?.name || draftBot,
+          department_id: draftDept,
+          acceptance_role: draftRole
+        });
+      }
+      closeDraft();
+    } catch (failure) {
+      setDraftError(failure?.message ?? String(failure));
+    } finally {
+      setDraftBusy(false);
+    }
+  };
   return CompanyPageView({
     ...props,
-    tab,
-    deptId,
-    chain,
-    overflow,
-    wrapRef,
-    tabRefs,
-    deptButtons,
-    backRef,
-    onSelectTab: selectTab,
-    onShowDept: showDept,
-    onBackToOrg: backToOrg,
-    onChain: setChain
+    openDept,
+    creating,
+    pan,
+    dragging,
+    canvasRef,
+    draftName,
+    draftBot,
+    draftDept,
+    draftRole,
+    draftBusy,
+    draftError,
+    canCreate: Boolean(props.onCommand),
+    canEdit: Boolean(props.onCommand),
+    onOpenDept: setOpenDept,
+    onCloseDept: () => setOpenDept(null),
+    onCreateOpen: openCreate,
+    onCloseCreate: closeDraft,
+    onDraftName: setDraftName,
+    onDraftBot: setDraftBot,
+    onDraftDept: setDraftDept,
+    onDraftRole: setDraftRole,
+    onCreate: () => void create(),
+    onSetLead: (department, employeeId) => void setLead(department, employeeId),
+    onPanStart,
+    onPanMove,
+    onPanEnd
   });
 }
 var COMPANY_PAGE_CSS = `
-.bc-co-page{display:flex;flex-direction:column;min-height:0}
-.bc-co-tabs{display:flex;gap:4px;border-bottom:1px solid var(--bt-line);margin:0 0 20px}
-.bc-co-tab{position:relative;border:0;background:none;padding:9px 12px;min-height:36px;font:600 13px var(--bt-font);color:var(--bt-ink-2);cursor:pointer;border-radius:8px 8px 0 0}
-.bc-co-tab:hover{background:var(--bt-hover);color:var(--bt-ink)}
-.bc-co-tab[aria-selected="true"]{color:var(--bt-ink)}
-.bc-co-tab[aria-selected="true"]::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;height:2px;border-radius:999px;background:var(--bt-accent)}
-.bc-co-tab:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
-.bc-co-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-@media (max-width:720px){.bc-co-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.bc-co-stat{display:flex;flex-direction:column;gap:4px;min-height:96px;padding:14px 16px;text-align:left;background:var(--bt-card);border:1px solid var(--bt-line);border-radius:12px;box-shadow:var(--bc-shadow-raised)}
-.bc-co-stat:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
-.bc-co-stat-label{font-size:12px;line-height:16px;color:var(--bt-ink-2)}
-.bc-co-stat-value{font:600 26px/32px var(--bt-font);color:var(--bt-ink);font-variant-numeric:tabular-nums}
-.bc-co-stat.is-strong .bc-co-stat-value{color:var(--bt-accent)}
-.bc-co-stat-sub{font-size:12px;line-height:16px;color:var(--bt-ink-2)}
-.bc-co-stat-retry{margin-top:auto;align-self:flex-start;border:0;background:none;padding:0;min-height:28px;font:600 12px var(--bt-font);color:var(--bt-accent);cursor:pointer;border-radius:4px}
-.bc-co-stat-retry:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
-.bc-co-wrap{overflow-x:auto;overscroll-behavior-x:contain;padding:4px 2px 8px}
-.bc-co{display:flex;gap:24px;align-items:flex-start;min-width:720px}
-.bc-co-node{display:grid;grid-template-columns:14px 1fr;gap:8px;align-items:start;background:none;border:0;padding:6px 10px 6px 0;font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer;border-radius:8px;transition:opacity .12s ease}
-.bc-co-node::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--bt-accent);margin:7px auto 0}
-.bc-co-node:hover{background:var(--bt-hover)}
-.bc-co-node:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
-.bc-co-node-text{display:flex;flex-direction:column;gap:2px;min-width:0}
-.bc-co-node-text strong{font-size:14px;line-height:20px;font-weight:600}
-.bc-co-sub{font-size:12px;line-height:17px;color:var(--bt-ink-2)}
-.bc-co.is-dim .bc-co-node{opacity:.34}
-.bc-co.is-dim .bc-co-node.is-lit{opacity:1}
-.bc-co-company{flex:none;min-width:200px;cursor:default}
-.bc-co-company:hover{background:none}
-.bc-co.is-dim .bc-co-company{opacity:1}
-.bc-co-branches{display:flex;flex-direction:column;gap:14px;flex:1}
-.bc-co-branch{position:relative;display:flex;align-items:flex-start}
-.bc-co-branch::before{content:"";position:absolute;left:-24px;top:16px;width:24px;height:1px;background:var(--bt-line)}
-.bc-co-dept{width:200px;flex:none;margin-right:10px}
-.bc-co-emps{display:flex;flex-direction:column;gap:2px;min-width:240px;padding-left:18px;position:relative}
-.bc-co-emps::before{content:"";position:absolute;left:6px;top:10px;bottom:10px;width:1px;background:var(--bt-line)}
-.bc-co-emp{position:relative}
-.bc-co-emp::after{content:"";position:absolute;left:-12px;top:16px;width:12px;height:1px;background:var(--bt-line)}
-.bc-co-none{display:block;padding:6px 0 6px 2px;font-size:12px;line-height:17px;color:var(--bt-ink-3)}
-.bc-co-node.is-disabled{color:var(--bt-ink-2);cursor:default}
-.bc-co-node.is-disabled:hover{background:none}
-.bc-co-hint{margin:10px 0 0;font-size:12px;line-height:16px;color:var(--bt-ink-2)}
-.bc-co-deptpage{display:flex;flex-direction:column;gap:22px}
-.bc-co-depthead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.bc-co-back{flex:none;width:36px;height:36px;border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);font-size:18px;line-height:1;cursor:pointer}
-.bc-co-back:hover{background:var(--bt-hover)}
-.bc-co-back:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
-.bc-co-depttitle h2{margin:0;font-size:17px;line-height:24px;font-weight:600}
-.bc-co-depttitle p{margin:2px 0 0;font-size:12px;line-height:16px;color:var(--bt-ink-2)}
-.bc-co-block{display:flex;flex-direction:column;gap:8px;padding-top:16px;border-top:1px solid var(--bt-line)}
-.bc-co-block h3{margin:0;font-size:13px;line-height:18px;font-weight:600;color:var(--bt-ink-2)}
-.bc-co-line{margin:0;font-size:13px;line-height:18px}
+.bc-surface-company{overflow:hidden}
+.bc-surface-company .bc-shell{height:100vh}
+.bc-surface-company .bc-content{display:flex;flex:1;min-height:0;width:100%;max-width:none;padding:0}
+.bc-surface-company .bc-co-page{flex:1;min-height:0}
+.bc-co-page{display:flex;flex-direction:column;min-height:0;height:100%}
+.bc-co-head{flex:none;display:flex;align-items:flex-end;gap:16px;padding:18px 32px 14px;border-bottom:1px solid var(--bt-line)}
+.bc-co-grow{flex:1;min-width:0}
+.bc-co-head h1{margin:0;font:600 17px/24px var(--bt-font);color:var(--bt-ink)}
+.bc-co-head p{margin:3px 0 0;font-size:12px;line-height:18px;color:var(--bt-ink-2)}
+.bc-co-actions{display:flex;gap:8px;flex:none}
+.bc-co-stage{position:relative;flex:1;min-height:0}
+.bc-co-canvas{position:relative;height:100%;min-height:420px;overflow:hidden;cursor:grab;background-image:radial-gradient(circle,var(--bt-line-2) 1px,transparent 1px);background-size:26px 26px;overscroll-behavior:contain}
+.bc-co-canvas.is-panning{cursor:grabbing}
+.bc-co-band{position:absolute;left:0;top:0;width:100%;padding:26px 28px 72px;transform-origin:0 0;transition:transform .18s ease}
+.bc-co-canvas.is-panning .bc-co-band{transition:none}
+.bc-co-co{display:flex;flex-direction:column;align-items:center;gap:4px}
+.bc-co-co-card{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:230px;padding:10px 16px;border:1px solid var(--bt-line-2);border-radius:10px;background:var(--bt-card);box-shadow:var(--bc-shadow-raised)}
+.bc-co-co-card strong{font:600 14px/20px var(--bt-font);color:var(--bt-ink)}
+.bc-co-co-link{align-self:center;border:0;background:none;padding:2px 6px;min-height:24px;font:600 12px var(--bt-font);color:var(--bt-ink-2);cursor:pointer;border-radius:6px}
+.bc-co-co-link:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.bc-co-cols{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:20px;margin-top:30px;padding-top:20px;border-top:1px solid var(--bt-line)}
+@media (max-width:1180px){.bc-co-cols{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:860px){.bc-co-cols{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.bc-co-dept{position:relative;display:flex;flex-direction:column;padding:11px 13px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-card);cursor:pointer;transition:border-color .12s ease,box-shadow .12s ease}
+.bc-co-dept:hover{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)}
+.bc-co-dept.is-open{border-color:var(--bt-accent);box-shadow:0 0 0 1px var(--bt-accent)}
+.bc-co-dept-head{display:flex;align-items:center;gap:6px;min-width:0}
+.bc-co-dept-name{flex:1;min-width:0;border:0;background:none;padding:0;font:600 13px/18px var(--bt-font);color:var(--bt-ink);text-align:left;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bc-co-dept-name:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px;border-radius:4px}
+.bc-co-tag{flex:none;padding:1px 6px;border-radius:4px;border:1px solid var(--bt-line-2);font-size:11px;line-height:16px;color:var(--bt-ink-2)}
+.bc-co-tag.is-ok{border-color:color-mix(in srgb,var(--bt-accent) 45%,transparent);color:var(--bt-accent)}
+.bc-co-dept-meta{margin:4px 0 0;font-size:12px;line-height:17px;color:var(--bt-ink-2)}
+.bc-co-dept-desc{margin:4px 0 0;font-size:12px;line-height:17px;color:var(--bt-ink-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.bc-co-emps{display:flex;flex-direction:column;gap:1px;margin-top:8px;padding-left:12px;border-left:1px solid var(--bt-line)}
+.bc-co-emp{display:flex;align-items:center;gap:9px;width:100%;padding:5px 6px;border:0;border-radius:7px;background:none;font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer}
+.bc-co-emp:hover{background:var(--bt-hover)}
+.bc-co-emp:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
+.bc-co-emp.is-disabled{color:var(--bt-ink-2);cursor:default}
+.bc-co-emp.is-disabled:hover{background:none}
+.bc-co-face{flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bt-main);border:1px solid var(--bt-line-2);color:var(--bt-ink-2);font:600 10px/1 var(--bt-font)}
+.bc-co-face-sm{width:22px;height:22px}
+.bc-co-emp-text{display:flex;flex:1;flex-direction:column;gap:0;min-width:0}
+.bc-co-emp-text strong{font-size:12px;line-height:16px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bc-co-emp-go{flex:none;font-size:13px;color:var(--bt-ink-3);opacity:0;transition:opacity .12s ease}
+.bc-co-emp:hover .bc-co-emp-go,.bc-co-emp:focus-visible .bc-co-emp-go{opacity:1}
+.bc-co-sub{font-size:11px;line-height:15px;color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bc-co-none{display:block;padding:4px 2px;font-size:11px;line-height:15px;color:var(--bt-ink-3)}
+.bc-co-hint{position:absolute;left:22px;bottom:16px;margin:0;font-size:12px;line-height:16px;color:var(--bt-ink-3)}
+.bc-co-pop,.bc-co-create{position:absolute;top:26px;right:32px;z-index:5;width:300px;max-height:calc(100% - 72px);overflow:auto;padding:14px;border:1px solid var(--bt-line-2);border-radius:12px;background:var(--bt-card);box-shadow:0 12px 32px -8px color-mix(in srgb,var(--bt-ink) 22%,transparent);animation:bc-co-pop-in .12s ease-out}
+@keyframes bc-co-pop-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.bc-co-pop,.bc-co-create{animation:none}}
+.bc-co-pop-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.bc-co-pop-head strong{font:600 13px/18px var(--bt-font)}
+.bc-co-pop-name{flex:1;min-width:0;font-size:12px;color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bc-co-pop-close{flex:none;width:26px;height:26px;border:0;border-radius:7px;background:none;color:var(--bt-ink-2);font-size:18px;line-height:1;cursor:pointer}
+.bc-co-pop-close:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.bc-co-kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0 0 10px;font-size:12px;line-height:17px}
+.bc-co-kv dt{color:var(--bt-ink-2)}
+.bc-co-kv dd{margin:0;color:var(--bt-ink);min-width:0}
+.bc-co-kv select{width:100%;min-height:28px;border:1px solid var(--bt-line-2);border-radius:7px;background:var(--bt-card);color:var(--bt-ink);font:inherit;padding:0 6px}
 .bc-co-muted{margin:0;font-size:12px;line-height:17px;color:var(--bt-ink-2)}
-.bc-co-rows{display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-card)}
-.bc-co-row{display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;border:0;border-bottom:1px solid var(--bt-line);background:var(--bt-card);font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer}
-.bc-co-row:last-child{border-bottom:0}
+.bc-co-pop-emps{display:flex;flex-direction:column;border-top:1px solid var(--bt-line);padding-top:8px}
+.bc-co-row{display:flex;align-items:center;gap:9px;width:100%;padding:7px 6px;border:0;border-radius:7px;background:none;font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer}
 .bc-co-row:hover{background:var(--bt-hover)}
 .bc-co-row:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
-.bc-co-row.is-disabled{color:var(--bt-ink-2);cursor:default}
-.bc-co-row.is-disabled:hover{background:var(--bt-card)}
-.bc-co-row-main{display:flex;flex:1;flex-direction:column;gap:2px;min-width:0}
-.bc-co-row-main strong{font-size:13px;line-height:18px;font-weight:600}
-.bc-co-row-go{color:var(--bt-ink-3);font-size:14px}
-.bc-co-state{padding:28px 0}
-.bc-co-loading{display:flex;flex-direction:column;gap:8px;padding:20px 0}
+.bc-co-row.is-disabled{cursor:default;color:var(--bt-ink-2)}
+.bc-co-row.is-disabled:hover{background:none}
+.bc-co-row-main{display:flex;flex:1;flex-direction:column;gap:0;min-width:0}
+.bc-co-row-main strong{font-size:12px;line-height:16px;font-weight:600}
+.bc-co-row-go{font-size:13px;color:var(--bt-ink-3)}
+.bc-co-create-fields{display:flex;flex-direction:column;gap:10px}
+.bc-co-create-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.bc-co-loading{display:flex;flex-direction:column;gap:8px;padding:20px 32px}
 `;
 
 // src/client/project-page.js
@@ -11788,23 +12187,6 @@ function CompanySurface({ page, actions, roster }) {
     opener.current = document.activeElement;
     box.current?.focus();
     const onKey = (event) => {
-      if (event.key === "Tab") {
-        const focusable = [...box.current?.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex]:not([tabindex="-1"])') ?? []].filter((element) => element.getClientRects().length > 0);
-        if (!focusable.length) {
-          event.preventDefault();
-          box.current?.focus();
-          return;
-        }
-        const first = focusable[0], last = focusable[focusable.length - 1];
-        if (event.shiftKey && (document.activeElement === first || document.activeElement === box.current)) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-        return;
-      }
       if (event.key !== "Escape" || event.target instanceof HTMLSelectElement) return;
       event.preventDefault();
       event.stopPropagation();
@@ -11817,6 +12199,14 @@ function CompanySurface({ page, actions, roster }) {
       document.removeEventListener("keydown", onKey, true);
       opener.current?.focus?.();
     };
+  }, []);
+  (0, import_react24.useEffect)(() => {
+    const onFilter = (event) => {
+      const value = event.detail;
+      if (value === "active" || value === "setup" || value === "archived" || value === "all") setFilter(value);
+    };
+    window.addEventListener("bt-company-filter", onFilter);
+    return () => window.removeEventListener("bt-company-filter", onFilter);
   }, []);
   const load = async (signal, quiet = false) => {
     if (!quiet) {
@@ -11848,6 +12238,7 @@ function CompanySurface({ page, actions, roster }) {
       if (signal?.aborted) return;
       setTodosData({
         todos: [...result.waiting ?? [], ...result.handled ?? []],
+        pending: result.waiting ?? [],
         counts: result.counts ?? {},
         read_at: result.read_at ?? null
       });
@@ -11863,7 +12254,7 @@ function CompanySurface({ page, actions, roster }) {
     return () => controller.abort();
   }, []);
   (0, import_react24.useEffect)(() => {
-    if (kind !== "todos" && kind !== "company") return;
+    if (kind !== "todos" && kind !== "company" && kind !== "list") return;
     const controller = new AbortController();
     void loadTodos(controller.signal);
     return () => controller.abort();
@@ -11942,6 +12333,7 @@ function CompanySurface({ page, actions, roster }) {
     const created = field2 && result.body?.[field2];
     if (created) setData((current) => field2 === "company" ? { ...current, company: created } : { ...current, [`${field2}s`]: [...current[`${field2}s`].filter((item) => item.id !== created.id), created] });
     await load(void 0, true);
+    window.dispatchEvent(new CustomEvent("bt-company-changed"));
     if (result.warning) setNotice(t("Saved, but the project group needs reconciliation."));
     return result;
   };
@@ -11959,6 +12351,7 @@ function CompanySurface({ page, actions, roster }) {
   };
   const project = data.projects.find((item) => item.id === selected);
   const coordinatorOf = (item) => data.employees.find((employee) => employee.project_id === item.id && employee.acceptance_role === "coordinator") ?? data.employees.find((employee) => employee.id === data.members.find((member) => member.id === item.coordinator_assignment_id)?.employee_id);
+  const departmentOf = (item) => (item.source_department_ids ?? []).map((id) => data.departments.find((department) => department.id === id)?.name).filter(Boolean)[0] ?? "";
   const groupReady = (item) => !preview && item.group_binding?.status === "bound" && Boolean(item.group_chat_ref) && Boolean(roster.roomsById?.[item.group_chat_ref]);
   const openProject = (item) => groupReady(item) ? openChat(item) : actions.openCompanyPage("detail", item.id);
   const markStale = (item) => setTodosData((current) => current ? { ...current, todos: current.todos.map((row) => row.id === item.id ? { ...row, stale: true, ready: false, reason: null, reason_code: null } : row) } : current);
@@ -12038,6 +12431,7 @@ function CompanySurface({ page, actions, roster }) {
   const visible = data.projects.filter((item) => filter === "all" || (item.status ?? "setup") === filter).filter((item) => !wanted || [item.name, item.goal].filter(Boolean).some((value) => String(value).toLowerCase().includes(wanted)));
   const onTodos = kind === "todos";
   const onCompany = kind === "company";
+  const onWorkspace = kind !== "todos";
   const surfaceLabel = onTodos ? t("Todos") : onCompany ? t("Company") : t("Projects");
   const closeLabel = onTodos ? t("Close todos") : onCompany ? t("Close company page") : t("Close projects");
   const brandTarget = onTodos ? "todos" : onCompany ? "company" : "list";
@@ -12049,11 +12443,11 @@ function CompanySurface({ page, actions, roster }) {
   };
   return (0, import_react24.createElement)(
     "div",
-    { className: "bc-surface", role: "dialog", "aria-modal": true, "aria-label": surfaceLabel, tabIndex: -1, ref: box },
+    { className: "bc-surface" + (onCompany ? " bc-surface-company" : "") + (onWorkspace ? " bc-surface-workspace" : ""), role: onWorkspace ? "region" : "dialog", "aria-modal": onWorkspace ? void 0 : true, "aria-label": surfaceLabel, tabIndex: -1, ref: box },
     (0, import_react24.createElement)(
       "div",
       { className: "bc-shell" },
-      (0, import_react24.createElement)(
+      onWorkspace ? null : (0, import_react24.createElement)(
         "header",
         { className: "bc-header" },
         (0, import_react24.createElement)("button", { type: "button", className: "bc-brand", onClick: () => actions.openCompanyPage(brandTarget) }, surfaceLabel),
@@ -12064,7 +12458,7 @@ function CompanySurface({ page, actions, roster }) {
       notice ? (0, import_react24.createElement)("div", { className: "bc-notice", role: "status" }, notice, (0, import_react24.createElement)("button", { type: "button", "aria-label": t("Dismiss notice"), onClick: () => setNotice("") }, "×")) : null,
       (0, import_react24.createElement)(
         "main",
-        { className: "bc-content" },
+        { className: "bc-content" + (onCompany ? " bc-content-company" : "") },
         kind === "wizard" ? (0, import_react24.createElement)(ProjectWizard, { data, roster, preview, loading, error, mutate, onBack: () => actions.openCompanyPage("list"), onCreated: (result) => actions.openCompanyPage("detail", result.body?.project?.id) }) : kind === "detail" ? (0, import_react24.createElement)(ProjectPage, { project, data, preview, loading: loading || detailLoading, error: detailError || error, onBack: () => actions.openCompanyPage("list"), onChat: () => project && openChat(project), onRetry: () => setDetailAttempt((value) => value + 1), onCommand: async (command, fields) => {
           const result = await mutate(command, fields);
           setDetailAttempt((value) => value + 1);
@@ -12080,6 +12474,8 @@ function CompanySurface({ page, actions, roster }) {
           onRetry: () => void load(),
           onRetryTodos: () => setTodoAttempt((value) => value + 1),
           onOpenEmployee: openEmployeeChat,
+          onOpenProjects: () => actions.openCompanyPage("list"),
+          onCommand: mutate,
           roster
         }) : onTodos ? (0, import_react24.createElement)(TodoPage, {
           todos: todosData?.todos ?? [],
@@ -12103,31 +12499,53 @@ function CompanySurface({ page, actions, roster }) {
             (0, import_react24.createElement)(
               "div",
               { className: "bc-grow" },
-              (0, import_react24.createElement)("span", { className: "bc-crumb" }, t("Workspace / Projects")),
-              (0, import_react24.createElement)("h1", null, t("Projects"))
-            ),
-            (0, import_react24.createElement)("button", { type: "button", className: "bc-button bc-primary", style: { flex: "none", whiteSpace: "nowrap" }, onClick: () => actions.openCompanyPage("wizard") }, t("New project"))
+              (0, import_react24.createElement)("h1", null, t("Projects")),
+              (0, import_react24.createElement)("p", { className: "bc-sub" }, t("{count} projects", { count: visible.length }))
+            )
           ),
           (0, import_react24.createElement)(
             "div",
-            { className: "bc-toolbar" },
-            (0, import_react24.createElement)("div", { className: "bc-chips", role: "group", "aria-label": t("Project status") }, [["active", "Current"], ["setup", "Setup"], ["archived", "Archived"], ["all", "All"]].map(([value, label2]) => (0, import_react24.createElement)("button", { type: "button", key: value, className: "bc-chip", "aria-pressed": filter === value, onClick: () => setFilter(value) }, t(label2)))),
-            (0, import_react24.createElement)("input", { type: "search", className: "bc-search", value: query, onChange: (event) => setQuery(event.target.value), placeholder: t("Search projects"), "aria-label": t("Search projects") })
+            { className: "bc-toolbar bc-toolbar-projects" },
+            (0, import_react24.createElement)("input", { type: "search", className: "bc-search bc-search-wide", value: query, onChange: (event) => setQuery(event.target.value), placeholder: t("Search a project name or goal"), "aria-label": t("Search projects") }),
+            (0, import_react24.createElement)("button", { type: "button", className: "bc-button bc-primary", style: { flex: "none", whiteSpace: "nowrap" }, onClick: () => actions.openCompanyPage("wizard") }, "+ ", t("New project"))
           ),
           loading ? (0, import_react24.createElement)("div", { className: "bc-plist", role: "status", "aria-label": t("Loading projects…") }, [0, 1, 2].map((index) => (0, import_react24.createElement)("div", { key: index, className: "bc-pcard bc-skeleton" }, (0, import_react24.createElement)("span", { className: "bc-skel bc-skel-title" }), (0, import_react24.createElement)("span", { className: "bc-skel bc-skel-line" }), (0, import_react24.createElement)("span", { className: "bc-skel bc-skel-line short" })))) : error ? (0, import_react24.createElement)("div", { className: "bc-state bc-error", role: "alert" }, (0, import_react24.createElement)("strong", null, t("Projects could not be loaded.")), (0, import_react24.createElement)("p", null, error), (0, import_react24.createElement)("button", { type: "button", className: "bc-button", onClick: () => void load() }, t("Try again")), (0, import_react24.createElement)("button", { type: "button", className: "bc-button", onClick: previewData }, t("Open local sample preview"))) : data.projects.length === 0 ? (0, import_react24.createElement)("div", { className: "bc-state" }, (0, import_react24.createElement)("strong", null, t("No projects here yet")), (0, import_react24.createElement)("p", null, t("Create a project to bring employees together around one goal.")), (0, import_react24.createElement)("button", { type: "button", className: "bc-button bc-primary", onClick: () => actions.openCompanyPage("wizard") }, t("New project"))) : visible.length === 0 ? (0, import_react24.createElement)("div", { className: "bc-state" }, (0, import_react24.createElement)("strong", null, query.trim() ? t("No matching projects") : t("No projects in this view.")), (0, import_react24.createElement)("p", null, query.trim() ? t("Try another name or status.") : t("Try another status, or view all projects.")), (0, import_react24.createElement)("button", { type: "button", className: "bc-button", onClick: () => {
             if (query.trim()) setQuery("");
             else setFilter("all");
-          } }, query.trim() ? t("Clear search") : t("Show all projects"))) : (0, import_react24.createElement)("div", { className: "bc-plist" }, visible.map((item) => {
-            const coordinator = coordinatorOf(item);
-            const activity = formatActivity(item.updated_at);
-            return (0, import_react24.createElement)(
-              "button",
-              { type: "button", key: item.id, className: "bc-pcard", title: item.goal || void 0, onClick: () => openProject(item) },
-              (0, import_react24.createElement)("span", { className: "bc-pcard-top" }, (0, import_react24.createElement)("strong", null, item.name), (0, import_react24.createElement)("span", { className: "bc-tag" }, statusLabel(item.status))),
-              (0, import_react24.createElement)("span", { className: "bc-pcard-goal" }, item.goal || t("No goal specified")),
-              (0, import_react24.createElement)("span", { className: "bc-pcard-meta" }, (0, import_react24.createElement)("span", null, coordinator?.name ? `${t("Coordinator")} ${coordinator.name}` : t("Coordinator pending")), activity ? (0, import_react24.createElement)("span", null, `· ${t("Last activity")} ${activity}`) : null)
-            );
-          }))
+          } }, query.trim() ? t("Clear search") : t("Show all projects"))) : (0, import_react24.createElement)(
+            "div",
+            { className: "bc-tablewrap" },
+            (0, import_react24.createElement)(
+              "table",
+              { className: "bc-table" },
+              (0, import_react24.createElement)("thead", null, (0, import_react24.createElement)("tr", null, [t("Project"), t("Stage"), t("Waiting for you"), t("Source department"), t("Coordinator"), t("Last activity"), ""].map((label2, index) => (0, import_react24.createElement)("th", { key: index, scope: "col" }, label2)))),
+              (0, import_react24.createElement)("tbody", null, visible.map((item) => {
+                const coordinator = coordinatorOf(item);
+                const department = departmentOf(item);
+                const activity = formatActivity(item.updated_at);
+                const pendingCount = (project2) => (todosData?.pending ?? []).filter((todo) => todo.project_id === project2.id).length;
+                return (0, import_react24.createElement)(
+                  "tr",
+                  { key: item.id, className: "bc-trow", tabIndex: 0, onClick: () => openProject(item), onKeyDown: (event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openProject(item);
+                    }
+                  } },
+                  (0, import_react24.createElement)("td", { className: "bc-td-project" }, (0, import_react24.createElement)("strong", null, item.name), (0, import_react24.createElement)("span", null, item.goal || t("No goal specified"))),
+                  (0, import_react24.createElement)("td", null, (0, import_react24.createElement)("span", { className: "bc-tag" }, statusLabel(item.status))),
+                  (0, import_react24.createElement)("td", { className: "bc-td-num" }, pendingCount(item) || "—"),
+                  (0, import_react24.createElement)("td", null, department || "—"),
+                  (0, import_react24.createElement)("td", null, coordinator?.name ?? t("Coordinator pending")),
+                  (0, import_react24.createElement)("td", null, activity || "—"),
+                  (0, import_react24.createElement)("td", { className: "bc-td-more" }, (0, import_react24.createElement)("button", { type: "button", className: "bc-more", "aria-label": t("Open project details"), onClick: (event) => {
+                    event.stopPropagation();
+                    openProject(item);
+                  } }, "…", (0, import_react24.createElement)("span", null, t("Advanced"))))
+                );
+              }))
+            )
+          )
         )
       )
     )
@@ -12135,9 +12553,9 @@ function CompanySurface({ page, actions, roster }) {
 }
 var statusLabel = (status) => ({ setup: t("Setup"), active: t("In progress"), paused: t("Paused"), archived: t("Archived") })[status] ?? t("Unknown status");
 var COMPANY_CSS = COMPANY_PAGE_CSS + `
-.bc-surface{--bc-small:11px;--bc-label:12px;--bc-body:13px;--bc-title:17px;--bc-radius:12px;position:fixed;inset:0;z-index:1100;background:var(--bt-main);color:var(--bt-ink);font-family:var(--bt-font);overflow:auto;overscroll-behavior:contain}.bc-surface *{box-sizing:border-box}.bc-shell{min-height:100vh;display:flex;flex-direction:column}.bc-header{height:52px;flex:none;display:flex;gap:12px;align-items:center;padding:0 max(20px,calc((100vw - 960px)/2));border-bottom:1px solid var(--bt-line);background:var(--bt-card)}.bc-brand{background:none;border:0;color:var(--bt-ink);font-size:15px;font-weight:700;cursor:pointer}.bc-header-context{color:var(--bt-ink-2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bc-icon{margin-left:auto;width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:var(--bt-ink);font-size:24px;cursor:pointer}.bc-content{width:min(100%,1000px);margin:0 auto;padding:32px 24px 64px}.bc-page{max-width:940px;margin:auto}.bc-kicker{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--bt-ink-2)}.bc-lead{display:flex;justify-content:space-between;align-items:end;gap:20px;margin:0 0 28px}.bc-lead h1{font-size:var(--bc-title);line-height:24px;margin:8px 0}.bc-lead p,.bc-muted{color:var(--bt-ink-2);line-height:1.5}.bc-lead p{margin:0;font-size:13px}.bc-button{border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);padding:9px 13px;min-height:36px;font:600 13px var(--bt-font);cursor:pointer}.bc-button:hover,.bc-icon:hover,.bc-filter:hover{background:var(--bt-hover)}.bc-primary{min-height:40px;border-radius:999px;background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));border-color:var(--bt-accent)}.bc-primary:hover{filter:brightness(.94);background:var(--bt-accent)}.bc-button:disabled{opacity:.45;cursor:not-allowed}.bc-surface :is(button,input,textarea,select,summary):focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}.bc-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.bc-filters{display:flex;gap:4px;border:1px solid var(--bt-line);border-radius:8px;padding:3px}.bc-filter{border:0;border-radius:6px;background:transparent;color:var(--bt-ink-2);padding:7px 11px;font-size:12px;cursor:pointer}.bc-selected{background:var(--bt-active);color:var(--bt-ink);font-weight:600}.bc-search,.bc-field :is(input,textarea,select){border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);padding:9px 11px;font:13px var(--bt-font)}.bc-search{width:210px}.bc-list{border:1px solid var(--bt-line);border-radius:12px;overflow:hidden;background:var(--bt-card)}.bc-project-row{display:flex;width:100%;gap:20px;align-items:center;text-align:left;padding:17px 20px;border:0;border-bottom:1px solid var(--bt-line);background:transparent;color:var(--bt-ink);cursor:pointer}.bc-project-row:last-child{border:0}.bc-project-row:hover{background:var(--bt-hover)}.bc-project-main{min-width:0;flex:1;display:grid;gap:5px}.bc-project-main strong{font-size:14px}.bc-project-main span,.bc-project-main small,.bc-project-meta small{font-size:12px;color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bc-project-meta{min-width:140px;display:grid;justify-items:end;gap:5px}.bc-status{display:inline-flex;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);font-size:11px;font-weight:700;padding:4px 7px}.bc-status.bc-active{color:var(--bt-green)}.bc-status.bc-paused,.bc-status.bc-pending{color:var(--bt-star)}.bc-status.bc-archived{color:var(--bt-ink-2)}.bc-state{border:1px dashed var(--bt-line-2);border-radius:12px;padding:32px;text-align:center;color:var(--bt-ink-2);font-size:13px}.bc-state strong{color:var(--bt-ink);font-size:15px}.bc-state .bc-button{margin:5px}.bc-error{border-color:var(--bt-danger)}.bc-preview{padding:8px 24px;background:var(--bt-tag-bg);text-align:center;color:var(--bt-ink);font-size:12px;font-weight:700}.bc-notice{display:flex;gap:12px;align-items:center;justify-content:center;padding:8px 20px;background:var(--bt-tag-bg);font-size:12px}.bc-notice button{border:0;background:transparent;color:var(--bt-ink);cursor:pointer}.bc-back{background:none;border:0;color:var(--bt-ink-2);font:600 12px var(--bt-font);padding:6px 0;cursor:pointer}.bc-back:hover{color:var(--bt-ink)}.bc-section{background:var(--bt-card);border:1px solid var(--bt-line);border-radius:12px;padding:20px;margin:16px 0}.bc-section h2{font-size:14px;margin:0 0 14px}.bc-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.bc-field{display:grid;gap:6px;font-size:12px;font-weight:600}.bc-field :is(input,textarea,select){width:100%}.bc-field textarea{resize:vertical;min-height:72px}.bc-field small{font-weight:400;color:var(--bt-ink-2)}.bc-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.bc-detail-title{font-size:var(--bc-title);line-height:24px;margin:10px 0}.bc-detail-label{color:var(--bt-ink-2);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}.bc-detail-value{font-size:13px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}.bc-member{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--bt-line);font-size:13px}.bc-member small{font-size:11px;color:var(--bt-ink-2)}.bc-steps{display:flex;flex-wrap:wrap;gap:6px;margin:24px 0}.bc-step{font-size:11px;color:var(--bt-ink-2);padding:7px 10px;border:1px solid var(--bt-line);border-radius:6px}.bc-step[aria-current=step]{color:var(--bt-ink);border-color:var(--bt-accent);font-weight:700}.bc-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.bc-choice{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px}.bc-choice input{accent-color:var(--bt-accent)}.bc-exception{border-left:3px solid var(--bt-danger);padding:10px 12px;background:var(--bt-tag-bg);font-size:12px;line-height:1.5}.bc-exception strong{display:block}.bc-optional{margin-top:16px;border-top:1px solid var(--bt-line);padding-top:14px}.bc-optional summary{cursor:pointer;color:var(--bt-ink);font-size:13px;font-weight:600}.bc-optional[open] summary{margin-bottom:16px}.bc-start-reason{text-align:right;color:var(--bt-ink-2);font-size:12px;line-height:1.5}.bc-surface button{touch-action:manipulation}@media(max-width:620px){.bc-header{height:48px;padding:0 14px}.bc-content{padding:22px 14px 48px}.bc-lead{align-items:flex-start}.bc-lead h1{font-size:var(--bc-title)}.bc-toolbar{align-items:stretch;flex-direction:column}.bc-search{width:100%}.bc-project-row{padding:14px;gap:8px}.bc-project-meta{min-width:88px}.bc-grid{grid-template-columns:1fr}.bc-section{padding:16px}}
+.bc-surface{--bc-small:11px;--bc-label:12px;--bc-body:13px;--bc-title:17px;--bc-radius:12px;position:fixed;inset:0;z-index:1100;background:var(--bt-main);color:var(--bt-ink);font-family:var(--bt-font);overflow:auto;overscroll-behavior:contain}.bc-surface *{box-sizing:border-box}.bc-surface-workspace{left:var(--bt-company-left,0px)}.bc-shell{min-height:100vh;display:flex;flex-direction:column}.bc-header{height:52px;flex:none;display:flex;gap:12px;align-items:center;padding:0 max(20px,calc((100vw - 960px)/2));border-bottom:1px solid var(--bt-line);background:var(--bt-card)}.bc-brand{background:none;border:0;color:var(--bt-ink);font-size:15px;font-weight:700;cursor:pointer}.bc-header-context{color:var(--bt-ink-2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bc-icon{margin-left:auto;width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:var(--bt-ink);font-size:24px;cursor:pointer}.bc-content{width:min(100%,1000px);margin:0 auto;padding:32px 24px 64px}.bc-surface-workspace .bc-content{width:100%;max-width:none;padding:20px 32px 48px}.bc-surface-workspace .bc-page{max-width:none}.bc-surface-company .bc-content-company{padding:0}.bc-kicker{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--bt-ink-2)}.bc-lead{display:flex;justify-content:space-between;align-items:end;gap:20px;margin:0 0 28px}.bc-lead h1{font-size:var(--bc-title);line-height:24px;margin:8px 0}.bc-lead p,.bc-muted{color:var(--bt-ink-2);line-height:1.5}.bc-lead p{margin:0;font-size:13px}.bc-button{border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);padding:9px 13px;min-height:36px;font:600 13px var(--bt-font);cursor:pointer}.bc-button:hover,.bc-icon:hover,.bc-filter:hover{background:var(--bt-hover)}.bc-primary{min-height:40px;border-radius:999px;background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));border-color:var(--bt-accent)}.bc-primary:hover{filter:brightness(.94);background:var(--bt-accent)}.bc-button:disabled{opacity:.45;cursor:not-allowed}.bc-surface :is(button,input,textarea,select,summary):focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}.bc-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.bc-filters{display:flex;gap:4px;border:1px solid var(--bt-line);border-radius:8px;padding:3px}.bc-filter{border:0;border-radius:6px;background:transparent;color:var(--bt-ink-2);padding:7px 11px;font-size:12px;cursor:pointer}.bc-selected{background:var(--bt-active);color:var(--bt-ink);font-weight:600}.bc-search,.bc-field :is(input,textarea,select){border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);padding:9px 11px;font:13px var(--bt-font)}.bc-search{width:210px}.bc-list{border:1px solid var(--bt-line);border-radius:12px;overflow:hidden;background:var(--bt-card)}.bc-project-row{display:flex;width:100%;gap:20px;align-items:center;text-align:left;padding:17px 20px;border:0;border-bottom:1px solid var(--bt-line);background:transparent;color:var(--bt-ink);cursor:pointer}.bc-project-row:last-child{border:0}.bc-project-row:hover{background:var(--bt-hover)}.bc-project-main{min-width:0;flex:1;display:grid;gap:5px}.bc-project-main strong{font-size:14px}.bc-project-main span,.bc-project-main small,.bc-project-meta small{font-size:12px;color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bc-project-meta{min-width:140px;display:grid;justify-items:end;gap:5px}.bc-status{display:inline-flex;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);font-size:11px;font-weight:700;padding:4px 7px}.bc-status.bc-active{color:var(--bt-green)}.bc-status.bc-paused,.bc-status.bc-pending{color:var(--bt-star)}.bc-status.bc-archived{color:var(--bt-ink-2)}.bc-state{border:1px dashed var(--bt-line-2);border-radius:12px;padding:32px;text-align:center;color:var(--bt-ink-2);font-size:13px}.bc-state strong{color:var(--bt-ink);font-size:15px}.bc-state .bc-button{margin:5px}.bc-error{border-color:var(--bt-danger)}.bc-preview{padding:8px 24px;background:var(--bt-tag-bg);text-align:center;color:var(--bt-ink);font-size:12px;font-weight:700}.bc-notice{display:flex;gap:12px;align-items:center;justify-content:center;padding:8px 20px;background:var(--bt-tag-bg);font-size:12px}.bc-notice button{border:0;background:transparent;color:var(--bt-ink);cursor:pointer}.bc-back{background:none;border:0;color:var(--bt-ink-2);font:600 12px var(--bt-font);padding:6px 0;cursor:pointer}.bc-back:hover{color:var(--bt-ink)}.bc-section{background:var(--bt-card);border:1px solid var(--bt-line);border-radius:12px;padding:20px;margin:16px 0}.bc-section h2{font-size:14px;margin:0 0 14px}.bc-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.bc-field{display:grid;gap:6px;font-size:12px;font-weight:600}.bc-field :is(input,textarea,select){width:100%}.bc-field textarea{resize:vertical;min-height:72px}.bc-field small{font-weight:400;color:var(--bt-ink-2)}.bc-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.bc-detail-title{font-size:var(--bc-title);line-height:24px;margin:10px 0}.bc-detail-label{color:var(--bt-ink-2);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}.bc-detail-value{font-size:13px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}.bc-member{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--bt-line);font-size:13px}.bc-member small{font-size:11px;color:var(--bt-ink-2)}.bc-steps{display:flex;flex-wrap:wrap;gap:6px;margin:24px 0}.bc-step{font-size:11px;color:var(--bt-ink-2);padding:7px 10px;border:1px solid var(--bt-line);border-radius:6px}.bc-step[aria-current=step]{color:var(--bt-ink);border-color:var(--bt-accent);font-weight:700}.bc-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.bc-choice{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px}.bc-choice input{accent-color:var(--bt-accent)}.bc-exception{border-left:3px solid var(--bt-danger);padding:10px 12px;background:var(--bt-tag-bg);font-size:12px;line-height:1.5}.bc-exception strong{display:block}.bc-optional{margin-top:16px;border-top:1px solid var(--bt-line);padding-top:14px}.bc-optional summary{cursor:pointer;color:var(--bt-ink);font-size:13px;font-weight:600}.bc-optional[open] summary{margin-bottom:16px}.bc-start-reason{text-align:right;color:var(--bt-ink-2);font-size:12px;line-height:1.5}.bc-surface button{touch-action:manipulation}@media(max-width:620px){.bc-header{height:48px;padding:0 14px}.bc-content{padding:22px 14px 48px}.bc-lead{align-items:flex-start}.bc-lead h1{font-size:var(--bc-title)}.bc-toolbar{align-items:stretch;flex-direction:column}.bc-search{width:100%}.bc-project-row{padding:14px;gap:8px}.bc-project-meta{min-width:88px}.bc-grid{grid-template-columns:1fr}.bc-section{padding:16px}}
 .bc-surface{--bc-text-xs:11px;--bc-text-sm:12px;--bc-text-content:14px;--bc-text-heading:15px;--bc-text-title:17px;--bc-control-sm:28px;--bc-control-md:36px;--bc-control-lg:40px;--bc-radius-tag:4px;--bc-radius-field:8px;--bc-radius-row:10px;--bc-radius-card:12px;--bc-shadow-raised:0 2px 8px -1px color-mix(in srgb,var(--bt-ink) 6%,transparent),0 1px 2px color-mix(in srgb,var(--bt-ink) 4%,transparent);--bc-shadow-dock:0 0 0 .5px var(--bt-line-2),0 2px 8px -2px color-mix(in srgb,var(--bt-ink) 12%,transparent);--bc-mask-header:60px}
-.bc-head{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:0 0 14px}.bc-head .bc-grow{flex:1;min-width:200px}.bc-head h1{font-size:var(--bc-text-title);line-height:24px;font-weight:600;margin:4px 0 0}.bc-crumb{font-size:var(--bc-text-xs);line-height:16px;color:var(--bt-ink-3)}.bc-chips{display:flex;gap:6px;flex-wrap:wrap}.bc-chip{height:var(--bc-control-sm);padding:0 10px;border-radius:999px;border:1px solid var(--bt-line-2);background:var(--bt-card);font-size:var(--bc-text-sm);line-height:16px;color:var(--bt-ink-2);cursor:pointer}.bc-chip:hover{background:var(--bt-hover)}.bc-chip[aria-pressed="true"]{background:var(--bt-accent);border-color:transparent;color:var(--bt-accent-ink);font-weight:500}.bc-search{height:36px;width:220px;max-width:100%;margin-left:auto;border:1px solid var(--bt-line-2);border-radius:var(--bc-radius-field);background:var(--bt-card);padding:0 10px;font-size:13px;color:var(--bt-ink)}.bc-plist{display:flex;flex-direction:column;gap:10px}.bc-pcard{display:block;width:100%;text-align:left;font:inherit;cursor:pointer;background:var(--bt-card);border:1px solid var(--bt-line);border-radius:var(--bc-radius-card);padding:14px 16px;box-shadow:var(--bc-shadow-raised)}.bc-pcard:hover{border-color:var(--bt-line-2)}.bc-pcard-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.bc-pcard-top strong{font-size:var(--bc-text-heading);line-height:22px;font-weight:600;color:var(--bt-ink)}.bc-tag{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:var(--bc-radius-tag);background:var(--bt-tag-bg);color:var(--bt-tag-ink);font-size:var(--bc-text-xs);line-height:16px;white-space:nowrap}.bc-pcard-goal{display:block;font-size:13px;line-height:18px;color:var(--bt-ink-2);margin:4px 0 8px}.bc-pcard-meta{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:var(--bc-text-sm);line-height:16px;color:var(--bt-ink-2)}.bc-skeleton{cursor:default}.bc-skel{display:block;height:12px;border-radius:6px;background:var(--bt-tag-bg);position:relative;overflow:hidden}.bc-skel::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,var(--bt-hover),transparent);transform:translateX(-100%);animation:bc-sh 1.2s infinite}.bc-skel-title{width:40%;height:16px;margin-bottom:8px}.bc-skel-line{width:70%;margin-bottom:6px}.bc-skel-line.short{width:45%}@keyframes bc-sh{to{transform:translateX(100%)}}`;
+.bc-head{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:0 0 14px}.bc-head .bc-grow{flex:1;min-width:200px}.bc-head h1{font-size:var(--bc-text-title);line-height:24px;font-weight:600;margin:4px 0 0}.bc-crumb{font-size:var(--bc-text-xs);line-height:16px;color:var(--bt-ink-3)}.bc-chips{display:flex;gap:6px;flex-wrap:wrap}.bc-chip{height:var(--bc-control-sm);padding:0 10px;border-radius:999px;border:1px solid var(--bt-line-2);background:var(--bt-card);font-size:var(--bc-text-sm);line-height:16px;color:var(--bt-ink-2);cursor:pointer}.bc-chip:hover{background:var(--bt-hover)}.bc-chip[aria-pressed="true"]{background:var(--bt-accent);border-color:transparent;color:var(--bt-accent-ink);font-weight:500}.bc-search{height:36px;width:220px;max-width:100%;margin-left:auto;border:1px solid var(--bt-line-2);border-radius:var(--bc-radius-field);background:var(--bt-card);padding:0 10px;font-size:13px;color:var(--bt-ink)}.bc-plist{display:flex;flex-direction:column;gap:10px}.bc-pcard{display:block;width:100%;text-align:left;font:inherit;cursor:pointer;background:var(--bt-card);border:1px solid var(--bt-line);border-radius:var(--bc-radius-card);padding:14px 16px;box-shadow:var(--bc-shadow-raised)}.bc-pcard:hover{border-color:var(--bt-line-2)}.bc-pcard-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.bc-pcard-top strong{font-size:var(--bc-text-heading);line-height:22px;font-weight:600;color:var(--bt-ink)}.bc-tag{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:var(--bc-radius-tag);background:var(--bt-tag-bg);color:var(--bt-tag-ink);font-size:var(--bc-text-xs);line-height:16px;white-space:nowrap}.bc-pcard-goal{display:block;font-size:13px;line-height:18px;color:var(--bt-ink-2);margin:4px 0 8px}.bc-pcard-meta{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:var(--bc-text-sm);line-height:16px;color:var(--bt-ink-2)}.bc-skeleton{cursor:default}.bc-skel{display:block;height:12px;border-radius:6px;background:var(--bt-tag-bg);position:relative;overflow:hidden}.bc-skel::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,var(--bt-hover),transparent);transform:translateX(-100%);animation:bc-sh 1.2s infinite}.bc-skel-title{width:40%;height:16px;margin-bottom:8px}.bc-skel-line{width:70%;margin-bottom:6px}.bc-skel-line.short{width:45%}@keyframes bc-sh{to{transform:translateX(100%)}}.bc-sub{margin:6px 0 0;color:var(--bt-ink-2);font-size:12px;line-height:18px}.bc-toolbar-projects{display:flex;align-items:center;gap:12px;margin:0 0 14px}.bc-search-wide{width:min(420px,100%);margin-left:0;flex:1}.bc-tablewrap{border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-card);overflow:hidden}.bc-table{width:100%;border-collapse:collapse;table-layout:fixed}.bc-table th{height:40px;padding:0 14px;text-align:left;font-size:11px;font-weight:500;color:var(--bt-ink-3);border-bottom:1px solid var(--bt-line);background:var(--bt-card)}.bc-table td{height:58px;padding:8px 14px;border-bottom:1px solid var(--bt-line);font-size:12px;line-height:18px;color:var(--bt-ink-2);vertical-align:middle}.bc-table tr:last-child td{border-bottom:0}.bc-table th:nth-child(1){width:32%}.bc-table th:nth-child(2){width:10%}.bc-table th:nth-child(3){width:9%}.bc-table th:nth-child(4){width:12%}.bc-table th:nth-child(5){width:12%}.bc-table th:nth-child(6){width:14%}.bc-table th:nth-child(7){width:11%}.bc-trow{cursor:pointer;transition:background .12s}.bc-trow:hover{background:var(--bt-hover)}.bc-trow:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}.bc-td-project strong{display:block;font-size:13px;line-height:18px;color:var(--bt-ink);font-weight:600}.bc-td-project span{display:block;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-2);font-size:11px;line-height:16px;margin-top:2px}.bc-td-num{font-variant-numeric:tabular-nums}.bc-td-more{text-align:right;white-space:nowrap}.bc-more{border:0;background:transparent;color:var(--bt-ink-3);font:inherit;cursor:pointer;padding:4px 2px;border-radius:6px}.bc-more span{margin-left:4px}.bc-more:hover{color:var(--bt-ink);background:var(--bt-hover)}@media (max-width:900px){.bc-table th:nth-child(4),.bc-table td:nth-child(4),.bc-table th:nth-child(6),.bc-table td:nth-child(6){display:none}.bc-surface-workspace .bc-content{padding:16px}}`;
 
 // src/client/header.js
 var import_react25 = require("react");
@@ -12170,6 +12588,56 @@ function MemoryNotice({ shown }) {
     (0, import_react25.createElement)("span", { className: "bt-pill-mem-in", ref: inner }, (0, import_react25.createElement)("span", { className: "bt-pill-mem-ico" }, (0, import_react25.createElement)(MemoryIcon)), label2)
   );
 }
+var employeeCache = null;
+var employeeRead = null;
+var readEmployees = () => {
+  if (!employeeRead) {
+    const load = async () => {
+      try {
+        const model = await call("company-model", {});
+        employeeCache = {
+          employees: model?.employees ?? [],
+          projects: model?.projects ?? []
+        };
+      } catch {
+        employeeCache = { employees: [], projects: [] };
+      }
+      employeeRead = null;
+      return employeeCache;
+    };
+    employeeRead = load();
+  }
+  return employeeRead;
+};
+function useEmployeeOfBot(botId) {
+  const [employee, setEmployee] = (0, import_react25.useState)(null);
+  (0, import_react25.useEffect)(() => {
+    if (!botId) {
+      setEmployee(null);
+      return;
+    }
+    let live = true;
+    const apply2 = () => {
+      readEmployees().then((cache) => {
+        if (!live) return;
+        const found = (cache?.employees ?? []).find((entry) => entry.bot_id === botId) ?? null;
+        const project = found ? (cache?.projects ?? []).find((entry) => entry.id === found.project_id) : null;
+        setEmployee(found ? { role: found.role ?? "", status: found.status ?? "", project: project?.name ?? "" } : null);
+      });
+    };
+    apply2();
+    const onChange = () => {
+      employeeCache = null;
+      apply2();
+    };
+    window.addEventListener("bt-company-changed", onChange);
+    return () => {
+      live = false;
+      window.removeEventListener("bt-company-changed", onChange);
+    };
+  }, [botId]);
+  return employee;
+}
 function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useMemoryNews, useTurnClock, useUi, useLive, useWork, useStore, useConversationViews, selectView, actions }) {
   const roster = useRoster((value) => value);
   const selectedView = useStore?.((state) => state.view);
@@ -12197,6 +12665,7 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
   const room2 = roster.roomsById[sessionId];
   const detailsOpen = useUi((state) => state.details === sessionId);
   const name = bot?.name ?? room2?.name ?? "";
+  const employee = useEmployeeOfBot(bot?.id);
   const useNews = useMemoryNews ?? noNews;
   const memoryIds = bot ? [bot.id] : room2 ? [room2.id, ...room2.members] : [];
   const notice = useMemoryNotice(memoryIds, useNews);
@@ -12235,6 +12704,7 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
       },
       bot ? (0, import_react25.createElement)(BotAvatar, { bot, size: 24, state: botState(running, doing, roster.questions?.[currentPart(bot)] !== void 0), badge: false }) : room2 ? (0, import_react25.createElement)(RoomAvatar, { room: room2, roster, size: 24 }) : null,
       (0, import_react25.createElement)("span", { className: "bt-pill-name" }, away ? t("Back to chat") : bot?.name ?? room2?.name ?? (title || t("New chat"))),
+      employee ? (0, import_react25.createElement)("span", { className: "bt-pill-sub" }, [employee.role, employee.status === "active" ? t("Online") : null, employee.project].filter(Boolean).join(" · ")) : null,
       (0, import_react25.createElement)(MemoryNotice, { shown: memoryNotice }),
       (0, import_react25.createElement)("span", { className: "bt-pill-go", "aria-hidden": true }, (0, import_react25.createElement)(GoArrow))
     ),
@@ -12446,24 +12916,17 @@ var import_react26 = require("react");
 var initial = (name) => typeof name === "string" && name.trim() ? name.trim().slice(0, 1).toUpperCase() : "·";
 var swallow = () => {
 };
-function ProjectChatHeader({ projectName, stage, faces, goal, pendingCount, nextStep, onBack, onOpenDetails, expanded }) {
+var ROLE_LABEL = { coordinator: "Coordinator", executor: "Executor", acceptor: "Acceptor", memory_keeper: "Memory keeper", reviewer: "Reviewer", member: "Member" };
+var roleLabel = (role) => {
+  const key = String(role || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const label2 = ROLE_LABEL[key];
+  return label2 ? t(label2) : role;
+};
+function ProjectChatHeader({ projectName, stage, faces, goal, pendingCount, nextStep, onBack, onOpenDetails, onOpenConfig, expanded }) {
   const hasCount = Number.isFinite(pendingCount) && pendingCount > 0;
-  const statRows = [];
-  if (goal) statRows.push((0, import_react26.createElement)("div", { key: "goal", className: "pc-stat-row" }, (0, import_react26.createElement)("span", { className: "pc-stat-key" }, t("Goal")), (0, import_react26.createElement)("span", { className: "pc-stat-text" }, goal)));
-  if (hasCount || nextStep) {
-    statRows.push(
-      (0, import_react26.createElement)(
-        "div",
-        { key: "pending", className: "pc-stat-row" },
-        hasCount ? (0, import_react26.createElement)("span", { className: "pc-stat-key" }, t("Waiting for you")) : null,
-        hasCount ? (0, import_react26.createElement)("span", { className: "pc-stat-count" }, String(pendingCount)) : null,
-        nextStep ? (0, import_react26.createElement)("span", { className: "pc-stat-text" }, `· ${nextStep}`) : null
-      )
-    );
-  }
   return (0, import_react26.createElement)(
     "div",
-    { className: `pc-head${statRows.length ? " has-stat" : ""}` },
+    { className: "pc-head" },
     (0, import_react26.createElement)(
       "div",
       { className: "pc-headbar" },
@@ -12483,12 +12946,23 @@ function ProjectChatHeader({ projectName, stage, faces, goal, pendingCount, next
           { className: "pc-faces" },
           (faces || []).slice(0, 3).map((face, index) => (0, import_react26.createElement)("span", { key: index, className: "pc-face" }, initial(face)))
         ),
-        (0, import_react26.createElement)("span", { className: "pc-name" }, projectName || t("Project details")),
+        (0, import_react26.createElement)(
+          "span",
+          { className: "pc-titles" },
+          (0, import_react26.createElement)("span", { className: "pc-name" }, projectName || t("Project details")),
+          goal ? (0, import_react26.createElement)("span", { className: "pc-goal" }, goal) : null
+        ),
         stage ? (0, import_react26.createElement)("span", { className: "pc-stage" }, stage) : null,
         (0, import_react26.createElement)("span", { className: "pc-chevron", "aria-hidden": "true" }, "›")
+      ),
+      (0, import_react26.createElement)(
+        "div",
+        { className: "pc-head-actions" },
+        (0, import_react26.createElement)("button", { type: "button", className: "pc-action", onClick: onOpenDetails, "aria-expanded": expanded ? "true" : "false" }, t("Project overview"), (0, import_react26.createElement)("span", { className: "pc-action-go", "aria-hidden": "true" }, "›")),
+        hasCount ? (0, import_react26.createElement)("button", { type: "button", className: "pc-badge", onClick: onOpenDetails }, (0, import_react26.createElement)("span", { className: "pc-badge-n" }, String(pendingCount)), " ", t("Waiting for you")) : null,
+        onOpenConfig ? (0, import_react26.createElement)("button", { type: "button", className: "pc-more", onClick: onOpenConfig, "aria-label": t("Project settings") }, "⋯") : null
       )
-    ),
-    statRows.length ? (0, import_react26.createElement)("div", { className: "pc-stat" }, statRows) : null
+    )
   );
 }
 function ProjectChatStatus({ goal, pendingCount, nextStep }) {
@@ -12549,7 +13023,7 @@ function ProjectChatDock({ faces, label: label2, waiting, leaving, expanded, onO
     )
   );
 }
-function ProjectChatDrawer({ projectName, goal, stage, members, pending, activity, onClose, onOpenConfig }) {
+function ProjectChatDrawer({ projectName, goal, stage, members, departments, pending, activity, onClose, onOpenConfig }) {
   const closeRef = (0, import_react26.useRef)(null);
   (0, import_react26.useEffect)(() => {
     closeRef.current?.focus?.();
@@ -12557,11 +13031,18 @@ function ProjectChatDrawer({ projectName, goal, stage, members, pending, activit
   const rows2 = Array.isArray(members) ? members : [];
   const pendingRows2 = Array.isArray(pending) ? pending : [];
   const activityRows = Array.isArray(activity) ? activity : [];
+  const coordinator = rows2.find((row) => row.role === "coordinator");
+  const overviewRows = [
+    (0, import_react26.createElement)("div", { key: "project" }, (0, import_react26.createElement)("dt", null, t("This project")), (0, import_react26.createElement)("dd", null, projectName || t("Project details"))),
+    (0, import_react26.createElement)("div", { key: "goal" }, (0, import_react26.createElement)("dt", null, t("Goal")), (0, import_react26.createElement)("dd", null, goal || t("No goal specified"))),
+    (0, import_react26.createElement)("div", { key: "coord" }, (0, import_react26.createElement)("dt", null, t("Coordinator")), (0, import_react26.createElement)("dd", null, coordinator?.name || t("No coordinator yet")))
+  ];
+  if (departments?.length) overviewRows.push((0, import_react26.createElement)("div", { key: "dept" }, (0, import_react26.createElement)("dt", null, t("Source department")), (0, import_react26.createElement)("dd", null, departments.join("·"))));
   const sections = [
-    (0, import_react26.createElement)("section", { className: "pc-sec" }, (0, import_react26.createElement)("h3", null, t("Goal")), (0, import_react26.createElement)("p", null, goal || t("No goal specified")))
+    (0, import_react26.createElement)("section", { className: "pc-sec" }, (0, import_react26.createElement)("h3", null, t("Overview")), (0, import_react26.createElement)("dl", { className: "pc-kv" }, overviewRows))
   ];
   if (rows2.length) {
-    sections.push((0, import_react26.createElement)("section", { className: "pc-sec" }, (0, import_react26.createElement)("h3", null, t("Members")), rows2.map((row, index) => (0, import_react26.createElement)("button", { key: row.id ?? index, type: "button", className: "pc-member", onClick: row.onOpen ?? swallow }, (0, import_react26.createElement)("span", null, row.name ?? ""), (0, import_react26.createElement)("small", null, row.role ?? "")))));
+    sections.push((0, import_react26.createElement)("section", { className: "pc-sec" }, (0, import_react26.createElement)("h3", null, t("Members")), rows2.map((row, index) => (0, import_react26.createElement)("button", { key: row.id ?? index, type: "button", className: "pc-member", onClick: row.onOpen ?? swallow }, (0, import_react26.createElement)("span", null, row.name ?? ""), (0, import_react26.createElement)("small", null, roleLabel(row.role))))));
   }
   if (pendingRows2.length) {
     sections.push((0, import_react26.createElement)("section", { className: "pc-sec" }, (0, import_react26.createElement)("h3", null, t("Waiting for you")), pendingRows2.map((row, index) => {
@@ -12580,6 +13061,7 @@ function ProjectChatDrawer({ projectName, goal, stage, members, pending, activit
     (0, import_react26.createElement)(
       "div",
       { className: "pc-drawer-id" },
+      (0, import_react26.createElement)("span", { className: "pc-drawer-kicker" }, t("Project overview")),
       (0, import_react26.createElement)("span", { className: "pc-drawer-name" }, projectName || t("Project details")),
       (0, import_react26.createElement)("span", { className: "pc-drawer-role" }, stage || statusLabel("setup"))
     ),
@@ -12672,6 +13154,7 @@ function ProjectChatPage({ project, stage: stageProp, faces, goal, nextStep, pen
       goal: goal ?? project?.goal,
       stage,
       members,
+      departments: project.source_departments,
       pending,
       activity,
       onClose: close,
@@ -12689,12 +13172,26 @@ header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inse
 .pc-head-holder{position:absolute;inset:0 0 auto;z-index:8;pointer-events:none}
 .pc-head{display:flex;flex-direction:column;background:transparent;pointer-events:none}
 .pc-head::before{content:none;background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
-.pc-head.has-stat::before{height:calc(var(--bc-mask-header,60px) + 48px)}
+.pc-head-actions{position:absolute;right:12px;top:10px;display:flex;align-items:center;gap:6px;pointer-events:auto}
+.pc-action{display:inline-flex;align-items:center;gap:2px;height:28px;padding:0 8px;border:0;border-radius:999px;background:transparent;color:var(--bt-ink-2);font:500 12px/1 var(--bt-font);cursor:pointer}
+.pc-action:hover,.pc-more:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.pc-action-go{font-size:14px;color:var(--pc-ink-3)}
+.pc-badge{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 10px;border:1px solid var(--bt-line-2);border-radius:999px;background:var(--bt-card);color:var(--bt-ink);font:500 12px/1 var(--bt-font);cursor:pointer}
+.pc-badge:hover{background:var(--bt-hover)}
+.pc-badge-n{font-weight:700}
+.pc-more{width:28px;height:28px;border:0;border-radius:999px;background:transparent;color:var(--bt-ink-2);font:500 16px/1 var(--bt-font);cursor:pointer}
+.pc-titles{display:grid;min-width:0;text-align:left}
+.pc-goal{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-3);font:400 11px/15px var(--bt-font);max-width:360px}
 .pc-headbar{position:relative;display:flex;justify-content:center;align-items:flex-start;padding:10px 0 0;pointer-events:none}
 .pc-back{position:absolute;left:12px;top:10px;pointer-events:auto;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:999px;background:transparent;color:var(--bt-ink-2);font-size:18px;line-height:1;cursor:pointer}
 .pc-back::after{content:"";position:absolute;inset:-8px}
 .pc-back:hover{background:var(--bt-hover);color:var(--bt-ink)}
-.pc-pill{position:relative;pointer-events:auto;display:inline-flex;align-items:center;gap:8px;height:40px;padding:7px 13px 7px 7px;border-radius:999px;border:.5px solid var(--pc-ring);background:var(--bt-main);color:var(--bt-ink);font:500 15px/22px var(--bt-font);box-shadow:0 2px 8px -1px color-mix(in srgb,var(--bt-ink) 6%,transparent),0 1px 2px color-mix(in srgb,var(--bt-ink) 4%,transparent);cursor:pointer;max-width:70%}
+.pc-head-actions{position:absolute;right:12px;top:10px;display:flex;align-items:center;gap:8px;pointer-events:auto}
+.pc-action{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border:.5px solid var(--pc-ring);border-radius:999px;background:color-mix(in srgb,var(--bt-main) 86%,transparent);color:var(--bt-ink-2);font:500 12px/1 var(--bt-font);cursor:pointer;white-space:nowrap}
+.pc-action:hover{color:var(--bt-ink);background:var(--bt-hover)}
+.pc-action-count{color:var(--bt-ink);border-color:color-mix(in srgb,var(--bt-accent) 42%,var(--pc-ring))}
+.pc-action-num{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--bt-accent);color:#fff;font-size:11px;font-weight:700}
+.pc-pill{position:relative;pointer-events:auto;display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:7px 13px 7px 7px;border-radius:999px;border:.5px solid var(--pc-ring);background:var(--bt-main);color:var(--bt-ink);font:500 15px/22px var(--bt-font);box-shadow:0 2px 8px -1px color-mix(in srgb,var(--bt-ink) 6%,transparent),0 1px 2px color-mix(in srgb,var(--bt-ink) 4%,transparent);cursor:pointer;max-width:70%}
 .pc-pill:hover{background:color-mix(in srgb,var(--bt-main),var(--bt-ink) 6%)}
 .pc-pill:active{transform:scale(.965)}
 .pc-faces{display:inline-flex;align-items:center;flex:none}
@@ -12730,7 +13227,12 @@ header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inse
 .pc-round{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:0;border-radius:999px;background:transparent;color:var(--bt-ink);font-size:20px;line-height:1;cursor:pointer}
 .pc-round:hover{background:var(--bt-hover)}
 .pc-drawer-id{display:flex;flex-direction:column;align-items:center;padding:14px 16px 0}
+.pc-drawer-kicker{font-size:11px;line-height:16px;color:var(--pc-ink-3);letter-spacing:.04em}
 .pc-drawer-name{font:500 17px/24px var(--bt-font);text-align:center}
+.pc-kv{display:flex;flex-direction:column;gap:8px;margin:0}
+.pc-kv>div{display:grid;grid-template-columns:76px minmax(0,1fr);gap:10px;align-items:baseline}
+.pc-kv dt{color:var(--pc-ink-3);font-size:12px;line-height:18px}
+.pc-kv dd{margin:0;color:var(--bt-ink);font-size:12px;line-height:18px;overflow-wrap:anywhere}
 .pc-drawer-role{margin-top:6px;font-size:12px;line-height:16px;color:var(--pc-ink-3);text-align:center}
 .pc-drawer-body{flex:1;overflow-y:auto;padding:20px 16px 16px;font-size:13px;line-height:18px;display:flex;flex-direction:column;gap:16px}
 .pc-sec h3{margin:0 0 8px;font-size:11px;line-height:16px;font-weight:600;color:var(--pc-ink-3);text-transform:uppercase;letter-spacing:.06em}
@@ -12810,6 +13312,7 @@ function ProjectChatSurface({ props, project, members, pendingCount, pinned, pen
         pendingCount,
         onBack: () => props.actions.openCompanyPage("list"),
         onOpenDetails,
+        onOpenConfig,
         expanded: open
       }),
       Number(pendingCount) > 0 ? (0, import_react26.createElement)("div", { className: "pc-pin-layer" }, (0, import_react26.createElement)(ProjectChatPinned, { count: pendingCount, items: Array.isArray(pinned) ? pinned : [] })) : null,
@@ -12818,6 +13321,7 @@ function ProjectChatSurface({ props, project, members, pendingCount, pinned, pen
         goal: project.goal || "",
         stage: statusLabel(project.status),
         members,
+        departments: project.source_departments,
         pending,
         activity,
         onClose,
@@ -12853,6 +13357,8 @@ function ProjectChatHeaderSlot(props) {
       if (!live) return;
       const employees = model.employees ?? [];
       const names = new Map(employees.filter((entry) => typeof entry?.id === "string").map((entry) => [entry.id, entry.name ?? ""]));
+      const departmentNames = new Map((model.departments ?? []).filter((entry) => typeof entry?.id === "string").map((entry) => [entry.id, entry.name ?? ""]));
+      found.project = { ...found.project, source_departments: (found.project.source_department_ids ?? []).map((id) => departmentNames.get(id)).filter(Boolean) };
       const members = rawMembers.map((member) => ({
         id: member.id,
         name: employees.find((entry) => entry.id === member.employee_id)?.name ?? "",
