@@ -122,6 +122,25 @@ test('an export can name the templates it wants (M1b-3.5)', async () => {
   }
 })
 
+test('an export lists a repeated template once, in first-seen order (S2)', async () => {
+  const home = tempHome()
+  const { store, commands } = open(home)
+  try {
+    const created = await company(commands)
+    seedBuiltin(store, created.id)
+    const backend = await createTemplate(commands, 'k-backend', { name: '后端工程师', role: '后端' })
+    const data = await createTemplate(commands, 'k-data', { name: '数据工程师', role: '数据' })
+
+    const file = (await run(commands, 'template.export', {
+      operation_key: 'k-export-dedupe',
+      template_ids: [backend.id, data.id, backend.id, ` ${backend.id} `],
+    })).body.file
+    assert.deepEqual(file.templates.map(entry => entry.name), ['后端工程师', '数据工程师'])
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
 test('a file exported on one profile imports on another with every field (M1b-3.5)', async () => {
   const source = tempHome()
   const target = tempHome()
