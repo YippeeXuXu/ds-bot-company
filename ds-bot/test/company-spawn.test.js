@@ -156,6 +156,18 @@ test('a template makes one Bot with its text and skills, then the profile that p
   assert.equal(created.data.bot_id, employee.bot_id)
 })
 
+test('a template with an empty thinking level asks for Default, not the profile level (M1b-3.4)', async (t) => {
+  const env = open()
+  t.after(() => env.dispose())
+  const { department } = await ready(env, { effort: null })
+
+  const result = await hire(env, department)
+  assert.equal(result.status, 'committed')
+  const create = env.host.calls.find(call => call.call === 'create')
+  assert.ok(Object.hasOwn(create.options, 'effort'), 'an absent effort is not left to the host')
+  assert.equal(create.options.effort, null, 'the create carries an explicit Default')
+})
+
 test('the Bot may be named apart from the employee, and its skills are attached in order (M1b-3.4)', async (t) => {
   const env = open()
   t.after(() => env.dispose())
@@ -430,6 +442,8 @@ test('the real roster makes the Bot, attaches the skill and writes the profile (
   assert.equal(bot.role, '前端')
   assert.equal(bot.instructions, '你负责界面与动效。')
   assert.deepEqual(bot.capabilities, ['guide'])
+  assert.equal(bot.effort, undefined, 'an empty template effort does not inherit the profile default')
+  assert.equal(env.saved().bots[employee.bot_id].effort, undefined)
   assert.deepEqual(env.saved().bots[employee.bot_id].capabilities, ['guide'])
   assert.equal(env.rt.companyStore.state.employees[employee.id].bot_id, employee.bot_id)
 })
