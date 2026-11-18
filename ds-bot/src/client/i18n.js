@@ -1310,6 +1310,8 @@ Object.assign(ZH, HOST_ZH, {
   'Builtin templates come with the company; save a copy to keep one of your own.': '内置模板随公司一起生成；另存副本就能留下自己的版本。',
   'A template is a reusable job description: its instructions, model and skills. Pick one and make its Bot in a single step.': '模板是一份可复用的岗位说明：职责指令、模型与技能。选一条，一步就能建出对应的 Bot。',
   'Job title': '岗位', 'job title': '岗位', 'No job title': '未填岗位', 'Template name': '模板名称',
+  'Instructions': '职责指令', 'Not set': '未设置',
+  'Model': '模型',
   'Model default': '跟随默认模型', 'thinking level': '思考档',
   'Skills': '技能', 'skills': '技能', 'No skills': '未指定技能', '{count} skills': '{count} 项技能',
   'Version': '版本', 'No instructions written yet.': '还没写职责指令。',

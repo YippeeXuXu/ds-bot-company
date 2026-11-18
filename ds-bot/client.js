@@ -1465,6 +1465,9 @@ Object.assign(ZH, HOST_ZH, {
   "job title": "岗位",
   "No job title": "未填岗位",
   "Template name": "模板名称",
+  "Instructions": "职责指令",
+  "Not set": "未设置",
+  "Model": "模型",
   "Model default": "跟随默认模型",
   "thinking level": "思考档",
   "Skills": "技能",
@@ -12261,11 +12264,11 @@ var ROLE_LABELS = () => [
 var STATUS_ORDER = (item) => item.source === "builtin" ? 0 : 1;
 var sortedTemplates = (templates) => [...templates ?? []].filter((item) => item.status !== "archived").sort((left, right) => STATUS_ORDER(left) - STATUS_ORDER(right) || (left.created_at ?? 0) - (right.created_at ?? 0));
 var fieldLabels = () => ({
-  role: t("job title"),
-  instructions: t("instructions"),
-  model: t("model"),
-  effort: t("thinking level"),
-  skills: t("skills")
+  role: t("Job title"),
+  instructions: t("Instructions"),
+  model: t("Model"),
+  effort: t("Thinking level"),
+  skills: t("Skills")
 });
 var overrideText = (template) => {
   const names = Object.keys(template?.local_overrides ?? {});
@@ -12983,7 +12986,7 @@ var TEMPLATES_CSS = `
 .bc-tpl-dangerbtn:hover{background:var(--bt-hover)}
 .bc-tpl-archive{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .bc-tpl-modal{position:fixed;inset:0;z-index:1200;display:flex;align-items:center;justify-content:center;padding:24px;background:color-mix(in srgb,var(--bt-ink) 34%,transparent);animation:bc-tpl-fade .12s ease-out}
-.bc-tpl-modal-card{width:min(440px,100%);max-height:calc(100vh - 48px);overflow:auto;padding:18px 18px 16px;border:1px solid var(--bt-line-2);border-radius:14px;background:var(--bt-card);box-shadow:0 24px 64px -16px color-mix(in srgb,var(--bt-ink) 38%,transparent);animation:bc-tpl-rise .14s ease-out}
+.bc-tpl-modal-card{width:min(440px,100%);max-height:calc(100vh - 48px);overflow:auto;padding:18px 18px 16px;border:1px solid var(--bt-line-2);border-radius:12px;background:var(--bt-card);box-shadow:0 24px 64px -16px color-mix(in srgb,var(--bt-ink) 38%,transparent);animation:bc-tpl-rise .14s ease-out}
 @keyframes bc-tpl-fade{from{opacity:0}to{opacity:1}}
 @keyframes bc-tpl-rise{from{opacity:0;transform:translateY(6px) scale(.99)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.bc-tpl-modal,.bc-tpl-modal-card{animation:none}}
