@@ -234,6 +234,54 @@ test('a member joins the project and the project group, and leaves without leavi
   rmSync(home, { recursive: true, force: true })
 })
 
+test('a role changes while the project runs, and the coordinator post stays single', async () => {
+  const home = tempHome()
+  const { store, commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', { operation_key: key('create'), ...draft(seed_) })
+  const projectId = created.body.project.id
+  const added = await run(commands, 'project.member.add', {
+    operation_key: key('add'),
+    project_id: projectId,
+    employee_id: seed_.beta,
+    role: 'executor',
+  })
+  const betaMember = added.body.member.id
+
+  // The post is taken: promoting a second member is refused, not a silent swap.
+  await assert.rejects(
+    run(commands, 'project.member.update', { operation_key: key('promote-beta'), project_id: projectId, employee_id: seed_.beta, role: 'coordinator' }),
+    error => error.code === 'project/coordinator-exists',
+  )
+
+  // Stepping down frees it, and the next promotion fills it without touching the group.
+  const demoted = await run(commands, 'project.member.update', {
+    operation_key: key('demote-alpha'),
+    project_id: projectId,
+    employee_id: seed_.alpha,
+    role: 'acceptor',
+  })
+  assert.equal(demoted.status, 'committed')
+  assert.equal(store.state.projects[projectId].coordinator_assignment_id, null)
+
+  const promoted = await run(commands, 'project.member.update', {
+    operation_key: key('promote-beta-again'),
+    project_id: projectId,
+    employee_id: seed_.beta,
+    role: 'coordinator',
+  })
+  assert.equal(promoted.status, 'committed')
+  assert.equal(promoted.body.member.role, 'coordinator')
+  assert.equal(store.state.projects[projectId].coordinator_assignment_id, betaMember)
+  assert.deepEqual([...rooms.get(created.body.project.group_chat_ref).members].sort(), ['bot_a', 'bot_b'])
+
+  // A member who leaves frees the post too, so the project is never stuck on a ghost.
+  await run(commands, 'project.member.remove', { operation_key: key('remove-boss'), project_id: projectId, employee_id: seed_.beta })
+  assert.equal(store.state.projects[projectId].coordinator_assignment_id, null)
+  assert.deepEqual(rooms.get(created.body.project.group_chat_ref).members, ['bot_a'])
+  rmSync(home, { recursive: true, force: true })
+})
+
 test('project.start reports every missing piece at once, then activates the project', async () => {
   const home = tempHome()
   const { store, commands, rooms } = open(home)

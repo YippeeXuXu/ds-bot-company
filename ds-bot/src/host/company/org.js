@@ -45,6 +45,20 @@ const employeeOf = (state, id) => {
 
 const activeProfileOf = (state, botId) => Object.values(state.employees).find(profile => profile.status === 'active' && profile.bot_id === botId)
 
+// A department lead is one of its own active employees. The field is a pointer, not a
+// copy of a name: an employee who leaves the department must not keep the post, and the
+// check lives here so every caller of department.update gets it (PRD §13).
+const leadOf = (state, department, value) => {
+  const profile = employeeOf(state, text(value, 'lead_employee_id', { max: 120 }))
+  if (profile.status !== 'active') {
+    throw companyFail('department/invalid', `Employee ${profile.id} is not active.`, { field: 'lead_employee_id', employee_id: profile.id, status: profile.status })
+  }
+  if (profile.department_id !== department.id) {
+    throw companyFail('department/invalid', `Employee ${profile.id} belongs to another department.`, { field: 'lead_employee_id', employee_id: profile.id, department_id: profile.department_id })
+  }
+  return profile.id
+}
+
 const acceptanceRole = (value) => {
   const role = value ?? 'executor'
   if (!ACCEPTANCE_ROLES.includes(role)) throw companyFail('company/invalid', `acceptance_role is one of ${ACCEPTANCE_ROLES.join(', ')}.`, { field: 'acceptance_role', allowed: ACCEPTANCE_ROLES })
@@ -73,6 +87,12 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false }
       const clash = Object.values(state.departments).some(department => department.company_id === company.id && department.status !== 'archived' && nameKey(department.name) === nameKey(name))
       if (clash) throw companyFail('department.name-taken', `A department named ${name} already exists.`, { field: 'name' })
       const id = newId('dep')
+      // Nobody can lead a department that has no members yet; the lead is set by
+      // department.update once an employee has joined. Refusing the value keeps the
+      // screen from believing it took effect.
+      if (payload.lead_employee_id !== undefined && payload.lead_employee_id !== null && payload.lead_employee_id !== '') {
+        throw companyFail('department/invalid', 'A new department has no employees; create it first and set its lead afterwards.', { field: 'lead_employee_id' })
+      }
       state.departments[id] = {
         id,
         company_id: company.id,
@@ -81,6 +101,8 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false }
         // A department chat is an ordinary group chat, bound later (M1a-4); it is never
         // created here, because a group needs two Bots the department may not have yet.
         chat_ref: optionalText(payload.chat_ref, 'chat_ref', 120) ?? null,
+        // Added by M1b-2.2: the lead is a pointer into this department's employees.
+        lead_employee_id: null,
         status: 'active',
         created_at: now(),
         updated_at: now(),
@@ -99,9 +121,14 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false }
       }
       if (payload.description !== undefined) department.description = optionalText(payload.description, 'description') ?? null
       if (payload.chat_ref !== undefined) department.chat_ref = optionalText(payload.chat_ref, 'chat_ref', 120) ?? null
+      if (payload.lead_employee_id !== undefined) {
+        department.lead_employee_id = payload.lead_employee_id === null || payload.lead_employee_id === ''
+          ? null
+          : leadOf(state, department, payload.lead_employee_id)
+      }
       department.revision += 1
       department.updated_at = now()
-      return { aggregate_id: department.id, body: { department }, events: [{ type: 'department.updated', data: { name: department.name } }] }
+      return { aggregate_id: department.id, body: { department }, events: [{ type: 'department.updated', data: { name: department.name, lead_employee_id: department.lead_employee_id } }] }
     },
 
     'department.list': ({ state }) => {
@@ -148,7 +175,22 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false }
       }
       if (payload.name !== undefined) profile.name = text(payload.name, 'name', { max: 80 })
       if (payload.role !== undefined) profile.role = optionalText(payload.role, 'role', 80) ?? null
-      if (payload.department_id !== undefined) profile.department_id = departmentOf(state, text(payload.department_id, 'department_id', { max: 120 })).id
+      if (payload.department_id !== undefined) {
+        const next = departmentOf(state, text(payload.department_id, 'department_id', { max: 120 })).id
+        if (next !== profile.department_id) {
+          // A lead who leaves the department loses the post: the pointer would otherwise
+          // keep pointing at an outsider, and the department page would show a name its
+          // own member list no longer holds.
+          for (const other of Object.values(state.departments)) {
+            if (other.lead_employee_id === profile.id) {
+              other.lead_employee_id = null
+              other.revision += 1
+              other.updated_at = now()
+            }
+          }
+        }
+        profile.department_id = next
+      }
       if (payload.acceptance_role !== undefined) profile.acceptance_role = acceptanceRole(payload.acceptance_role)
       profile.revision += 1
       profile.updated_at = now()

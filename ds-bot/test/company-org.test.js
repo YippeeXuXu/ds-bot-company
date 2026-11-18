@@ -151,3 +151,56 @@ test('lists read the company without a revision bump or an operation log entry',
   assert.equal(again.body.departments.length, 1)
   rmSync(home, { recursive: true, force: true })
 })
+
+test('a department lead is one of its own active employees, and can be cleared', async () => {
+  const home = tempHome()
+  const { commands } = open(home)
+  await company(commands)
+  const dep = await department(commands, '产品')
+  const hired = await run(commands, 'employee.create', { operation_key: 'k-hire', bot_id: 'bot_a', department_id: dep.aggregate_id, name: '小蓝' })
+
+  const led = await run(commands, 'department.update', {
+    operation_key: 'k-lead',
+    department_id: dep.aggregate_id,
+    lead_employee_id: hired.aggregate_id,
+  })
+  assert.equal(led.body.department.lead_employee_id, hired.aggregate_id)
+  assert.equal(led.body.department.revision, 2)
+
+  const read = await run(commands, 'department.list', { operation_key: 'k-list' })
+  assert.equal(read.body.departments[0].lead_employee_id, hired.aggregate_id)
+
+  const cleared = await run(commands, 'department.update', {
+    operation_key: 'k-lead-clear',
+    department_id: dep.aggregate_id,
+    lead_employee_id: null,
+  })
+  assert.equal(cleared.body.department.lead_employee_id, null)
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('a lead has to belong to the department, and a new department has none yet', async () => {
+  const home = tempHome()
+  const { commands } = open(home)
+  await company(commands)
+  const product = await department(commands, '产品')
+  const design = await department(commands, '设计')
+  const designer = await run(commands, 'employee.create', { operation_key: 'k-hire', bot_id: 'bot_b', department_id: design.aggregate_id, name: '蓝莓' })
+
+  await assert.rejects(
+    run(commands, 'department.update', { operation_key: 'k-outsider', department_id: product.aggregate_id, lead_employee_id: designer.aggregate_id }),
+    error => error.code === 'department/invalid' && error.details?.field === 'lead_employee_id',
+  )
+  const stranded = await run(commands, 'employee.create', { operation_key: 'k-hire-2', bot_id: 'bot_a', department_id: product.aggregate_id, name: '小蓝' })
+  await run(commands, 'department.update', { operation_key: 'k-lead', department_id: product.aggregate_id, lead_employee_id: stranded.aggregate_id })
+  // Moving the lead away ends the post instead of leaving a pointer to an outsider.
+  await run(commands, 'employee.update', { operation_key: 'k-move', employee_id: stranded.aggregate_id, department_id: design.aggregate_id })
+  const read = await run(commands, 'department.list', { operation_key: 'k-list' })
+  assert.equal(read.body.departments.find(entry => entry.id === product.aggregate_id).lead_employee_id, null)
+
+  await assert.rejects(
+    run(commands, 'department.create', { operation_key: 'k-dep-with-lead', name: '工程', lead_employee_id: designer.aggregate_id }),
+    error => error.code === 'department/invalid',
+  )
+  rmSync(home, { recursive: true, force: true })
+})

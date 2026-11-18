@@ -14,6 +14,7 @@ const bots = {
   bot_a: { id: 'bot_a', name: 'Alpha' },
   bot_b: { id: 'bot_b', name: 'Beta' },
   bot_c: { id: 'bot_c', name: 'Gamma' },
+  bot_d: { id: 'bot_d', name: 'Delta' },
 }
 const botOf = id => bots[id]
 const tempHome = () => mkdtempSync(join(tmpdir(), 'ds-bot-company-api-'))
@@ -154,6 +155,28 @@ test('a command over HTTP returns the same envelope the tools get', async () => 
     members: model.body.project.members,
     group: model.body.project.group,
   })
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('a refused coordinator and a foreign lead come back as refusals, not server errors', async () => {
+  const home = tempHome()
+  const { api, rooms } = open(home)
+  const seed_ = await seed(api, rooms)
+  const created = await command(api, 'project.create', draft(seed_))
+  const projectId = created.body.body.project.id
+  const added = await command(api, 'project.member.add', { project_id: projectId, employee_id: seed_.beta, role: 'executor' })
+  assert.equal(added.status, 200)
+
+  const second = await command(api, 'project.member.update', { project_id: projectId, employee_id: seed_.beta, role: 'coordinator' })
+  assert.equal(second.status, 409)
+  assert.equal(second.body.code, 'project/coordinator-exists')
+
+  const secondDepartment = await command(api, 'department.create', { name: '工程' })
+  const outsider = await command(api, 'employee.create', { bot_id: 'bot_d', department_id: secondDepartment.body.aggregate_id, name: '外人' })
+  assert.equal(outsider.status, 200)
+  const wrongLead = await command(api, 'department.update', { department_id: seed_.department, lead_employee_id: outsider.body.aggregate_id })
+  assert.equal(wrongLead.status, 422)
+  assert.equal(wrongLead.body.code, 'department/invalid')
   rmSync(home, { recursive: true, force: true })
 })
 

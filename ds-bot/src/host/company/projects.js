@@ -442,6 +442,10 @@ export function projectHandlers({ groups = {} } = {}) {
       member.membership_status = membership
       member.left_at = now()
       member.left_reason = optionalText(payload.reason, 'reason', 500) ?? null
+      // The coordinator post belongs to the project, not to the person: a member who
+      // leaves frees it, so the next promotion can fill it (the group admin is rebuilt by
+      // project.group.reconcile, not here).
+      if (project.coordinator_assignment_id === member.id) project.coordinator_assignment_id = null
       // The department does not change: leaving a project ends the membership only, and
       // the employee (and its history) stays where it is (spec member semantics).
       if (employee.project_id === project.id) employee.project_id = null
@@ -456,6 +460,33 @@ export function projectHandlers({ groups = {} } = {}) {
       }
       project.updated_at = now()
       return { aggregate_id: project.id, body: { project, member }, events: [{ type: 'project.member.removed', data: { employee_id: employee.id, membership_status: membership } }], ...(warning === undefined ? {} : { warning }) }
+    },
+
+    // The role is what a member does in the project, not who they are: it can change
+    // while the project runs, and the Bot stays in the group either way. The coordinator
+    // post is still one — promoting a second member is refused, never a silent swap.
+    'project.member.update': async ({ state, payload, now }) => {
+      const project = projectOf(state, text(payload.project_id, 'project_id', { max: 120 }))
+      if (!OPEN.includes(project.status)) throw companyFail('project/state-conflict', `A project in ${project.status} cannot change members.`, { project_id: project.id, status: project.status })
+      const employee = employeeOf(state, text(payload.employee_id, 'employee_id', { max: 120 }))
+      const member = Object.values(state.members).find(entry => entry.project_id === project.id && entry.employee_id === employee.id && entry.membership_status === 'active')
+      if (member === undefined) throw companyFail('project/member-not-found', `Employee ${employee.id} is not an active member of this project.`, { project_id: project.id, employee_id: employee.id })
+      const role = employeeRole(payload.role)
+      if (role === member.role) return { aggregate_id: project.id, mutates: false, body: { project, member } }
+      if (role === 'coordinator') {
+        const current = project.coordinator_assignment_id == null ? undefined : state.members[project.coordinator_assignment_id]
+        if (current !== undefined && current.id !== member.id && current.membership_status === 'active') {
+          throw companyFail('project/coordinator-exists', `The project already has a coordinator (${current.employee_id}).`, { project_id: project.id, coordinator_assignment_id: current.id })
+        }
+        if (!project.source_department_ids.includes(employee.department_id)) {
+          throw companyFail('project/invalid', 'The coordinator must come from one of the source departments.', { field: 'employee_id', department_id: employee.department_id, source_department_ids: project.source_department_ids })
+        }
+      }
+      if (member.role === 'coordinator' && project.coordinator_assignment_id === member.id) project.coordinator_assignment_id = null
+      member.role = role
+      if (role === 'coordinator') project.coordinator_assignment_id = member.id
+      project.updated_at = now()
+      return { aggregate_id: project.id, body: { project, member }, events: [{ type: 'project.member.updated', data: { employee_id: employee.id, role } }] }
     },
 
     'project.start': async ({ state, payload, now }) => {

@@ -34,9 +34,13 @@ const STATUS = new Map([
   ['company/read-only', 409],
   ['company/state.corrupt', 409],
   ['department.name-taken', 409],
+  // A department lead who is not one of its active employees: understood, refused.
+  ['department/invalid', 422],
   ['employee.bot_already_employed', 409],
   ['project/member-exists', 409],
   ['project/member-busy', 409],
+  // The coordinator post is one: promoting a second member is a conflict, not a server error.
+  ['project/coordinator-exists', 409],
   ['project/state-conflict', 409],
   ['project/group-pending', 409],
   ['project/group-failed', 409],
