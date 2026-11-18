@@ -85,6 +85,20 @@ const STATUS = new Map([
   // Acceptance objects: answering one that is not there, or that was decided already.
   ['acceptance/not-found', 404],
   ['acceptance/state-conflict', 409],
+  // Project tasks (M1b-3.3): a card that is gone or changed under the caller, a move the
+  // state machine does not take, a review that only an acceptance record may close, a
+  // dependency that closes a loop or is not done yet, and a sensitive class that cannot be
+  // lowered after draft.
+  ['task/not-found', 404],
+  ['task/state-conflict', 409],
+  ['task/revision-conflict', 409],
+  ['task/dependency-unmet', 409],
+  ['task/acceptance-required', 409],
+  ['task/missing-input', 422],
+  ['task/dependency-cycle', 422],
+  ['task/dependency-missing', 422],
+  ['task/parent-cycle', 422],
+  ['task/downgrade-forbidden', 422],
   // The to-do view's own refusals: a bad window, a card that is gone, a card that changed
   // under the caller, an answer this build cannot give, and the D7 acceptance refusal.
   ['todo/invalid', 422],

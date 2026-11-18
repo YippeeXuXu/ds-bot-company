@@ -147,7 +147,7 @@ test('a new company comes with the nine, and a builtin is read-only (M1b-3.6b)',
   rmSync(home, { recursive: true, force: true })
 })
 
-test('a company file written before 3.6b is topped up once, revision untouched (M1b-3.6b)', async () => {
+test('a version 3 company file is migrated once and its templates topped up (M1b-3.6b)', async () => {
   const home = tempHome()
   mkdirSync(join(home, 'company'), { recursive: true })
   writeFileSync(join(home, 'company', 'state.json'), JSON.stringify({
@@ -168,23 +168,33 @@ test('a company file written before 3.6b is topped up once, revision untouched (
 
   const rt = runtimeOf(home)
   install(rt)
-  await waitFor(() => Object.keys(JSON.parse(readFileSync(stateFile, 'utf8')).templates).length === 9)
+  await waitFor(() => {
+    try {
+      const current = JSON.parse(readFileSync(stateFile, 'utf8'))
+      const events = readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean)
+      return current.version === 4 && Object.keys(current.templates).length === 9 && events.length === 2
+    } catch {
+      return false
+    }
+  })
 
   const saved = JSON.parse(readFileSync(stateFile, 'utf8'))
   assert.equal(Object.keys(saved.templates).length, 9)
   assert.equal(Object.values(saved.templates).every(template => template.source === 'builtin' && template.company_id === 'cmp_1'), true)
   // An upgrade is not a company change: a client's expected_revision still matches.
+  assert.equal(saved.version, 4)
   assert.equal(saved.revision, 5)
   const events = readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
-  assert.deepEqual(events.map(event => event.type), ['company/builtin-templates-seeded'])
-  assert.deepEqual(events[0].data, { count: 9 })
+  assert.deepEqual(events.map(event => event.type), ['company/migrated', 'company/builtin-templates-seeded'])
+  assert.deepEqual(events[0].data, { from: 3, to: 4 })
+  assert.deepEqual(events[1].data, { count: 9 })
   rt.company.close()
 
   // A second start finds all nine and writes nothing.
   const again = runtimeOf(home)
   install(again)
   await new Promise(resolve => setTimeout(resolve, 100))
-  assert.equal(readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean).length, 1)
+  assert.equal(readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean).length, 2)
   again.company.close()
   rmSync(home, { recursive: true, force: true })
 })
