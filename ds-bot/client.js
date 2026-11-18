@@ -12922,7 +12922,7 @@ var roleLabel = (role) => {
   const label2 = ROLE_LABEL[key];
   return label2 ? t(label2) : role;
 };
-function ProjectChatHeader({ projectName, stage, faces, goal, pendingCount, nextStep, onBack, onOpenDetails, onOpenConfig, expanded }) {
+function ProjectChatHeader({ projectName, stage, faces, goal, pendingCount, onBack, onOpenDetails, onOpenConfig, expanded }) {
   const hasCount = Number.isFinite(pendingCount) && pendingCount > 0;
   return (0, import_react26.createElement)(
     "div",

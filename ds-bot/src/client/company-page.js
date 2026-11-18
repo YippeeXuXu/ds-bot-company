@@ -1,4 +1,4 @@
-import { createElement as h, useEffect, useRef, useState } from 'react'
+import { createElement as h, useRef, useState } from 'react'
 import { t } from './i18n.js'
 
 // P12: the company page inside the project surface, laid out like the 01 screen of the

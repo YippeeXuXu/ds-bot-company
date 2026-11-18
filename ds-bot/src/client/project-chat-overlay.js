@@ -19,7 +19,7 @@ const swallow = () => {}
 const ROLE_LABEL = { coordinator: 'Coordinator', executor: 'Executor', acceptor: 'Acceptor', memory_keeper: 'Memory keeper', reviewer: 'Reviewer', member: 'Member' }
 const roleLabel = role => { const key = String(role || '').trim().toLowerCase().replace(/[\s-]+/g, '_'); const label = ROLE_LABEL[key]; return label ? t(label) : role }
 
-export function ProjectChatHeader({ projectName, stage, faces, goal, pendingCount, nextStep, onBack, onOpenDetails, onOpenConfig, expanded }) {
+export function ProjectChatHeader({ projectName, stage, faces, goal, pendingCount, onBack, onOpenDetails, onOpenConfig, expanded }) {
   const hasCount = Number.isFinite(pendingCount) && pendingCount > 0
   return h(
     'div',

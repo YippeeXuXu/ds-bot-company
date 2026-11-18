@@ -94,7 +94,6 @@ test('the header names the page, counts the workspace, and only offers creation 
   const head = byClass(tree, 'bc-co-head')[0]
   assert.match(text(head), /Company/)
   assert.match(text(head), /1 departments · 1 employees · 1 projects · 1 in progress/)
-  const opened = []
   click(button(tree, 'New department'))
   const readOnly = view({ canCreate: false })
   assert.equal(byClass(readOnly, 'bc-co-actions').length, 0)
