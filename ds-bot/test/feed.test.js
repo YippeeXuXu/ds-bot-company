@@ -34,8 +34,16 @@ function start({ pages = {}, services = {} } = {}) {
     page: async ({ address, beforeSeq }) => pages[`${address.sessionId}:${beforeSeq ?? 'end'}`] ?? { records: [], hasMore: false },
   }
   const routes = {}
+  // feed.js registers its listeners and then its route, so the last listener of
+  // each key at that moment is the feed's. Take it here rather than at test time:
+  // a module installed after the feed appends its own listener, and then the last
+  // slot is no longer the one that puts events on the stream.
+  const feedOn = {}
   const register = ctx.connection.fetch.register
   ctx.connection.fetch.register = (options) => {
+    if (options.path === '/api/bot/feed') {
+      for (const name of ['session/event', 'agent/assistant-stream', 'agent/status']) feedOn[name] = (ctx.listeners.get(name) ?? []).at(-1)
+    }
     routes[options.path] = options
     return register(options)
   }
@@ -48,15 +56,27 @@ function start({ pages = {}, services = {} } = {}) {
     await ctx.dispose()
     rmSync(home, { recursive: true, force: true, maxRetries: 5 })
   }
-  return { ctx, call, stop, routes }
+  return { ctx, call, stop, routes, feedOn }
 }
 
 // Reads Server-Sent Events off a response, one `{ event, data }` per call.
+// A quiet stream fails here, in five seconds and with a message, instead of
+// holding the whole run open: the feed sends its events within a millisecond,
+// so nothing that is meant to arrive needs half that long.
+const QUIET_STREAM_MS = 5_000
 function reader(response) {
   const source = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
-  return async function next() {
+  let reading
+  const within = (pending, what) => {
+    let timer
+    const quiet = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`the live feed sent nothing for ${QUIET_STREAM_MS}ms (waiting for ${what})`)), QUIET_STREAM_MS)
+    })
+    return Promise.race([pending.finally(() => clearTimeout(timer)), quiet])
+  }
+  return async function next(what = 'the next event') {
     for (;;) {
       const end = buffer.indexOf('\n\n')
       if (end >= 0) {
@@ -66,7 +86,9 @@ function reader(response) {
         const field = name => block.split('\n').find(line => line.startsWith(`${name}: `))?.slice(name.length + 2)
         return { event: field('event'), data: JSON.parse(field('data')) }
       }
-      const { value, done } = await source.read()
+      reading ??= source.read()
+      const { value, done } = await within(reading, what)
+      reading = undefined
       if (done) return undefined
       buffer += decoder.decode(value, { stream: true })
     }
@@ -74,29 +96,29 @@ function reader(response) {
 }
 
 test('the live feed tells a window about saves, new chat entries and the reply being written', async (t) => {
-  const { ctx, call, stop, routes } = start()
+  const { call, stop, routes, feedOn } = start()
   t.after(stop)
   await call('state')
   const abort = new AbortController()
   const response = await routes['/api/bot/feed'].fetch(new Request('http://localhost/api/bot/feed', { signal: abort.signal }))
   assert.equal(response.headers.get('content-type'), 'text/event-stream; charset=utf-8')
   const next = reader(response)
-  assert.equal((await next()).event, 'hello')
+  assert.equal((await next('hello')).event, 'hello')
 
   await call('set-prefs', { motion: 'lively' })
-  const saved = await next()
+  const saved = await next('the revision notice')
   assert.equal(saved.event, 'revision')
   assert.equal(saved.data.revision > TEAM.revision, true)
 
-  // The feed's own listener is the last on session/event; the others need a live dsh.
-  const onEvent = ctx.listeners.get('session/event').at(-1)
+  // The listener the feed registers for its route; the others need a live dsh.
+  const onEvent = feedOn['session/event']
   onEvent({ id: 'm1c' }, userMessage('hello', 60))
-  assert.deepEqual(await next(), { event: 'message', data: { botId: 'm1', sessionId: 'm1c', item: { kind: 'user', text: 'hello', time: 60 } } })
+  assert.deepEqual(await next('the message from the Bot chat'), { event: 'message', data: { botId: 'm1', sessionId: 'm1c', item: { kind: 'user', text: 'hello', time: 60 } } })
   // A group Session or an earlier part is not a Bot's own chat now.
   onEvent({ id: 'm1' }, userMessage('old', 1))
   onEvent({ id: 'm1c' }, botMessage('hidden', 61, 7))
 
-  const [onStream] = ctx.listeners.get('agent/assistant-stream')
+  const onStream = feedOn['agent/assistant-stream']
   const agent = { id: 'm1c' }
   onStream({ agent, frame: { type: 'start', attemptId: 'a7', turn: 7 } })
   onStream({ agent, frame: { type: 'chunk', attemptId: 'a7', chunk: { type: 'text-delta', text: 'hidden' } } })
@@ -107,27 +129,27 @@ test('the live feed tells a window about saves, new chat entries and the reply b
   onStream({ agent, frame: { type: 'end', attemptId: 'a1' } })
   onStream({ agent, frame: { type: 'end', attemptId: 'a7' } })
   const target = { botId: 'm1', sessionId: 'm1c', attemptId: 'a1' }
-  assert.deepEqual(await next(), { event: 'stream', data: { ...target, phase: 'start' } })
-  assert.deepEqual(await next(), { event: 'stream', data: { ...target, text: 'Hi ' } })
-  assert.deepEqual(await next(), { event: 'stream', data: { ...target, text: 'there' } })
-  assert.deepEqual(await next(), { event: 'stream', data: { ...target, phase: 'end' } })
+  assert.deepEqual(await next('the stream start'), { event: 'stream', data: { ...target, phase: 'start' } })
+  assert.deepEqual(await next('the first text'), { event: 'stream', data: { ...target, text: 'Hi ' } })
+  assert.deepEqual(await next('the second text'), { event: 'stream', data: { ...target, text: 'there' } })
+  assert.deepEqual(await next('the stream end'), { event: 'stream', data: { ...target, phase: 'end' } })
 
   // Status changes in a burst come as one notice.
-  const onStatus = ctx.listeners.get('agent/status').at(-1)
+  const onStatus = feedOn['agent/status']
   for (const id of ['b2', 'm1c', 'b2']) onStatus({ agent: { id }, status: 'running' })
   onStatus({ agent: { id: 'not-a-bot' }, status: 'running' })
-  assert.deepEqual(await next(), { event: 'live', data: {} })
+  assert.deepEqual(await next('the live notice'), { event: 'live', data: {} })
 
   abort.abort()
-  assert.equal(await next(), undefined)
+  assert.equal(await next('the end of the stream after abort'), undefined)
 })
 
 test('a window that stops reading the feed is dropped', { timeout: 10_000 }, async (t) => {
-  const { ctx, call, stop, routes } = start()
+  const { call, stop, routes, feedOn } = start()
   t.after(stop)
   await call('state')
   const response = await routes['/api/bot/feed'].fetch(new Request('http://localhost/api/bot/feed'))
-  const onEvent = ctx.listeners.get('session/event').at(-1)
+  const onEvent = feedOn['session/event']
   for (let index = 0; index < 1000; index += 1) onEvent({ id: 'm1c' }, userMessage(`line ${index}`, index))
   // What was queued before the drop still arrives, then the stream ends.
   const next = reader(response)
@@ -206,7 +228,7 @@ test('view replay omits hidden, refused and interactive calls in pages and the l
     type: 'tool/call', time: 70 + index, seq: 41 + index,
     data: { turn: 8, callId: `v${index}`, name: 'show_view', ...data },
   }))
-  const { ctx, call, stop, routes } = start({ pages: { 'm1c:end': { records: events.map(event => ({ event })), hasMore: false } } })
+  const { call, stop, routes, feedOn } = start({ pages: { 'm1c:end': { records: events.map(event => ({ event })), hasMore: false } } })
   t.after(stop)
   await call('state')
   const expected = { kind: 'view', title: 'Accepted', view: { type: 'progress', percent: 40 }, callId: 'v5', time: 75 }
@@ -217,10 +239,10 @@ test('view replay omits hidden, refused and interactive calls in pages and the l
   t.after(() => abort.abort())
   const response = await routes['/api/bot/feed'].fetch(new Request('http://localhost/api/bot/feed', { signal: abort.signal }))
   const next = reader(response)
-  assert.equal((await next()).event, 'hello')
-  const onEvent = ctx.listeners.get('session/event').at(-1)
+  assert.equal((await next('hello')).event, 'hello')
+  const onEvent = feedOn['session/event']
   for (const event of events) onEvent({ id: 'm1c' }, event)
-  assert.deepEqual(await next(), { event: 'message', data: { botId: 'm1', sessionId: 'm1c', item: expected } })
+  assert.deepEqual(await next('the message from the Bot chat'), { event: 'message', data: { botId: 'm1', sessionId: 'm1c', item: expected } })
 })
 
 test('a display view is retained when its part becomes earlier history', async (t) => {
