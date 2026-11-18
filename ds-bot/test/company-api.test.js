@@ -9,6 +9,7 @@ import { createCommands } from '../src/host/company/commands.js'
 import { orgHandlers } from '../src/host/company/org.js'
 import { projectHandlers } from '../src/host/company/projects.js'
 import { createCompanyStore } from '../src/host/company/store.js'
+import { templateHandlers } from '../src/host/company/templates.js'
 
 const bots = {
   bot_a: { id: 'bot_a', name: 'Alpha' },
@@ -54,6 +55,7 @@ function open(home, { failSetMembers = false } = {}) {
     handlers: {
       ...orgHandlers({ botOf, isPrivate: () => false }),
       ...projectHandlers({ groups }),
+      ...templateHandlers(),
     },
   })
   const api = createCompanyApi({ store, execute: commands.execute, groups, now: () => 1_700_000_000_000 })
@@ -140,6 +142,26 @@ test('the read model carries the conversation modes (M1b-2.5)', async () => {
   const after = api.model({})
   assert.equal(after.body.conversation_mode, 'ptc')
   assert.equal(after.body.company.conversation_mode, 'ptc')
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('the read model lists the templates and says which are builtin', async () => {
+  const home = tempHome()
+  const { api, store, rooms } = open(home)
+  await seed(api, rooms)
+  const company = Object.values(store.state.companies)[0]
+  // The builtin row ships with the plugin; the custom one is made here.
+  store.state.templates.tpl_builtin = {
+    id: 'tpl_builtin', company_id: company.id, name: '内置前端', role: '前端', instructions: '', model: null, effort: null,
+    skills: ['guide'], version: 1, source: 'builtin', origin_template_id: null, local_overrides: {},
+    status: 'active', created_at: 1, updated_at: 1, revision: 1,
+  }
+  await command(api, 'template.create', { operation_key: 'k-tpl', name: '自定义前端', role: '前端', skills: ['guide'] })
+
+  const answer = api.model({})
+  assert.deepEqual(answer.body.templates.map(template => template.name), ['内置前端', '自定义前端'])
+  assert.deepEqual(answer.body.templates.map(template => template.source), ['builtin', 'custom'])
+  assert.deepEqual(answer.body.templates[0].skills, ['guide'])
   rmSync(home, { recursive: true, force: true })
 })
 
