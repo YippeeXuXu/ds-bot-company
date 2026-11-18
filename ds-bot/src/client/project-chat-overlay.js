@@ -301,7 +301,7 @@ header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inse
 .pc-action{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border:.5px solid var(--pc-ring);border-radius:999px;background:color-mix(in srgb,var(--bt-main) 86%,transparent);color:var(--bt-ink-2);font:500 12px/1 var(--bt-font);cursor:pointer;white-space:nowrap}
 .pc-action:hover{color:var(--bt-ink);background:var(--bt-hover)}
 .pc-action-count{color:var(--bt-ink);border-color:color-mix(in srgb,var(--bt-accent) 42%,var(--pc-ring))}
-.pc-action-num{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--bt-accent);color:#fff;font-size:11px;font-weight:700}
+.pc-action-num{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));font-size:11px;font-weight:700}
 .pc-pill{position:relative;pointer-events:auto;display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:7px 13px 7px 7px;border-radius:999px;border:.5px solid var(--pc-ring);background:var(--bt-main);color:var(--bt-ink);font:500 15px/22px var(--bt-font);box-shadow:0 2px 8px -1px color-mix(in srgb,var(--bt-ink) 6%,transparent),0 1px 2px color-mix(in srgb,var(--bt-ink) 4%,transparent);cursor:pointer;max-width:70%}
 .pc-pill:hover{background:color-mix(in srgb,var(--bt-main),var(--bt-ink) 6%)}
 .pc-pill:active{transform:scale(.965)}

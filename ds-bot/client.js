@@ -56,6 +56,12 @@ var ZH = {
   "New…": "新建",
   "Collapse sidebar": "收起侧边栏",
   "Expand sidebar": "展开侧边栏",
+  "Collapse projects": "收起项目组",
+  "Expand projects": "展开项目组",
+  Boss: "老板",
+  Chairman: "董事长",
+  Online: "在线",
+  "Project settings": "项目设置",
   "Resize sidebar": "调整侧边栏宽度",
   "Animation": "动画",
   "Bot animation": "Bot 动画",
@@ -9666,6 +9672,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   const id = bot.id;
   const part = currentPart(bot);
   const preview = useSessions((list) => previewOf(list, part, roster.exchangeTurns[part]));
+  const stamp = useSessions((list) => list.byId[part]?.updatedAt ?? 0);
   const running = useSessionStatus((map) => map.get(part)?.running === true);
   const active = useSessionRetainInfo(part, (info) => (info?.retainedBy?.mainView ?? 0) > 0);
   const unread = useSessionStatus((map) => map.get(part)?.completionUnread === true || map.get(part)?.pendingInteraction !== void 0) || marked && !active;
@@ -9725,7 +9732,13 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
     wide ? (0, import_react19.createElement)(
       "span",
       { className: "bt-row-body" },
-      (0, import_react19.createElement)("span", { className: "bt-row-name" }, (0, import_react19.createElement)("span", { className: "bt-row-title" }, bot.name), pinned ? (0, import_react19.createElement)(PinMark) : null),
+      (0, import_react19.createElement)(
+        "span",
+        { className: "bt-row-name" },
+        (0, import_react19.createElement)("span", { className: "bt-row-title" }, bot.name),
+        pinned ? (0, import_react19.createElement)(PinMark) : null,
+        stamp ? (0, import_react19.createElement)("span", { className: "bt-row-time" }, relativeShort(stamp)) : null
+      ),
       runningLine ? (0, import_react19.createElement)("span", { className: "bt-row-preview" }, runningLine) : awayLine ? (0, import_react19.createElement)("span", { className: "bt-row-preview" }, awayLine) : waitsFor ? (0, import_react19.createElement)("span", { className: "bt-row-preview" }, waitsFor) : preview ? (0, import_react19.createElement)("span", { className: "bt-row-preview" }, preview) : null
     ) : null,
     wide && unread && !active ? (0, import_react19.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : !wide && !active && (alert || unread) ? (0, import_react19.createElement)("span", { className: `bt-dot${alert ? " bt-dot-wait" : ""}`, "aria-hidden": true }) : null
@@ -9735,6 +9748,7 @@ function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, 
   const id = room2.id;
   const sessionId = room2.sessionId ?? id;
   const fallback = useSessions((list) => previewOf(list, sessionId));
+  const stamp = useSessions((list) => list.byId[sessionId]?.updatedAt ?? 0);
   const preview = room2.preview?.replace(/\s+/g, " ").trim() || fallback;
   const active = useSessionRetainInfo(sessionId, (info) => (info?.retainedBy?.mainView ?? 0) > 0);
   const unread = useSessionStatus((map) => map.get(sessionId)?.completionUnread === true) || marked && !active;
@@ -9767,7 +9781,13 @@ function RoomRow({ room: room2, roster, actions, useSessions, useSessionStatus, 
     wide ? (0, import_react19.createElement)(
       "span",
       { className: "bt-row-body" },
-      (0, import_react19.createElement)("span", { className: "bt-row-name" }, (0, import_react19.createElement)("span", { className: "bt-row-title" }, room2.name), pinned ? (0, import_react19.createElement)(PinMark) : null),
+      (0, import_react19.createElement)(
+        "span",
+        { className: "bt-row-name" },
+        (0, import_react19.createElement)("span", { className: "bt-row-title" }, room2.name),
+        pinned ? (0, import_react19.createElement)(PinMark) : null,
+        stamp ? (0, import_react19.createElement)("span", { className: "bt-row-time" }, relativeShort(stamp)) : null
+      ),
       workingLine ? (0, import_react19.createElement)("span", { className: "bt-row-preview" }, workingLine) : preview ? (0, import_react19.createElement)("span", { className: "bt-row-preview" }, preview) : null
     ) : null,
     wide && approval && !active ? (0, import_react19.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react19.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : !wide && !active && (approval || unread) ? (0, import_react19.createElement)("span", { className: `bt-dot${approval ? " bt-dot-wait" : ""}`, "aria-hidden": true }) : null
@@ -10027,6 +10047,7 @@ function TeamSidebar(props) {
   const companyTodos = useCompanyTodos(pageKey);
   const activeSession = useSessions((list) => Object.values(list.byId ?? {}).find((session) => (session?.retainedBy?.mainView ?? 0) > 0)?.id ?? null);
   const [projectFilter, setProjectFilter] = (0, import_react19.useState)("active");
+  const [projectsCollapsed, setProjectsCollapsed] = (0, import_react19.useState)(false);
   const [chatQuery, setChatQuery] = (0, import_react19.useState)("");
   props.useRegistry((value) => value);
   const frameSnap = props.useFrame ? props.useFrame((value) => value) : { viewport: typeof window === "undefined" ? 0 : window.innerWidth, sidebarWidth: FALLBACK_SIDEBAR_WIDTH, collapsedWidth: 0 };
@@ -10300,9 +10321,11 @@ function TeamSidebar(props) {
     meta === null ? null : (0, import_react19.createElement)("span", { className: "bt-co-meta" }, meta)
   );
   const projectVisible = (item) => projectFilter === "all" || (projectFilter === "archived" ? item.status === "archived" : projectFilter === "active" ? item.status === "active" : item.status === "setup");
+  const waitingOf = (item) => (companyTodos?.waiting ?? []).filter((todo) => todo.project_id === item.id).length;
   const projectRow = (item) => {
     const department = (item.source_department_ids ?? []).map((id) => departments.find((entry) => entry.id === id)?.name).filter(Boolean)[0] ?? "";
     const coordinator = employees.find((entry) => entry.id === item.acceptance_actor) ?? null;
+    const waiting = waitingOf(item);
     return (0, import_react19.createElement)(
       "button",
       {
@@ -10315,10 +10338,28 @@ function TeamSidebar(props) {
           else actions.openCompanyPage("detail", item.id);
         }
       },
-      (0, import_react19.createElement)("span", { className: "bt-co-proj-top" }, (0, import_react19.createElement)("strong", null, item.name), (0, import_react19.createElement)("span", { className: "bt-co-proj-stage" }, projectStage(item.status))),
-      (0, import_react19.createElement)("span", { className: "bt-co-proj-sub" }, [department, coordinator?.name].filter(Boolean).join(" · ") || t("No coordinator yet"))
+      (0, import_react19.createElement)(
+        "span",
+        { className: "bt-co-proj-top" },
+        (0, import_react19.createElement)("strong", null, item.name),
+        waiting > 0 ? (0, import_react19.createElement)("span", { className: "bt-co-proj-badge" }, String(waiting)) : null,
+        (0, import_react19.createElement)("span", { className: "bt-co-proj-stage" }, projectStage(item.status))
+      ),
+      (0, import_react19.createElement)("span", { className: "bt-co-proj-sub" }, [t("Stage"), projectStage(item.status), department, coordinator?.name].filter(Boolean).join(" · "))
     );
   };
+  const projectHead = () => (0, import_react19.createElement)(
+    "header",
+    { className: "bt-co-sec-head" },
+    (0, import_react19.createElement)("span", { className: "bt-co-head-main" }, t("Projects"), (0, import_react19.createElement)("span", { className: "bt-co-count" }, String(projects.length))),
+    (0, import_react19.createElement)("button", {
+      type: "button",
+      className: "bt-co-linkbtn bt-co-toggle",
+      "aria-expanded": !projectsCollapsed,
+      "aria-label": projectsCollapsed ? t("Expand projects") : t("Collapse projects"),
+      onClick: () => setProjectsCollapsed((value) => !value)
+    }, (0, import_react19.createElement)(ArrowDownIcon))
+  );
   const companySection = (0, import_react19.createElement)(
     "section",
     { className: "bt-co-sec", "aria-label": t("Company overview") },
@@ -10341,62 +10382,60 @@ function TeamSidebar(props) {
   const projectSection = (0, import_react19.createElement)(
     "section",
     { className: "bt-co-sec", "aria-label": t("Projects") },
-    (0, import_react19.createElement)(
-      "header",
-      { className: "bt-co-sec-head" },
-      (0, import_react19.createElement)("span", null, t("Projects")),
-      (0, import_react19.createElement)("button", { type: "button", className: "bt-co-linkbtn", onClick: () => actions.openCompanyPage("list") }, t("Project list"), " ›")
-    ),
-    (0, import_react19.createElement)(
-      "div",
-      { className: "bt-co-chips", role: "group", "aria-label": t("Project status") },
-      [["active", "In progress"], ["setup", "Setup"], ["archived", "Archived"], ["all", "All"]].map(([value, label2]) => (0, import_react19.createElement)("button", {
-        type: "button",
-        key: value,
-        className: "bt-co-chip",
-        "aria-pressed": projectFilter === value,
-        onClick: () => {
-          setProjectFilter(value);
-          window.dispatchEvent(new CustomEvent("bt-company-filter", { detail: value }));
-        }
-      }, t(label2)))
-    ),
-    (0, import_react19.createElement)(
-      "div",
-      { className: "bt-co-plist" },
-      projects.filter(projectVisible).length === 0 ? (0, import_react19.createElement)("p", { className: "bt-co-empty" }, t("No projects in this view.")) : projects.filter(projectVisible).map(projectRow)
-    ),
-    currentProject ? (0, import_react19.createElement)(
-      "div",
-      { className: "bt-co-current" },
-      (0, import_react19.createElement)("span", { className: "bt-co-group-label" }, t("This project")),
-      (0, import_react19.createElement)("strong", null, currentProject.name),
-      (0, import_react19.createElement)("button", { type: "button", className: "bt-co-linkbtn", onClick: () => actions.openCompanyPage("detail", currentProject.id) }, t("Project overview"), " ›")
-    ) : null
+    projectHead(),
+    projectsCollapsed ? null : (0, import_react19.createElement)(
+      import_react19.Fragment,
+      null,
+      (0, import_react19.createElement)(
+        "div",
+        { className: "bt-co-chips", role: "group", "aria-label": t("Project status") },
+        [["active", "In progress"], ["setup", "Setup"], ["archived", "Archived"], ["all", "All"]].map(([value, label2]) => (0, import_react19.createElement)("button", {
+          type: "button",
+          key: value,
+          className: "bt-co-chip",
+          "aria-pressed": projectFilter === value,
+          onClick: () => {
+            setProjectFilter(value);
+            window.dispatchEvent(new CustomEvent("bt-company-filter", { detail: value }));
+          }
+        }, t(label2)))
+      ),
+      (0, import_react19.createElement)(
+        "div",
+        { className: "bt-co-plist" },
+        projects.filter(projectVisible).length === 0 ? (0, import_react19.createElement)("p", { className: "bt-co-empty" }, t("No projects in this view.")) : projects.filter(projectVisible).map(projectRow)
+      ),
+      currentProject ? (0, import_react19.createElement)(
+        "div",
+        { className: "bt-co-current" },
+        (0, import_react19.createElement)("span", { className: "bt-co-group-label" }, t("This project")),
+        (0, import_react19.createElement)("strong", null, currentProject.name),
+        (0, import_react19.createElement)("button", { type: "button", className: "bt-co-linkbtn", onClick: () => actions.openCompanyPage("detail", currentProject.id) }, t("Project overview"), " ›")
+      ) : null
+    )
   );
   const projectChatSection = (0, import_react19.createElement)(
     "section",
     { className: "bt-co-sec", "aria-label": t("Projects") },
-    (0, import_react19.createElement)(
-      "header",
-      { className: "bt-co-sec-head" },
-      (0, import_react19.createElement)("span", null, t("Projects")),
-      (0, import_react19.createElement)("button", { type: "button", className: "bt-co-linkbtn", onClick: () => actions.openCompanyPage("list") }, t("Project list"), " ›")
-    ),
-    (0, import_react19.createElement)("div", { className: "bt-co-plist" }, projects.map(projectRow)),
-    activeProject ? (0, import_react19.createElement)(
-      "div",
-      { className: "bt-co-current" },
-      (0, import_react19.createElement)("span", { className: "bt-co-group-label" }, t("This project")),
-      (0, import_react19.createElement)("strong", null, activeProject.name),
-      (0, import_react19.createElement)(
+    projectHead(),
+    projectsCollapsed ? null : (0, import_react19.createElement)(
+      import_react19.Fragment,
+      null,
+      (0, import_react19.createElement)("div", { className: "bt-co-plist" }, projects.map(projectRow)),
+      activeProject ? (0, import_react19.createElement)(
         "div",
-        { className: "bt-co-links" },
-        companyLink(t("Project overview"), null, false, () => actions.openCompanyPage("detail", activeProject.id)),
-        companyLink(t("Waiting for you"), t("{count} cards", { count: todoCount }), false, () => actions.openCompanyPage("todos")),
-        companyLink(t("Last activity"), t("Today"), false, null)
-      )
-    ) : null
+        { className: "bt-co-current" },
+        (0, import_react19.createElement)("span", { className: "bt-co-group-label" }, t("This project")),
+        (0, import_react19.createElement)("strong", null, activeProject.name),
+        (0, import_react19.createElement)(
+          "div",
+          { className: "bt-co-links" },
+          companyLink(t("Project overview"), null, false, () => actions.openCompanyPage("detail", activeProject.id)),
+          companyLink(t("Waiting for you"), t("{count} cards", { count: todoCount }), false, () => actions.openCompanyPage("todos")),
+          companyLink(t("Last activity"), t("Today"), false, null)
+        )
+      ) : null
+    )
   );
   const chatSection = (0, import_react19.createElement)(
     "section",
@@ -10440,7 +10479,13 @@ function TeamSidebar(props) {
     main ? (0, import_react19.createElement)(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : (0, import_react19.createElement)("div", { className: "bt-hint" }, uiNow.bootFailed ? bootHint() : t("Setting up your Main Bot…")),
     (0, import_react19.createElement)("span", { className: "bt-rail-sep", "aria-hidden": true })
   );
-  const foot = wideContent ? (0, import_react19.createElement)("div", { className: "bt-leftcol-foot" }, (0, import_react19.createElement)(AccountLauncher, { seat: false, actions })) : (0, import_react19.createElement)(
+  const foot = wideContent ? (0, import_react19.createElement)(
+    "div",
+    { className: "bt-leftcol-foot bt-co-foot" },
+    (0, import_react19.createElement)(AccountLauncher, { seat: false, actions }),
+    (0, import_react19.createElement)("span", { className: "bt-co-foot-id" }, (0, import_react19.createElement)("strong", null, t("Boss")), (0, import_react19.createElement)("small", null, t("Chairman"))),
+    (0, import_react19.createElement)("button", { type: "button", className: "bt-round bt-co-foot-gear", "aria-label": t("Settings"), title: t("Settings"), onClick: () => actions.openSettings("general") }, (0, import_react19.createElement)(GearIcon))
+  ) : (0, import_react19.createElement)(
     "div",
     { className: "bt-leftcol-foot bt-leftcol-foot-rail" },
     (0, import_react19.createElement)("button", { type: "button", className: "bt-round", "aria-label": t("New…"), title: t("New…"), onClick: () => actions.openNewChat("new") }, (0, import_react19.createElement)(PlusIcon)),
@@ -10922,7 +10967,7 @@ var SIDEBAR_CSS = `
 .bt-update-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:12px}
 .bt-update-notes{margin-right:auto;font-size:12.5px;color:var(--bt-ink-2);text-decoration:none}
 .bt-update-notes:hover{color:var(--bt-ink);text-decoration:underline}
-.bt-update-go{height:30px;padding:0 14px;border:0;border-radius:999px;background:var(--bt-accent,#4D6BFE);color:var(--bt-accent-ink,#fff);font:inherit;font-size:13px;font-weight:500;cursor:pointer;transition:opacity .12s ease,transform .12s ease}
+.bt-update-go{height:30px;padding:0 14px;border:0;border-radius:999px;background:var(--bt-accent,#4D6BFE);color:var(--bt-accent-ink,var(--bt-user-ink));font:inherit;font-size:13px;font-weight:500;cursor:pointer;transition:opacity .12s ease,transform .12s ease}
 .bt-update-go:hover:not(:disabled){opacity:.9}
 .bt-update-go:active:not(:disabled){transform:scale(.96)}
 .bt-update-go:disabled{opacity:.6;cursor:default}
@@ -10954,7 +10999,7 @@ var SIDEBAR_CSS = `
    one context section that follows the page the user is on. */
 .bt-side-company{padding:0 10px 8px 0}
 .bt-co-brand{display:flex;align-items:center;gap:10px;padding:14px 6px 12px 14px;flex:none}
-.bt-co-mark{flex:none;width:32px;height:32px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);font-size:14px;font-weight:600;line-height:1}
+.bt-co-mark{flex:none;width:32px;height:32px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));font-size:14px;font-weight:600;line-height:1}
 .bt-co-brandtext{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .bt-co-brandtext strong{font-size:13.5px;line-height:18px;font-weight:600;color:var(--bt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-co-brandtext small{font-size:10.5px;line-height:14px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -10984,20 +11029,32 @@ var SIDEBAR_CSS = `
 .bt-co-chips{display:flex;flex-wrap:wrap;gap:4px;padding:0 4px 8px}
 .bt-co-chip{height:24px;padding:0 9px;border:.5px solid var(--bt-line-2);border-radius:6px;background:none;color:var(--bt-ink-2);font:inherit;font-size:11px;line-height:16px;cursor:pointer}
 .bt-co-chip:hover{background:var(--bt-hover)}
-.bt-co-chip[aria-pressed=true]{background:var(--bt-accent);border-color:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
+.bt-co-chip[aria-pressed=true]{background:var(--bt-accent);border-color:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink))}
 .bt-co-plist{display:flex;flex-direction:column;gap:1px}
-.bt-co-proj{display:flex;flex-direction:column;gap:1px;width:100%;padding:7px 8px;border:0;border-radius:7px;background:none;color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer}
+.bt-co-proj{display:flex;flex-direction:column;gap:1px;width:100%;padding:7px 8px;border:0;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer}
 .bt-co-proj:hover{background:var(--bt-hover)}
 .bt-co-proj.is-active{background:var(--bt-active)}
 .bt-co-proj-top{display:flex;align-items:center;gap:8px;min-width:0}
 .bt-co-proj-top strong{flex:1;min-width:0;font-size:12.5px;line-height:18px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-co-proj-stage{flex:none;font-size:10px;line-height:15px;color:var(--bt-ink-3)}
 .bt-co-proj-sub{font-size:10.5px;line-height:15px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-co-proj-badge{flex:none;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));font-size:10px;line-height:16px;font-weight:500;text-align:center;font-variant-numeric:tabular-nums}
+.bt-row-time{flex:none;margin-left:auto;font-size:11px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
+.bt-co-head-main{display:flex;align-items:center;gap:6px;min-width:0}
+.bt-co-toggle{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;padding:0;color:var(--bt-ink-3)}
+.bt-co-toggle svg{width:12px;height:12px;transition:transform .16s ease}
+.bt-co-toggle[aria-expanded=false] svg{transform:rotate(-90deg)}
+.bt-co-foot{padding:8px 4px 6px;border-top:.5px solid var(--bt-line)}
+.bt-co-foot-id{flex:1;min-width:0;display:flex;flex-direction:column;gap:0}
+.bt-co-foot-id strong{font-size:12.5px;line-height:17px;font-weight:600;color:var(--bt-ink)}
+.bt-co-foot-id small{font-size:10.5px;line-height:14px;color:var(--bt-ink-3)}
+.bt-co-foot-gear{width:28px;height:28px;flex:none}
+@media (prefers-reduced-motion:reduce){.bt-co-toggle svg{transition:none}}
 .bt-co-current{display:flex;flex-direction:column;gap:2px;margin-top:6px;padding:8px 6px 0;border-top:.5px solid var(--bt-line)}
 .bt-co-current strong{font-size:12px;line-height:17px;font-weight:500;color:var(--bt-ink)}
 .bt-co-group{display:flex;flex-direction:column;gap:1px;margin:2px 0 6px}
 .bt-co-group-label{padding:4px 6px 4px;font-size:10.5px;line-height:15px;font-weight:600;color:var(--bt-ink-3)}
-.bt-co-search{display:flex;align-items:center;gap:7px;margin:0 2px 8px;padding:0 9px;height:30px;border:.5px solid var(--bt-line-2);border-radius:7px;background:var(--bt-card);color:var(--bt-ink-3)}
+.bt-co-search{display:flex;align-items:center;gap:7px;margin:0 2px 8px;padding:0 9px;height:30px;border:.5px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink-3)}
 .bt-co-search svg{flex:none;width:14px;height:14px}
 .bt-co-search input{flex:1;min-width:0;border:0;background:none;color:var(--bt-ink);font:inherit;font-size:12px;line-height:18px;outline:none}
 .bt-co-search input::placeholder{color:var(--bt-ink-3)}
@@ -11460,7 +11517,12 @@ var COMPANY_PAGE_CSS = `
 .bc-co-co-card strong{font:600 14px/20px var(--bt-font);color:var(--bt-ink)}
 .bc-co-co-link{align-self:center;border:0;background:none;padding:2px 6px;min-height:24px;font:600 12px var(--bt-font);color:var(--bt-ink-2);cursor:pointer;border-radius:6px}
 .bc-co-co-link:hover{background:var(--bt-hover);color:var(--bt-ink)}
-.bc-co-cols{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:20px;margin-top:30px;padding-top:20px;border-top:1px solid var(--bt-line)}
+.bc-co-cols{position:relative;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:20px;margin-top:30px;padding-top:20px;border-top:1px solid var(--bt-line)}
+/* The tree: one stem from the company card down to the bus, then a short drop
+   into every department card. Decoration only, so it stays behind the cards. */
+.bc-co-cols::before{content:"";position:absolute;left:50%;top:-30px;width:1px;height:30px;background:var(--bt-line);pointer-events:none}
+.bc-co-cols::after{content:"";position:absolute;left:50%;top:-3px;width:5px;height:5px;border-radius:50%;border:1px solid var(--bt-line-2);background:var(--bt-card);transform:translateX(-50%);pointer-events:none}
+.bc-co-dept::before{content:"";position:absolute;left:50%;top:-20px;width:1px;height:20px;background:var(--bt-line);pointer-events:none}
 @media (max-width:1180px){.bc-co-cols{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:860px){.bc-co-cols{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .bc-co-dept{position:relative;display:flex;flex-direction:column;padding:11px 13px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-card);cursor:pointer;transition:border-color .12s ease,box-shadow .12s ease}
@@ -11474,7 +11536,7 @@ var COMPANY_PAGE_CSS = `
 .bc-co-dept-meta{margin:4px 0 0;font-size:12px;line-height:17px;color:var(--bt-ink-2)}
 .bc-co-dept-desc{margin:4px 0 0;font-size:12px;line-height:17px;color:var(--bt-ink-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .bc-co-emps{display:flex;flex-direction:column;gap:1px;margin-top:8px;padding-left:12px;border-left:1px solid var(--bt-line)}
-.bc-co-emp{display:flex;align-items:center;gap:9px;width:100%;padding:5px 6px;border:0;border-radius:7px;background:none;font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer}
+.bc-co-emp{display:flex;align-items:center;gap:9px;width:100%;padding:5px 6px;border:0;border-radius:8px;background:none;font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer}
 .bc-co-emp:hover{background:var(--bt-hover)}
 .bc-co-emp:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
 .bc-co-emp.is-disabled{color:var(--bt-ink-2);cursor:default}
@@ -11494,15 +11556,15 @@ var COMPANY_PAGE_CSS = `
 .bc-co-pop-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .bc-co-pop-head strong{font:600 13px/18px var(--bt-font)}
 .bc-co-pop-name{flex:1;min-width:0;font-size:12px;color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bc-co-pop-close{flex:none;width:26px;height:26px;border:0;border-radius:7px;background:none;color:var(--bt-ink-2);font-size:18px;line-height:1;cursor:pointer}
+.bc-co-pop-close{flex:none;width:26px;height:26px;border:0;border-radius:8px;background:none;color:var(--bt-ink-2);font-size:18px;line-height:1;cursor:pointer}
 .bc-co-pop-close:hover{background:var(--bt-hover);color:var(--bt-ink)}
 .bc-co-kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0 0 10px;font-size:12px;line-height:17px}
 .bc-co-kv dt{color:var(--bt-ink-2)}
 .bc-co-kv dd{margin:0;color:var(--bt-ink);min-width:0}
-.bc-co-kv select{width:100%;min-height:28px;border:1px solid var(--bt-line-2);border-radius:7px;background:var(--bt-card);color:var(--bt-ink);font:inherit;padding:0 6px}
+.bc-co-kv select{width:100%;min-height:28px;border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);font:inherit;padding:0 6px}
 .bc-co-muted{margin:0;font-size:12px;line-height:17px;color:var(--bt-ink-2)}
 .bc-co-pop-emps{display:flex;flex-direction:column;border-top:1px solid var(--bt-line);padding-top:8px}
-.bc-co-row{display:flex;align-items:center;gap:9px;width:100%;padding:7px 6px;border:0;border-radius:7px;background:none;font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer}
+.bc-co-row{display:flex;align-items:center;gap:9px;width:100%;padding:7px 6px;border:0;border-radius:8px;background:none;font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer}
 .bc-co-row:hover{background:var(--bt-hover)}
 .bc-co-row:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
 .bc-co-row.is-disabled{cursor:default;color:var(--bt-ink-2)}
@@ -12506,7 +12568,12 @@ function CompanySurface({ page, actions, roster }) {
           (0, import_react24.createElement)(
             "div",
             { className: "bc-toolbar bc-toolbar-projects" },
-            (0, import_react24.createElement)("input", { type: "search", className: "bc-search bc-search-wide", value: query, onChange: (event) => setQuery(event.target.value), placeholder: t("Search a project name or goal"), "aria-label": t("Search projects") }),
+            (0, import_react24.createElement)(
+              "label",
+              { className: "bc-searchfield" },
+              (0, import_react24.createElement)(SearchIcon),
+              (0, import_react24.createElement)("input", { type: "search", className: "bc-search bc-search-wide", value: query, onChange: (event) => setQuery(event.target.value), placeholder: t("Search a project name or goal"), "aria-label": t("Search projects") })
+            ),
             (0, import_react24.createElement)("button", { type: "button", className: "bc-button bc-primary", style: { flex: "none", whiteSpace: "nowrap" }, onClick: () => actions.openCompanyPage("wizard") }, "+ ", t("New project"))
           ),
           loading ? (0, import_react24.createElement)("div", { className: "bc-plist", role: "status", "aria-label": t("Loading projects…") }, [0, 1, 2].map((index) => (0, import_react24.createElement)("div", { key: index, className: "bc-pcard bc-skeleton" }, (0, import_react24.createElement)("span", { className: "bc-skel bc-skel-title" }), (0, import_react24.createElement)("span", { className: "bc-skel bc-skel-line" }), (0, import_react24.createElement)("span", { className: "bc-skel bc-skel-line short" })))) : error ? (0, import_react24.createElement)("div", { className: "bc-state bc-error", role: "alert" }, (0, import_react24.createElement)("strong", null, t("Projects could not be loaded.")), (0, import_react24.createElement)("p", null, error), (0, import_react24.createElement)("button", { type: "button", className: "bc-button", onClick: () => void load() }, t("Try again")), (0, import_react24.createElement)("button", { type: "button", className: "bc-button", onClick: previewData }, t("Open local sample preview"))) : data.projects.length === 0 ? (0, import_react24.createElement)("div", { className: "bc-state" }, (0, import_react24.createElement)("strong", null, t("No projects here yet")), (0, import_react24.createElement)("p", null, t("Create a project to bring employees together around one goal.")), (0, import_react24.createElement)("button", { type: "button", className: "bc-button bc-primary", onClick: () => actions.openCompanyPage("wizard") }, t("New project"))) : visible.length === 0 ? (0, import_react24.createElement)("div", { className: "bc-state" }, (0, import_react24.createElement)("strong", null, query.trim() ? t("No matching projects") : t("No projects in this view.")), (0, import_react24.createElement)("p", null, query.trim() ? t("Try another name or status.") : t("Try another status, or view all projects.")), (0, import_react24.createElement)("button", { type: "button", className: "bc-button", onClick: () => {
@@ -12555,7 +12622,11 @@ var statusLabel = (status) => ({ setup: t("Setup"), active: t("In progress"), pa
 var COMPANY_CSS = COMPANY_PAGE_CSS + `
 .bc-surface{--bc-small:11px;--bc-label:12px;--bc-body:13px;--bc-title:17px;--bc-radius:12px;position:fixed;inset:0;z-index:1100;background:var(--bt-main);color:var(--bt-ink);font-family:var(--bt-font);overflow:auto;overscroll-behavior:contain}.bc-surface *{box-sizing:border-box}.bc-surface-workspace{left:var(--bt-company-left,0px)}.bc-shell{min-height:100vh;display:flex;flex-direction:column}.bc-header{height:52px;flex:none;display:flex;gap:12px;align-items:center;padding:0 max(20px,calc((100vw - 960px)/2));border-bottom:1px solid var(--bt-line);background:var(--bt-card)}.bc-brand{background:none;border:0;color:var(--bt-ink);font-size:15px;font-weight:700;cursor:pointer}.bc-header-context{color:var(--bt-ink-2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bc-icon{margin-left:auto;width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:var(--bt-ink);font-size:24px;cursor:pointer}.bc-content{width:min(100%,1000px);margin:0 auto;padding:32px 24px 64px}.bc-surface-workspace .bc-content{width:100%;max-width:none;padding:20px 32px 48px}.bc-surface-workspace .bc-page{max-width:none}.bc-surface-company .bc-content-company{padding:0}.bc-kicker{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--bt-ink-2)}.bc-lead{display:flex;justify-content:space-between;align-items:end;gap:20px;margin:0 0 28px}.bc-lead h1{font-size:var(--bc-title);line-height:24px;margin:8px 0}.bc-lead p,.bc-muted{color:var(--bt-ink-2);line-height:1.5}.bc-lead p{margin:0;font-size:13px}.bc-button{border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);padding:9px 13px;min-height:36px;font:600 13px var(--bt-font);cursor:pointer}.bc-button:hover,.bc-icon:hover,.bc-filter:hover{background:var(--bt-hover)}.bc-primary{min-height:40px;border-radius:999px;background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));border-color:var(--bt-accent)}.bc-primary:hover{filter:brightness(.94);background:var(--bt-accent)}.bc-button:disabled{opacity:.45;cursor:not-allowed}.bc-surface :is(button,input,textarea,select,summary):focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}.bc-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.bc-filters{display:flex;gap:4px;border:1px solid var(--bt-line);border-radius:8px;padding:3px}.bc-filter{border:0;border-radius:6px;background:transparent;color:var(--bt-ink-2);padding:7px 11px;font-size:12px;cursor:pointer}.bc-selected{background:var(--bt-active);color:var(--bt-ink);font-weight:600}.bc-search,.bc-field :is(input,textarea,select){border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);padding:9px 11px;font:13px var(--bt-font)}.bc-search{width:210px}.bc-list{border:1px solid var(--bt-line);border-radius:12px;overflow:hidden;background:var(--bt-card)}.bc-project-row{display:flex;width:100%;gap:20px;align-items:center;text-align:left;padding:17px 20px;border:0;border-bottom:1px solid var(--bt-line);background:transparent;color:var(--bt-ink);cursor:pointer}.bc-project-row:last-child{border:0}.bc-project-row:hover{background:var(--bt-hover)}.bc-project-main{min-width:0;flex:1;display:grid;gap:5px}.bc-project-main strong{font-size:14px}.bc-project-main span,.bc-project-main small,.bc-project-meta small{font-size:12px;color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bc-project-meta{min-width:140px;display:grid;justify-items:end;gap:5px}.bc-status{display:inline-flex;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);font-size:11px;font-weight:700;padding:4px 7px}.bc-status.bc-active{color:var(--bt-green)}.bc-status.bc-paused,.bc-status.bc-pending{color:var(--bt-star)}.bc-status.bc-archived{color:var(--bt-ink-2)}.bc-state{border:1px dashed var(--bt-line-2);border-radius:12px;padding:32px;text-align:center;color:var(--bt-ink-2);font-size:13px}.bc-state strong{color:var(--bt-ink);font-size:15px}.bc-state .bc-button{margin:5px}.bc-error{border-color:var(--bt-danger)}.bc-preview{padding:8px 24px;background:var(--bt-tag-bg);text-align:center;color:var(--bt-ink);font-size:12px;font-weight:700}.bc-notice{display:flex;gap:12px;align-items:center;justify-content:center;padding:8px 20px;background:var(--bt-tag-bg);font-size:12px}.bc-notice button{border:0;background:transparent;color:var(--bt-ink);cursor:pointer}.bc-back{background:none;border:0;color:var(--bt-ink-2);font:600 12px var(--bt-font);padding:6px 0;cursor:pointer}.bc-back:hover{color:var(--bt-ink)}.bc-section{background:var(--bt-card);border:1px solid var(--bt-line);border-radius:12px;padding:20px;margin:16px 0}.bc-section h2{font-size:14px;margin:0 0 14px}.bc-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.bc-field{display:grid;gap:6px;font-size:12px;font-weight:600}.bc-field :is(input,textarea,select){width:100%}.bc-field textarea{resize:vertical;min-height:72px}.bc-field small{font-weight:400;color:var(--bt-ink-2)}.bc-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.bc-detail-title{font-size:var(--bc-title);line-height:24px;margin:10px 0}.bc-detail-label{color:var(--bt-ink-2);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}.bc-detail-value{font-size:13px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}.bc-member{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--bt-line);font-size:13px}.bc-member small{font-size:11px;color:var(--bt-ink-2)}.bc-steps{display:flex;flex-wrap:wrap;gap:6px;margin:24px 0}.bc-step{font-size:11px;color:var(--bt-ink-2);padding:7px 10px;border:1px solid var(--bt-line);border-radius:6px}.bc-step[aria-current=step]{color:var(--bt-ink);border-color:var(--bt-accent);font-weight:700}.bc-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.bc-choice{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px}.bc-choice input{accent-color:var(--bt-accent)}.bc-exception{border-left:3px solid var(--bt-danger);padding:10px 12px;background:var(--bt-tag-bg);font-size:12px;line-height:1.5}.bc-exception strong{display:block}.bc-optional{margin-top:16px;border-top:1px solid var(--bt-line);padding-top:14px}.bc-optional summary{cursor:pointer;color:var(--bt-ink);font-size:13px;font-weight:600}.bc-optional[open] summary{margin-bottom:16px}.bc-start-reason{text-align:right;color:var(--bt-ink-2);font-size:12px;line-height:1.5}.bc-surface button{touch-action:manipulation}@media(max-width:620px){.bc-header{height:48px;padding:0 14px}.bc-content{padding:22px 14px 48px}.bc-lead{align-items:flex-start}.bc-lead h1{font-size:var(--bc-title)}.bc-toolbar{align-items:stretch;flex-direction:column}.bc-search{width:100%}.bc-project-row{padding:14px;gap:8px}.bc-project-meta{min-width:88px}.bc-grid{grid-template-columns:1fr}.bc-section{padding:16px}}
 .bc-surface{--bc-text-xs:11px;--bc-text-sm:12px;--bc-text-content:14px;--bc-text-heading:15px;--bc-text-title:17px;--bc-control-sm:28px;--bc-control-md:36px;--bc-control-lg:40px;--bc-radius-tag:4px;--bc-radius-field:8px;--bc-radius-row:10px;--bc-radius-card:12px;--bc-shadow-raised:0 2px 8px -1px color-mix(in srgb,var(--bt-ink) 6%,transparent),0 1px 2px color-mix(in srgb,var(--bt-ink) 4%,transparent);--bc-shadow-dock:0 0 0 .5px var(--bt-line-2),0 2px 8px -2px color-mix(in srgb,var(--bt-ink) 12%,transparent);--bc-mask-header:60px}
-.bc-head{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:0 0 14px}.bc-head .bc-grow{flex:1;min-width:200px}.bc-head h1{font-size:var(--bc-text-title);line-height:24px;font-weight:600;margin:4px 0 0}.bc-crumb{font-size:var(--bc-text-xs);line-height:16px;color:var(--bt-ink-3)}.bc-chips{display:flex;gap:6px;flex-wrap:wrap}.bc-chip{height:var(--bc-control-sm);padding:0 10px;border-radius:999px;border:1px solid var(--bt-line-2);background:var(--bt-card);font-size:var(--bc-text-sm);line-height:16px;color:var(--bt-ink-2);cursor:pointer}.bc-chip:hover{background:var(--bt-hover)}.bc-chip[aria-pressed="true"]{background:var(--bt-accent);border-color:transparent;color:var(--bt-accent-ink);font-weight:500}.bc-search{height:36px;width:220px;max-width:100%;margin-left:auto;border:1px solid var(--bt-line-2);border-radius:var(--bc-radius-field);background:var(--bt-card);padding:0 10px;font-size:13px;color:var(--bt-ink)}.bc-plist{display:flex;flex-direction:column;gap:10px}.bc-pcard{display:block;width:100%;text-align:left;font:inherit;cursor:pointer;background:var(--bt-card);border:1px solid var(--bt-line);border-radius:var(--bc-radius-card);padding:14px 16px;box-shadow:var(--bc-shadow-raised)}.bc-pcard:hover{border-color:var(--bt-line-2)}.bc-pcard-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.bc-pcard-top strong{font-size:var(--bc-text-heading);line-height:22px;font-weight:600;color:var(--bt-ink)}.bc-tag{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:var(--bc-radius-tag);background:var(--bt-tag-bg);color:var(--bt-tag-ink);font-size:var(--bc-text-xs);line-height:16px;white-space:nowrap}.bc-pcard-goal{display:block;font-size:13px;line-height:18px;color:var(--bt-ink-2);margin:4px 0 8px}.bc-pcard-meta{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:var(--bc-text-sm);line-height:16px;color:var(--bt-ink-2)}.bc-skeleton{cursor:default}.bc-skel{display:block;height:12px;border-radius:6px;background:var(--bt-tag-bg);position:relative;overflow:hidden}.bc-skel::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,var(--bt-hover),transparent);transform:translateX(-100%);animation:bc-sh 1.2s infinite}.bc-skel-title{width:40%;height:16px;margin-bottom:8px}.bc-skel-line{width:70%;margin-bottom:6px}.bc-skel-line.short{width:45%}@keyframes bc-sh{to{transform:translateX(100%)}}.bc-sub{margin:6px 0 0;color:var(--bt-ink-2);font-size:12px;line-height:18px}.bc-toolbar-projects{display:flex;align-items:center;gap:12px;margin:0 0 14px}.bc-search-wide{width:min(420px,100%);margin-left:0;flex:1}.bc-tablewrap{border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-card);overflow:hidden}.bc-table{width:100%;border-collapse:collapse;table-layout:fixed}.bc-table th{height:40px;padding:0 14px;text-align:left;font-size:11px;font-weight:500;color:var(--bt-ink-3);border-bottom:1px solid var(--bt-line);background:var(--bt-card)}.bc-table td{height:58px;padding:8px 14px;border-bottom:1px solid var(--bt-line);font-size:12px;line-height:18px;color:var(--bt-ink-2);vertical-align:middle}.bc-table tr:last-child td{border-bottom:0}.bc-table th:nth-child(1){width:32%}.bc-table th:nth-child(2){width:10%}.bc-table th:nth-child(3){width:9%}.bc-table th:nth-child(4){width:12%}.bc-table th:nth-child(5){width:12%}.bc-table th:nth-child(6){width:14%}.bc-table th:nth-child(7){width:11%}.bc-trow{cursor:pointer;transition:background .12s}.bc-trow:hover{background:var(--bt-hover)}.bc-trow:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}.bc-td-project strong{display:block;font-size:13px;line-height:18px;color:var(--bt-ink);font-weight:600}.bc-td-project span{display:block;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-2);font-size:11px;line-height:16px;margin-top:2px}.bc-td-num{font-variant-numeric:tabular-nums}.bc-td-more{text-align:right;white-space:nowrap}.bc-more{border:0;background:transparent;color:var(--bt-ink-3);font:inherit;cursor:pointer;padding:4px 2px;border-radius:6px}.bc-more span{margin-left:4px}.bc-more:hover{color:var(--bt-ink);background:var(--bt-hover)}@media (max-width:900px){.bc-table th:nth-child(4),.bc-table td:nth-child(4),.bc-table th:nth-child(6),.bc-table td:nth-child(6){display:none}.bc-surface-workspace .bc-content{padding:16px}}`;
+.bc-head{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:0 0 14px}.bc-head .bc-grow{flex:1;min-width:200px}.bc-head h1{font-size:var(--bc-text-title);line-height:24px;font-weight:600;margin:4px 0 0}.bc-crumb{font-size:var(--bc-text-xs);line-height:16px;color:var(--bt-ink-3)}.bc-chips{display:flex;gap:6px;flex-wrap:wrap}.bc-chip{height:var(--bc-control-sm);padding:0 10px;border-radius:999px;border:1px solid var(--bt-line-2);background:var(--bt-card);font-size:var(--bc-text-sm);line-height:16px;color:var(--bt-ink-2);cursor:pointer}.bc-chip:hover{background:var(--bt-hover)}.bc-chip[aria-pressed="true"]{background:var(--bt-accent);border-color:transparent;color:var(--bt-accent-ink);font-weight:500}.bc-search{height:36px;width:220px;max-width:100%;margin-left:auto;border:1px solid var(--bt-line-2);border-radius:var(--bc-radius-field);background:var(--bt-card);padding:0 10px;font-size:13px;color:var(--bt-ink)}.bc-plist{display:flex;flex-direction:column;gap:10px}.bc-pcard{display:block;width:100%;text-align:left;font:inherit;cursor:pointer;background:var(--bt-card);border:1px solid var(--bt-line);border-radius:var(--bc-radius-card);padding:14px 16px;box-shadow:var(--bc-shadow-raised)}.bc-pcard:hover{border-color:var(--bt-line-2)}.bc-pcard-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.bc-pcard-top strong{font-size:var(--bc-text-heading);line-height:22px;font-weight:600;color:var(--bt-ink)}.bc-tag{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:var(--bc-radius-tag);background:var(--bt-tag-bg);color:var(--bt-tag-ink);font-size:var(--bc-text-xs);line-height:16px;white-space:nowrap}.bc-pcard-goal{display:block;font-size:13px;line-height:18px;color:var(--bt-ink-2);margin:4px 0 8px}.bc-pcard-meta{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:var(--bc-text-sm);line-height:16px;color:var(--bt-ink-2)}.bc-skeleton{cursor:default}.bc-skel{display:block;height:12px;border-radius:6px;background:var(--bt-tag-bg);position:relative;overflow:hidden}.bc-skel::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,var(--bt-hover),transparent);transform:translateX(-100%);animation:bc-sh 1.2s infinite}.bc-skel-title{width:40%;height:16px;margin-bottom:8px}.bc-skel-line{width:70%;margin-bottom:6px}.bc-skel-line.short{width:45%}@keyframes bc-sh{to{transform:translateX(100%)}}.bc-sub{margin:6px 0 0;color:var(--bt-ink-2);font-size:12px;line-height:18px}.bc-toolbar-projects{display:flex;align-items:center;gap:12px;margin:0 0 14px}.bc-search-wide{width:min(420px,100%);margin-left:0;flex:1}
+.bc-searchfield{display:flex;align-items:center;gap:7px;flex:1;min-width:0;max-width:420px;height:36px;padding:0 11px;border:1px solid var(--bt-line-2);border-radius:var(--bc-radius-field);background:var(--bt-card);color:var(--bt-ink-3)}
+.bc-searchfield svg{flex:none;width:14px;height:14px}
+.bc-searchfield input{flex:1;min-width:0;height:auto;padding:0;margin:0;border:0;background:none;outline:none}
+.bc-searchfield:focus-within{outline:2px solid var(--bt-accent);outline-offset:2px}.bc-tablewrap{border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-card);overflow:hidden}.bc-table{width:100%;border-collapse:collapse;table-layout:fixed}.bc-table th{height:40px;padding:0 14px;text-align:left;font-size:11px;font-weight:500;color:var(--bt-ink-3);border-bottom:1px solid var(--bt-line);background:var(--bt-card)}.bc-table td{height:58px;padding:8px 14px;border-bottom:1px solid var(--bt-line);font-size:12px;line-height:18px;color:var(--bt-ink-2);vertical-align:middle}.bc-table tr:last-child td{border-bottom:0}.bc-table th:nth-child(1){width:32%}.bc-table th:nth-child(2){width:10%}.bc-table th:nth-child(3){width:9%}.bc-table th:nth-child(4){width:12%}.bc-table th:nth-child(5){width:12%}.bc-table th:nth-child(6){width:14%}.bc-table th:nth-child(7){width:11%}.bc-trow{cursor:pointer;transition:background .12s}.bc-trow:hover{background:var(--bt-hover)}.bc-trow:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}.bc-td-project strong{display:block;font-size:13px;line-height:18px;color:var(--bt-ink);font-weight:600}.bc-td-project span{display:block;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-2);font-size:11px;line-height:16px;margin-top:2px}.bc-td-num{font-variant-numeric:tabular-nums}.bc-td-more{text-align:right;white-space:nowrap}.bc-more{border:0;background:transparent;color:var(--bt-ink-3);font:inherit;cursor:pointer;padding:4px 2px;border-radius:6px}.bc-more span{margin-left:4px}.bc-more:hover{color:var(--bt-ink);background:var(--bt-hover)}@media (max-width:900px){.bc-table th:nth-child(4),.bc-table td:nth-child(4),.bc-table th:nth-child(6),.bc-table td:nth-child(6){display:none}.bc-surface-workspace .bc-content{padding:16px}}`;
 
 // src/client/header.js
 var import_react25 = require("react");
@@ -13190,7 +13261,7 @@ header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inse
 .pc-action{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border:.5px solid var(--pc-ring);border-radius:999px;background:color-mix(in srgb,var(--bt-main) 86%,transparent);color:var(--bt-ink-2);font:500 12px/1 var(--bt-font);cursor:pointer;white-space:nowrap}
 .pc-action:hover{color:var(--bt-ink);background:var(--bt-hover)}
 .pc-action-count{color:var(--bt-ink);border-color:color-mix(in srgb,var(--bt-accent) 42%,var(--pc-ring))}
-.pc-action-num{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--bt-accent);color:#fff;font-size:11px;font-weight:700}
+.pc-action-num{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));font-size:11px;font-weight:700}
 .pc-pill{position:relative;pointer-events:auto;display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:7px 13px 7px 7px;border-radius:999px;border:.5px solid var(--pc-ring);background:var(--bt-main);color:var(--bt-ink);font:500 15px/22px var(--bt-font);box-shadow:0 2px 8px -1px color-mix(in srgb,var(--bt-ink) 6%,transparent),0 1px 2px color-mix(in srgb,var(--bt-ink) 4%,transparent);cursor:pointer;max-width:70%}
 .pc-pill:hover{background:color-mix(in srgb,var(--bt-main),var(--bt-ink) 6%)}
 .pc-pill:active{transform:scale(.965)}

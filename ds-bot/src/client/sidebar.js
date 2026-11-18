@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { FishLogo } from './dsh-primitives.js'
 import { isMainOf } from './sources.js'
 import { currentPart, previewOf, relativeShort } from './text.js'
-import { PlusIcon, SearchIcon, SidebarIcon, GaugeIcon, ClockIcon, GearIcon, PinMarkIcon, ConnectorIcon, SwitchIcon, CloudDownloadIcon, SignOutIcon } from './icons.js'
+import { PlusIcon, SearchIcon, SidebarIcon, GaugeIcon, ClockIcon, GearIcon, PinMarkIcon, ConnectorIcon, SwitchIcon, CloudDownloadIcon, SignOutIcon, ArrowDownIcon } from './icons.js'
 import { MAIN_LOOK } from './characters.js'
 import { botState, BotMark, BotAvatar, RoomAvatar } from './mark.js'
 import { reducedMotion } from './activity-row.js'
@@ -60,6 +60,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   const id = bot.id
   const part = currentPart(bot)
   const preview = useSessions(list => previewOf(list, part, roster.exchangeTurns[part]))
+  const stamp = useSessions(list => list.byId[part]?.updatedAt ?? 0)
   const running = useSessionStatus(map => map.get(part)?.running === true)
   const active = useSessionRetainInfo(part, info => (info?.retainedBy?.mainView ?? 0) > 0)
   const unread = useSessionStatus(map => map.get(part)?.completionUnread === true || map.get(part)?.pendingInteraction !== undefined) || (marked && !active)
@@ -101,7 +102,8 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   h(BotAvatar, { bot, size: wide ? 36 : 44, state, main }),
   pinned && !wide ? h(PinMark) : null,
   wide ? h('span', { className: 'bt-row-body' },
-    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, bot.name), pinned ? h(PinMark) : null),
+    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, bot.name), pinned ? h(PinMark) : null,
+      stamp ? h('span', { className: 'bt-row-time' }, relativeShort(stamp)) : null),
     runningLine ? h('span', { className: 'bt-row-preview' }, runningLine)
       : awayLine ? h('span', { className: 'bt-row-preview' }, awayLine)
         : waitsFor ? h('span', { className: 'bt-row-preview' }, waitsFor)
@@ -115,6 +117,7 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
   // The group's own Session is a chain of parts; the row shows the current one.
   const sessionId = room.sessionId ?? id
   const fallback = useSessions(list => previewOf(list, sessionId))
+  const stamp = useSessions(list => list.byId[sessionId]?.updatedAt ?? 0)
   const preview = room.preview?.replace(/\s+/g, ' ').trim() || fallback
   const active = useSessionRetainInfo(sessionId, info => (info?.retainedBy?.mainView ?? 0) > 0)
   const unread = useSessionStatus(map => map.get(sessionId)?.completionUnread === true) || (marked && !active)
@@ -134,7 +137,8 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
   h(RoomAvatar, { room, roster, size: wide ? 36 : 44 }),
   pinned && !wide ? h(PinMark) : null,
   wide ? h('span', { className: 'bt-row-body' },
-    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, room.name), pinned ? h(PinMark) : null),
+    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, room.name), pinned ? h(PinMark) : null,
+      stamp ? h('span', { className: 'bt-row-time' }, relativeShort(stamp)) : null),
     workingLine ? h('span', { className: 'bt-row-preview' }, workingLine) : preview ? h('span', { className: 'bt-row-preview' }, preview) : null) : null,
   wide && approval && !active ? h('span', { className: 'bt-unread bt-unread-wait', 'aria-hidden': true })
     : wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true })
@@ -360,6 +364,7 @@ export function TeamSidebar(props) {
   const companyTodos = useCompanyTodos(pageKey)
   const activeSession = useSessions(list => Object.values(list.byId ?? {}).find(session => (session?.retainedBy?.mainView ?? 0) > 0)?.id ?? null)
   const [projectFilter, setProjectFilter] = useState('active')
+  const [projectsCollapsed, setProjectsCollapsed] = useState(false)
   const [chatQuery, setChatQuery] = useState('')
   props.useRegistry(value => value)
   const frameSnap = props.useFrame ? props.useFrame(value => value) : { viewport: typeof window === 'undefined' ? 0 : window.innerWidth, sidebarWidth: FALLBACK_SIDEBAR_WIDTH, collapsedWidth: 0 }
@@ -652,9 +657,13 @@ export function TeamSidebar(props) {
     h('span', { className: 'bt-co-link-label' }, label),
     meta === null ? null : h('span', { className: 'bt-co-meta' }, meta))
   const projectVisible = item => projectFilter === 'all' || (projectFilter === 'archived' ? item.status === 'archived' : projectFilter === 'active' ? item.status === 'active' : item.status === 'setup')
+  // A project's share of the decisions that wait: the column shows the same
+  // count the table and the project page do, and nothing when there is none.
+  const waitingOf = item => (companyTodos?.waiting ?? []).filter(todo => todo.project_id === item.id).length
   const projectRow = item => {
     const department = (item.source_department_ids ?? []).map(id => departments.find(entry => entry.id === id)?.name).filter(Boolean)[0] ?? ''
     const coordinator = employees.find(entry => entry.id === item.acceptance_actor) ?? null
+    const waiting = waitingOf(item)
     return h('button', {
       type: 'button', key: item.id, className: 'bt-co-proj' + (currentProject?.id === item.id ? ' is-active' : ''),
       title: item.goal || undefined,
@@ -663,9 +672,21 @@ export function TeamSidebar(props) {
         else actions.openCompanyPage('detail', item.id)
       },
     },
-      h('span', { className: 'bt-co-proj-top' }, h('strong', null, item.name), h('span', { className: 'bt-co-proj-stage' }, projectStage(item.status))),
-      h('span', { className: 'bt-co-proj-sub' }, [department, coordinator?.name].filter(Boolean).join(' · ') || t('No coordinator yet')))
+      h('span', { className: 'bt-co-proj-top' },
+        h('strong', null, item.name),
+        waiting > 0 ? h('span', { className: 'bt-co-proj-badge' }, String(waiting)) : null,
+        h('span', { className: 'bt-co-proj-stage' }, projectStage(item.status))),
+      h('span', { className: 'bt-co-proj-sub' }, [t('Stage'), projectStage(item.status), department, coordinator?.name].filter(Boolean).join(' · ')))
   }
+  // The section folds from its header, as the prototype's arrow does; the count
+  // and the list stay reachable from the Projects page either way.
+  const projectHead = () => h('header', { className: 'bt-co-sec-head' },
+    h('span', { className: 'bt-co-head-main' }, t('Projects'), h('span', { className: 'bt-co-count' }, String(projects.length))),
+    h('button', {
+      type: 'button', className: 'bt-co-linkbtn bt-co-toggle',
+      'aria-expanded': !projectsCollapsed, 'aria-label': projectsCollapsed ? t('Expand projects') : t('Collapse projects'),
+      onClick: () => setProjectsCollapsed(value => !value),
+    }, h(ArrowDownIcon)))
   const companySection = h('section', { className: 'bt-co-sec', 'aria-label': t('Company overview') },
     h('header', { className: 'bt-co-sec-head' }, h('span', null, t('Company overview'))),
     h('div', { className: 'bt-co-summary' },
@@ -677,36 +698,34 @@ export function TeamSidebar(props) {
       companyLink(t('Active projects'), String(activeProjects), false, () => actions.openCompanyPage('list')),
       companyLink(t('Team'), t('{count} people', { count: employees.length }), false, null)))
   const projectSection = h('section', { className: 'bt-co-sec', 'aria-label': t('Projects') },
-    h('header', { className: 'bt-co-sec-head' },
-      h('span', null, t('Projects')),
-      h('button', { type: 'button', className: 'bt-co-linkbtn', onClick: () => actions.openCompanyPage('list') }, t('Project list'), ' ›')),
-    h('div', { className: 'bt-co-chips', role: 'group', 'aria-label': t('Project status') },
-      [['active', 'In progress'], ['setup', 'Setup'], ['archived', 'Archived'], ['all', 'All']].map(([value, label]) => h('button', {
-        type: 'button', key: value, className: 'bt-co-chip', 'aria-pressed': projectFilter === value,
-        onClick: () => { setProjectFilter(value); window.dispatchEvent(new CustomEvent('bt-company-filter', { detail: value })) },
-      }, t(label)))),
-    h('div', { className: 'bt-co-plist' },
-      projects.filter(projectVisible).length === 0
-        ? h('p', { className: 'bt-co-empty' }, t('No projects in this view.'))
-        : projects.filter(projectVisible).map(projectRow)),
-    currentProject ? h('div', { className: 'bt-co-current' },
-      h('span', { className: 'bt-co-group-label' }, t('This project')),
-      h('strong', null, currentProject.name),
-      h('button', { type: 'button', className: 'bt-co-linkbtn', onClick: () => actions.openCompanyPage('detail', currentProject.id) }, t('Project overview'), ' ›')) : null)
+    projectHead(),
+    projectsCollapsed ? null : h(Fragment, null,
+      h('div', { className: 'bt-co-chips', role: 'group', 'aria-label': t('Project status') },
+        [['active', 'In progress'], ['setup', 'Setup'], ['archived', 'Archived'], ['all', 'All']].map(([value, label]) => h('button', {
+          type: 'button', key: value, className: 'bt-co-chip', 'aria-pressed': projectFilter === value,
+          onClick: () => { setProjectFilter(value); window.dispatchEvent(new CustomEvent('bt-company-filter', { detail: value })) },
+        }, t(label)))),
+      h('div', { className: 'bt-co-plist' },
+        projects.filter(projectVisible).length === 0
+          ? h('p', { className: 'bt-co-empty' }, t('No projects in this view.'))
+          : projects.filter(projectVisible).map(projectRow)),
+      currentProject ? h('div', { className: 'bt-co-current' },
+        h('span', { className: 'bt-co-group-label' }, t('This project')),
+        h('strong', null, currentProject.name),
+        h('button', { type: 'button', className: 'bt-co-linkbtn', onClick: () => actions.openCompanyPage('detail', currentProject.id) }, t('Project overview'), ' ›')) : null))
   // A bound project chat is still the Projects area: the column keeps the list
   // and adds the project's own overview links instead of the chat list.
   const projectChatSection = h('section', { className: 'bt-co-sec', 'aria-label': t('Projects') },
-    h('header', { className: 'bt-co-sec-head' },
-      h('span', null, t('Projects')),
-      h('button', { type: 'button', className: 'bt-co-linkbtn', onClick: () => actions.openCompanyPage('list') }, t('Project list'), ' ›')),
-    h('div', { className: 'bt-co-plist' }, projects.map(projectRow)),
-    activeProject ? h('div', { className: 'bt-co-current' },
-      h('span', { className: 'bt-co-group-label' }, t('This project')),
-      h('strong', null, activeProject.name),
-      h('div', { className: 'bt-co-links' },
-        companyLink(t('Project overview'), null, false, () => actions.openCompanyPage('detail', activeProject.id)),
-        companyLink(t('Waiting for you'), t('{count} cards', { count: todoCount }), false, () => actions.openCompanyPage('todos')),
-        companyLink(t('Last activity'), t('Today'), false, null))) : null)
+    projectHead(),
+    projectsCollapsed ? null : h(Fragment, null,
+      h('div', { className: 'bt-co-plist' }, projects.map(projectRow)),
+      activeProject ? h('div', { className: 'bt-co-current' },
+        h('span', { className: 'bt-co-group-label' }, t('This project')),
+        h('strong', null, activeProject.name),
+        h('div', { className: 'bt-co-links' },
+          companyLink(t('Project overview'), null, false, () => actions.openCompanyPage('detail', activeProject.id)),
+          companyLink(t('Waiting for you'), t('{count} cards', { count: todoCount }), false, () => actions.openCompanyPage('todos')),
+          companyLink(t('Last activity'), t('Today'), false, null))) : null))
   const chatSection = h('section', { className: 'bt-co-sec bt-co-chatsec', 'aria-label': t('Chats') },
     h('header', { className: 'bt-co-sec-head' },
       h('span', null, t('Chats')),
@@ -729,10 +748,14 @@ export function TeamSidebar(props) {
         h('button', { type: 'button', className: 'bt-round bt-side-collapse', 'aria-label': t('Collapse sidebar'), title: t('Collapse sidebar'), onClick: onToggle }, h(SidebarIcon)),
         main ? h(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : h('div', { className: 'bt-hint' }, uiNow.bootFailed ? bootHint() : t('Setting up your Main Bot…')),
         h('span', { className: 'bt-rail-sep', 'aria-hidden': true }))
-  // The foot stands in for the shell's hidden footer: the account avatar, and on
-  // the rail the new-chat button above it.
+  // The foot stands in for the shell's hidden footer: the owner's own row — the
+  // account avatar, who they are, and the settings gear — and on the rail the
+  // new-chat button above it.
   const foot = wideContent
-    ? h('div', { className: 'bt-leftcol-foot' }, h(AccountLauncher, { seat: false, actions }))
+    ? h('div', { className: 'bt-leftcol-foot bt-co-foot' },
+        h(AccountLauncher, { seat: false, actions }),
+        h('span', { className: 'bt-co-foot-id' }, h('strong', null, t('Boss')), h('small', null, t('Chairman'))),
+        h('button', { type: 'button', className: 'bt-round bt-co-foot-gear', 'aria-label': t('Settings'), title: t('Settings'), onClick: () => actions.openSettings('general') }, h(GearIcon)))
     : h('div', { className: 'bt-leftcol-foot bt-leftcol-foot-rail' },
         h('button', { type: 'button', className: 'bt-round', 'aria-label': t('New…'), title: t('New…'), onClick: () => actions.openNewChat('new') }, h(PlusIcon)),
         h(AccountLauncher, { seat: false, actions }))
@@ -1168,7 +1191,7 @@ export const SIDEBAR_CSS = `
 .bt-update-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:12px}
 .bt-update-notes{margin-right:auto;font-size:12.5px;color:var(--bt-ink-2);text-decoration:none}
 .bt-update-notes:hover{color:var(--bt-ink);text-decoration:underline}
-.bt-update-go{height:30px;padding:0 14px;border:0;border-radius:999px;background:var(--bt-accent,#4D6BFE);color:var(--bt-accent-ink,#fff);font:inherit;font-size:13px;font-weight:500;cursor:pointer;transition:opacity .12s ease,transform .12s ease}
+.bt-update-go{height:30px;padding:0 14px;border:0;border-radius:999px;background:var(--bt-accent,#4D6BFE);color:var(--bt-accent-ink,var(--bt-user-ink));font:inherit;font-size:13px;font-weight:500;cursor:pointer;transition:opacity .12s ease,transform .12s ease}
 .bt-update-go:hover:not(:disabled){opacity:.9}
 .bt-update-go:active:not(:disabled){transform:scale(.96)}
 .bt-update-go:disabled{opacity:.6;cursor:default}
@@ -1200,7 +1223,7 @@ export const SIDEBAR_CSS = `
    one context section that follows the page the user is on. */
 .bt-side-company{padding:0 10px 8px 0}
 .bt-co-brand{display:flex;align-items:center;gap:10px;padding:14px 6px 12px 14px;flex:none}
-.bt-co-mark{flex:none;width:32px;height:32px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);font-size:14px;font-weight:600;line-height:1}
+.bt-co-mark{flex:none;width:32px;height:32px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));font-size:14px;font-weight:600;line-height:1}
 .bt-co-brandtext{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .bt-co-brandtext strong{font-size:13.5px;line-height:18px;font-weight:600;color:var(--bt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-co-brandtext small{font-size:10.5px;line-height:14px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1230,20 +1253,32 @@ export const SIDEBAR_CSS = `
 .bt-co-chips{display:flex;flex-wrap:wrap;gap:4px;padding:0 4px 8px}
 .bt-co-chip{height:24px;padding:0 9px;border:.5px solid var(--bt-line-2);border-radius:6px;background:none;color:var(--bt-ink-2);font:inherit;font-size:11px;line-height:16px;cursor:pointer}
 .bt-co-chip:hover{background:var(--bt-hover)}
-.bt-co-chip[aria-pressed=true]{background:var(--bt-accent);border-color:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
+.bt-co-chip[aria-pressed=true]{background:var(--bt-accent);border-color:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink))}
 .bt-co-plist{display:flex;flex-direction:column;gap:1px}
-.bt-co-proj{display:flex;flex-direction:column;gap:1px;width:100%;padding:7px 8px;border:0;border-radius:7px;background:none;color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer}
+.bt-co-proj{display:flex;flex-direction:column;gap:1px;width:100%;padding:7px 8px;border:0;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer}
 .bt-co-proj:hover{background:var(--bt-hover)}
 .bt-co-proj.is-active{background:var(--bt-active)}
 .bt-co-proj-top{display:flex;align-items:center;gap:8px;min-width:0}
 .bt-co-proj-top strong{flex:1;min-width:0;font-size:12.5px;line-height:18px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-co-proj-stage{flex:none;font-size:10px;line-height:15px;color:var(--bt-ink-3)}
 .bt-co-proj-sub{font-size:10.5px;line-height:15px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-co-proj-badge{flex:none;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));font-size:10px;line-height:16px;font-weight:500;text-align:center;font-variant-numeric:tabular-nums}
+.bt-row-time{flex:none;margin-left:auto;font-size:11px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
+.bt-co-head-main{display:flex;align-items:center;gap:6px;min-width:0}
+.bt-co-toggle{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;padding:0;color:var(--bt-ink-3)}
+.bt-co-toggle svg{width:12px;height:12px;transition:transform .16s ease}
+.bt-co-toggle[aria-expanded=false] svg{transform:rotate(-90deg)}
+.bt-co-foot{padding:8px 4px 6px;border-top:.5px solid var(--bt-line)}
+.bt-co-foot-id{flex:1;min-width:0;display:flex;flex-direction:column;gap:0}
+.bt-co-foot-id strong{font-size:12.5px;line-height:17px;font-weight:600;color:var(--bt-ink)}
+.bt-co-foot-id small{font-size:10.5px;line-height:14px;color:var(--bt-ink-3)}
+.bt-co-foot-gear{width:28px;height:28px;flex:none}
+@media (prefers-reduced-motion:reduce){.bt-co-toggle svg{transition:none}}
 .bt-co-current{display:flex;flex-direction:column;gap:2px;margin-top:6px;padding:8px 6px 0;border-top:.5px solid var(--bt-line)}
 .bt-co-current strong{font-size:12px;line-height:17px;font-weight:500;color:var(--bt-ink)}
 .bt-co-group{display:flex;flex-direction:column;gap:1px;margin:2px 0 6px}
 .bt-co-group-label{padding:4px 6px 4px;font-size:10.5px;line-height:15px;font-weight:600;color:var(--bt-ink-3)}
-.bt-co-search{display:flex;align-items:center;gap:7px;margin:0 2px 8px;padding:0 9px;height:30px;border:.5px solid var(--bt-line-2);border-radius:7px;background:var(--bt-card);color:var(--bt-ink-3)}
+.bt-co-search{display:flex;align-items:center;gap:7px;margin:0 2px 8px;padding:0 9px;height:30px;border:.5px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink-3)}
 .bt-co-search svg{flex:none;width:14px;height:14px}
 .bt-co-search input{flex:1;min-width:0;border:0;background:none;color:var(--bt-ink);font:inherit;font-size:12px;line-height:18px;outline:none}
 .bt-co-search input::placeholder{color:var(--bt-ink-3)}

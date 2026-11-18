@@ -369,7 +369,12 @@ export const COMPANY_PAGE_CSS = `
 .bc-co-co-card strong{font:600 14px/20px var(--bt-font);color:var(--bt-ink)}
 .bc-co-co-link{align-self:center;border:0;background:none;padding:2px 6px;min-height:24px;font:600 12px var(--bt-font);color:var(--bt-ink-2);cursor:pointer;border-radius:6px}
 .bc-co-co-link:hover{background:var(--bt-hover);color:var(--bt-ink)}
-.bc-co-cols{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:20px;margin-top:30px;padding-top:20px;border-top:1px solid var(--bt-line)}
+.bc-co-cols{position:relative;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:20px;margin-top:30px;padding-top:20px;border-top:1px solid var(--bt-line)}
+/* The tree: one stem from the company card down to the bus, then a short drop
+   into every department card. Decoration only, so it stays behind the cards. */
+.bc-co-cols::before{content:"";position:absolute;left:50%;top:-30px;width:1px;height:30px;background:var(--bt-line);pointer-events:none}
+.bc-co-cols::after{content:"";position:absolute;left:50%;top:-3px;width:5px;height:5px;border-radius:50%;border:1px solid var(--bt-line-2);background:var(--bt-card);transform:translateX(-50%);pointer-events:none}
+.bc-co-dept::before{content:"";position:absolute;left:50%;top:-20px;width:1px;height:20px;background:var(--bt-line);pointer-events:none}
 @media (max-width:1180px){.bc-co-cols{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:860px){.bc-co-cols{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .bc-co-dept{position:relative;display:flex;flex-direction:column;padding:11px 13px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-card);cursor:pointer;transition:border-color .12s ease,box-shadow .12s ease}
@@ -383,7 +388,7 @@ export const COMPANY_PAGE_CSS = `
 .bc-co-dept-meta{margin:4px 0 0;font-size:12px;line-height:17px;color:var(--bt-ink-2)}
 .bc-co-dept-desc{margin:4px 0 0;font-size:12px;line-height:17px;color:var(--bt-ink-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .bc-co-emps{display:flex;flex-direction:column;gap:1px;margin-top:8px;padding-left:12px;border-left:1px solid var(--bt-line)}
-.bc-co-emp{display:flex;align-items:center;gap:9px;width:100%;padding:5px 6px;border:0;border-radius:7px;background:none;font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer}
+.bc-co-emp{display:flex;align-items:center;gap:9px;width:100%;padding:5px 6px;border:0;border-radius:8px;background:none;font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer}
 .bc-co-emp:hover{background:var(--bt-hover)}
 .bc-co-emp:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
 .bc-co-emp.is-disabled{color:var(--bt-ink-2);cursor:default}
@@ -403,15 +408,15 @@ export const COMPANY_PAGE_CSS = `
 .bc-co-pop-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .bc-co-pop-head strong{font:600 13px/18px var(--bt-font)}
 .bc-co-pop-name{flex:1;min-width:0;font-size:12px;color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bc-co-pop-close{flex:none;width:26px;height:26px;border:0;border-radius:7px;background:none;color:var(--bt-ink-2);font-size:18px;line-height:1;cursor:pointer}
+.bc-co-pop-close{flex:none;width:26px;height:26px;border:0;border-radius:8px;background:none;color:var(--bt-ink-2);font-size:18px;line-height:1;cursor:pointer}
 .bc-co-pop-close:hover{background:var(--bt-hover);color:var(--bt-ink)}
 .bc-co-kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0 0 10px;font-size:12px;line-height:17px}
 .bc-co-kv dt{color:var(--bt-ink-2)}
 .bc-co-kv dd{margin:0;color:var(--bt-ink);min-width:0}
-.bc-co-kv select{width:100%;min-height:28px;border:1px solid var(--bt-line-2);border-radius:7px;background:var(--bt-card);color:var(--bt-ink);font:inherit;padding:0 6px}
+.bc-co-kv select{width:100%;min-height:28px;border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);font:inherit;padding:0 6px}
 .bc-co-muted{margin:0;font-size:12px;line-height:17px;color:var(--bt-ink-2)}
 .bc-co-pop-emps{display:flex;flex-direction:column;border-top:1px solid var(--bt-line);padding-top:8px}
-.bc-co-row{display:flex;align-items:center;gap:9px;width:100%;padding:7px 6px;border:0;border-radius:7px;background:none;font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer}
+.bc-co-row{display:flex;align-items:center;gap:9px;width:100%;padding:7px 6px;border:0;border-radius:8px;background:none;font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer}
 .bc-co-row:hover{background:var(--bt-hover)}
 .bc-co-row:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
 .bc-co-row.is-disabled{cursor:default;color:var(--bt-ink-2)}
