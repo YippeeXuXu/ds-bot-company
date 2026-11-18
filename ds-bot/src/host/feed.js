@@ -77,6 +77,7 @@ export function install(rt) {
   })
 
   const leave = (controller) => {
+    console.error('[feed-debug] leave clients=', clients.size)
     clients.delete(controller)
     if (clients.size === 0) writing.clear()
     try { controller.close() } catch { /* already closed or errored */ }
@@ -96,7 +97,7 @@ export function install(rt) {
         },
         cancel() { leave(controller) },
       })
-      request.signal.addEventListener('abort', () => leave(controller), { once: true })
+      request.signal.addEventListener('abort', () => { console.error('[feed-debug] abort fired'); leave(controller) }, { once: true })
       return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store' } })
     },
   }), 'ds-bot: live feed route')
