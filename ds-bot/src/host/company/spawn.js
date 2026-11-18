@@ -102,7 +102,10 @@ export function spawnHandlers({ roster = {}, createEmployee, warn = () => {} } =
           role: template.role ?? '',
           instructions: template.instructions ?? '',
           ...(template.model ? { model: template.model } : {}),
-          ...(template.effort ? { effort: template.effort } : {}),
+          // An empty thinking level is an explicit Default, not a missing pick: passing
+          // undefined here would let each create inherit the profile default as it
+          // happens to be at that moment.
+          effort: template.effort ?? null,
         })
       } catch (error) {
         throw companyFail('employee/bot-create-failed', `${botName} was not created: ${messageOf(error)}`, { template_id: template.id, field: 'bot', bot_name: botName })
