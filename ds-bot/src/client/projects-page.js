@@ -357,6 +357,7 @@ export function CompanySurface({ page, actions, roster }) {
               onRetryTodos: () => setTodoAttempt(value => value + 1),
               onOpenEmployee: openEmployeeChat,
               onOpenProjects: () => actions.openCompanyPage('list'),
+              onOpenProject: id => actions.openCompanyPage('detail', id),
               onCommand: mutate,
               roster,
             })

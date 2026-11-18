@@ -10,7 +10,7 @@ import { build } from 'esbuild'
 const PLUGIN = dirname(dirname(fileURLToPath(import.meta.url)))
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { CompanyPageView, COMPANY_PAGE_CSS, botOpenable } from './src/client/company-page.js'",
+    contents: "export { CompanyPageView, COMPANY_PAGE_CSS, botOpenable, companyErrorText } from './src/client/company-page.js'",
     resolveDir: PLUGIN,
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -26,7 +26,7 @@ const react = {
 const module = { exports: {} }
 const sandbox = { module, exports: module.exports, require: name => (name === 'react' ? react : {}), window: {} }
 runInNewContext(outputFiles[0].text, sandbox)
-const { CompanyPageView, COMPANY_PAGE_CSS, botOpenable } = module.exports
+const { CompanyPageView, COMPANY_PAGE_CSS, botOpenable, companyErrorText } = module.exports
 
 const text = node => {
   if (node === null || node === undefined || node === false || node === true) return ''
@@ -249,4 +249,82 @@ test('botOpenable: no Bot, an unresolved roster and a ready roster each read dif
   assert.equal(botOpenable(employee(), { ready: false, byId: {} }), true)
   assert.equal(botOpenable(employee(), roster), true)
   assert.equal(botOpenable(employee(), { ready: true, byId: {} }), false)
+})
+
+test('the overview marks duty state and puts the edit entry beside each employee', () => {
+  const edited = []
+  const away = employee({ id: 'emp_2', name: '橙子', status: 'disabled' })
+  const tree = view({ openDept: 'dep_1', data: model({ employees: [employee(), away] }), onEditOpen: item => edited.push(item.id) })
+  const rows = byClass(tree, 'bc-co-row-wrap')
+  assert.equal(rows.length, 2)
+  assert.match(text(rows[0]), /On duty/)
+  assert.match(text(rows[1]), /Dismissed employee/)
+  const edit = byClass(rows[0], 'bc-co-row-edit')[0]
+  assert.match(String(edit.props['aria-label']), /Edit 键盘/)
+  click(edit)
+  assert.deepEqual(edited, ['emp_1'])
+})
+
+test('the edit panel carries the profile fields and asks the surface to save', () => {
+  const saved = []
+  const tree = view({ openDept: 'dep_1', editing: 'emp_1', editName: '键盘', editRole: 'coordinator', editDept: 'dep_1', onEditSave: () => saved.push('save') })
+  const panel = byClass(tree, 'bc-co-edit')[0]
+  assert.ok(panel)
+  const fields = byClass(panel, 'bc-field')
+  assert.match(text(fields[0]), /^Employee display name/)
+  assert.match(text(fields[1]), /^Employee role/)
+  assert.match(text(fields[2]), /^Department/)
+  click(button(panel, 'Save'))
+  assert.deepEqual(saved, ['save'])
+  const empty = view({ openDept: 'dep_1', editing: 'emp_1', editName: ' ', editRole: 'coordinator', editDept: 'dep_1' })
+  assert.equal(button(byClass(empty, 'bc-co-edit')[0], 'Save').props.disabled, true)
+})
+
+test('suspending and reactivating both run through the page status handler', () => {
+  const asked = []
+  const tree = view({ openDept: 'dep_1', editing: 'emp_1', editName: '键盘', editRole: 'executor', editDept: 'dep_1', onStatus: item => asked.push(item.status) })
+  click(button(byClass(tree, 'bc-co-edit')[0], 'Suspend employee'))
+  assert.deepEqual(asked, ['active'])
+  const away = view({ openDept: 'dep_1', editing: 'emp_1', editName: '键盘', editRole: 'executor', editDept: 'dep_1', data: model({ employees: [employee({ status: 'disabled' })] }), onStatus: item => asked.push(item.status) })
+  click(button(byClass(away, 'bc-co-edit')[0], 'Reactivate employee'))
+  assert.deepEqual(asked, ['active', 'disabled'])
+})
+
+test('a refused dismissal names the work to hand over and opens each place', () => {
+  const went = []
+  const refusal = { code: 'employee/still-referenced', details: {
+    departments: [{ department_id: 'dep_1', name: '研发部', role: 'lead' }],
+    projects: [{ project_id: 'prj_1', name: '官网改版', status: 'active', roles: ['coordinator', 'acceptor'] }],
+  } }
+  const tree = view({ openDept: 'dep_1', editing: 'emp_1', editName: '键盘', editRole: 'executor', editDept: 'dep_1', editRefusal: refusal,
+    onOpenDepartmentRef: id => went.push(['department', id]), onOpenProjectRef: id => went.push(['project', id]) })
+  const refs = byClass(tree, 'bc-co-refs')[0]
+  assert.match(text(refs), /研发部 · Department lead/)
+  assert.match(text(refs), /官网改版 · Coordinator、Independent acceptor/)
+  const [departmentButton, projectButton] = buttons(refs)
+  click(departmentButton)
+  click(projectButton)
+  assert.deepEqual(went, [['department', 'dep_1'], ['project', 'prj_1']])
+})
+
+
+test('a refusal code becomes one readable sentence, never the server text', () => {
+  assert.match(companyErrorText({ code: 'department.name-taken' }), /already exists/)
+  assert.match(companyErrorText({ code: 'employee.bot_already_employed' }), /already has an employee profile/)
+  assert.match(companyErrorText({ code: 'employee/still-referenced' }), /still holds work/)
+  assert.match(companyErrorText({ code: 'employee/inactive' }), /is dismissed/)
+  assert.equal(companyErrorText({ code: 'other/code', message: 'raw' }), 'raw')
+  assert.match(companyErrorText(null), /could not be saved/)
+})
+
+
+test('dismissed staff leave the lead picker and keep their Bot out of hiring', () => {
+  const away = employee({ id: 'emp_2', name: '橙子', status: 'disabled', bot_id: 'bot_2' })
+  const tree = view({ openDept: 'dep_1', data: model({ employees: [employee(), away] }), roster: { ready: true, byId: { bot_1: {}, bot_2: {} }, bots: [{ id: 'bot_2', name: '橙子', private: false }] } })
+  const leadSelect = collect(tree, node => node.type === 'select' && String(node.props['aria-label'] ?? '').startsWith('Lead of'))[0]
+  const options = collect(leadSelect, node => node.type === 'option').map(option => text(option))
+  assert.deepEqual(options, ['No lead assigned', '键盘'])
+  const hire = view({ creating: 'employee', data: model({ employees: [employee(), away] }), roster: { ready: true, byId: { bot_1: {}, bot_2: {} }, bots: [{ id: 'bot_2', name: '橙子', private: false }] } })
+  const hireBots = collect(byClass(hire, 'bc-co-create')[0], node => node.type === 'select')[0]
+  assert.doesNotMatch(text(hireBots), /橙子/)
 })

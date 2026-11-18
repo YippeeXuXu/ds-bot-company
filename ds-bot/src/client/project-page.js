@@ -4,16 +4,31 @@ import { t } from './i18n.js'
 const label = value => ({ setup: t('Setup'), active: t('In progress'), paused: t('Paused'), archived: t('Archived') })[value] ?? t('Unknown status')
 const relation = (project, data) => (project?.source_department_ids ?? []).map(id => data.departments.find(item => item.id === id)?.name ?? id)
 
+const statusLabel = value => ({ active: t('Active'), invited: t('Invited'), left: t('Left'), removed: t('Removed'), archived_readonly: t('Left (read-only)') })[value] ?? value
+const roleLabel = value => roleOptions().find(([option]) => option === value)?.[1] ?? value
+const roleOptions = () => [['executor', t('Executor')], ['coordinator', t('Coordinator')], ['acceptor', t('Independent acceptor')], ['memory_keeper', t('Memory keeper')]]
+const memberError = failure => {
+  const known = {
+    'project/coordinator-exists': t('The project already has a coordinator. The current one steps down first.'),
+    'project/member-exists': t('This employee is already in the project.'),
+    'project/member-busy': t('This employee is already in another active project.'),
+    'project/member-not-found': t('This member is no longer active in the project.'),
+    'project/state-conflict': t('A project in this state cannot change members.'),
+  }[failure?.code]
+  return known ?? (failure?.message ? String(failure.message) : t('The change could not be saved.'))
+}
+
 export function ProjectPage({ project, data, preview, loading, error, onBack, onChat, onRetry, onCommand }) {
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
   const [selectedEmployee, setSelectedEmployee] = useState('')
+  const [pendingRemove, setPendingRemove] = useState(null)
   const run = async (command, fields = {}) => {
     if (busy || preview || !project) return
     setBusy(true)
     setActionError('')
     try { await onCommand(command, { project_id: project.id, ...fields }); return true }
-    catch (failure) { setActionError(failure?.message ?? String(failure)); return false }
+    catch (failure) { setActionError(memberError(failure)); return false }
     finally { setBusy(false) }
   }
   if (loading && !project) return h('section', { className: 'bc-state', role: 'status' }, t('Loading project…'))
@@ -55,7 +70,30 @@ export function ProjectPage({ project, data, preview, loading, error, onBack, on
     h('div', { className: 'bc-grid' },
       h('section', { className: 'bc-section' }, h('h2', null, t('Purpose and delivery')), h('div', { className: 'bc-detail-label' }, t('Goal')), h('p', { className: 'bc-detail-value' }, project.goal || '—'), h('div', { className: 'bc-detail-label' }, t('Deliverable')), h('p', { className: 'bc-detail-value' }, project.deliverable || '—'), h('div', { className: 'bc-detail-label' }, t('Acceptance')), h('p', { className: 'bc-detail-value' }, project.acceptance || '—')),
       h('section', { className: 'bc-section' }, h('h2', null, t('People and departments')), h('div', { className: 'bc-detail-label' }, t('Source departments')), h('p', { className: 'bc-detail-value' }, relation(project, data).join(' · ') || '—'), h('div', { className: 'bc-detail-label' }, t('Coordinator')), h('p', { className: 'bc-detail-value' }, coordinator ? employeeName(coordinator.employee_id) : t('Not assigned')),
-        members.length ? members.map(member => h('div', { className: 'bc-member', key: member.id }, h('span', null, employeeName(member.employee_id)), h('small', null, `${member.role} · ${member.membership_status ?? member.status ?? '—'}`))) : h('p', { className: 'bc-muted' }, t('No members to show yet.')),
+        members.length ? members.map(member => {
+          const status = member.membership_status ?? member.status
+          const active = status === 'active'
+          return h('div', { className: 'bc-member bc-member-edit', key: member.id },
+            h('span', { className: 'bc-member-name' }, employeeName(member.employee_id)),
+            active && ['setup', 'active'].includes(project.status) && roleOptions().some(([option]) => option === member.role)
+              ? h('select', {
+                className: 'bc-member-role',
+                value: member.role,
+                'aria-label': t('Change role of {name}', { name: employeeName(member.employee_id) }),
+                disabled: busy || preview,
+                onChange: event => void run('project.member.update', { employee_id: member.employee_id, role: event.target.value }),
+              }, roleOptions().map(([value, text]) => h('option', { key: value, value }, text)))
+              : h('small', { className: 'bc-member-status' }, `${roleLabel(member.role)} · ${statusLabel(status)}`),
+            active && ['setup', 'active'].includes(project.status)
+              ? (pendingRemove === member.id
+                ? h('span', { className: 'bc-member-actions' },
+                  h('button', { type: 'button', className: 'bc-button bc-danger', disabled: busy || preview, onClick: async () => { if (await run('project.member.remove', { employee_id: member.employee_id })) setPendingRemove(null) } }, t('Confirm removal')),
+                  h('button', { type: 'button', className: 'bc-button', onClick: () => setPendingRemove(null) }, t('Cancel')))
+                : h('button', { type: 'button', className: 'bc-member-remove', 'aria-label': t('Remove {name} from the project', { name: employeeName(member.employee_id) }), disabled: busy || preview, onClick: () => setPendingRemove(member.id) }, t('Remove member')))
+              : null)
+        }) : h('p', { className: 'bc-muted' }, t('No members to show yet.')),
+        members.some(member => member.membership_status === 'left' || member.membership_status === 'removed')
+          ? h('p', { className: 'bc-muted' }, t('Members who left keep their history in the project.')) : null,
         ['setup', 'active'].includes(project.status) && candidates.length ? h('div', { className: 'bc-actions' },
           h('label', { className: 'bc-field' }, t('Add a project member'), h('select', { value: selectedEmployee, onChange: event => setSelectedEmployee(event.target.value) }, h('option', { value: '' }, t('Choose an employee')), candidates.map(employee => h('option', { value: employee.id, key: employee.id }, employee.name)))),
           h('button', { type: 'button', className: 'bc-button', disabled: busy || preview || !selectedEmployee, onClick: async () => { if (await run('project.member.add', { employee_id: selectedEmployee, role: 'executor' })) setSelectedEmployee('') } }, t('Add member'))) : null)),
