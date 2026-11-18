@@ -71,6 +71,8 @@ const STATUS = new Map([
   ['project/group-failed', 409],
   ['company/invalid', 422],
   ['company/unknown-command', 422],
+  // A host that cannot do what the command needs (a Bot that cannot be delivered to).
+  ['company/unsupported', 422],
   ['employee/unknown-bot', 422],
   ['employee/private-bot', 422],
   ['employee/immutable-field', 422],
@@ -99,6 +101,11 @@ const STATUS = new Map([
   ['task/dependency-missing', 422],
   ['task/parent-cycle', 422],
   ['task/downgrade-forbidden', 422],
+  // Task runs (M1b-4.3): a dispatch that is gone or already failed, a host that cannot
+  // deliver a brief, and a delivery that did not reach the Bot.
+  ['run/not-found', 404],
+  ['run/state-conflict', 409],
+  ['run/deliver-failed', 422],
   // The to-do view's own refusals: a bad window, a card that is gone, a card that changed
   // under the caller, an answer this build cannot give, and the D7 acceptance refusal.
   ['todo/invalid', 422],

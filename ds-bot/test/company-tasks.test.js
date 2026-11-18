@@ -85,7 +85,7 @@ const seed = (home, { projects = [project()], employees = [], members = [], task
     ? members
     : [member('mem_owner', 'prj_1', 'emp_owner'), member('mem_acceptor', 'prj_1', 'emp_acceptor'), member('mem_other', 'prj_1', 'emp_other')]
   const state = {
-    version: 4,
+    version: 5,
     revision: 4,
     companies: { cmp_1: { id: 'cmp_1', name: 'Acme', status: 'active', company_id: 'cmp_1', created_at: 1 } },
     departments: {},
