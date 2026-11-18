@@ -28,7 +28,7 @@ const module = { exports: {} }
 const sandbox = { module, exports: module.exports, require: name => (name === 'react' ? react : {}), window: { addEventListener() {}, removeEventListener() {} } }
 runInNewContext(outputFiles[0].text, sandbox)
 const {
-  TaskBoardView, TASK_BOARD_CSS, TASK_COLUMNS, TASK_TABS, TASK_STAGE_WORDS, taskActionCommand,
+  TaskBoardView, TASK_BOARD_CSS, TASK_COLUMNS, TASK_TABS, taskActionCommand,
   taskSubmitCommand, taskFailCommand, taskReopenCommand, taskDecideCommand, acceptanceReady, taskRevision, taskMoveTargets,
   taskStatusLabel, taskStage, taskErrorText, taskBadges, taskDependencyCount, taskOwnerName, taskWhen,
 } = module.exports
@@ -52,7 +52,6 @@ const byClass = (tree, name) => collect(tree, node => String(node.props?.classNa
 const buttons = tree => collect(tree, node => node.type === 'button')
 const button = (tree, label) => buttons(tree).find(item => text(item).includes(label))
 const selects = tree => collect(tree, node => node.type === 'select')
-const click = node => node.props.onClick?.({ preventDefault() {}, stopPropagation() {} })
 
 const employees = [{ id: 'emp_1', name: '键盘' }, { id: 'emp_2', name: '橙子' }]
 const task = (patch = {}) => ({

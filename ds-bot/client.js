@@ -12741,7 +12741,7 @@ function TaskBoardView({
     dialog ? dialog.kind === "create" ? (0, import_react21.createElement)(TaskCreateDialog, { projectId, workspaceRef, employees, members, busy, error: dialogError, onClose: onDialogClose, onSend: onDialogSend }) : (0, import_react21.createElement)(TaskDialog, { dialog, busy, error: dialogError, onClose: onDialogClose, onSend: onDialogSend }) : null
   );
 }
-function TaskBoard({ tasks = [], employees = [], members = [], projectId = "", workspaceRef = "", preview = false, loading = false, error: loadError = "", onCommand, onChat }) {
+function TaskBoard({ tasks = [], employees = [], members = [], projectId = "", workspaceRef = "", preview = false, error: loadError = "", onCommand, onChat }) {
   const [selectedId, setSelectedId] = (0, import_react21.useState)("");
   const [tab, setTab] = (0, import_react21.useState)("detail");
   const [busy, setBusy] = (0, import_react21.useState)(false);

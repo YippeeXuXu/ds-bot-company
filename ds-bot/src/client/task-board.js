@@ -494,7 +494,7 @@ export function TaskBoardView({
   )
 }
 
-export function TaskBoard({ tasks = [], employees = [], members = [], projectId = '', workspaceRef = '', preview = false, loading = false, error: loadError = '', onCommand, onChat }) {
+export function TaskBoard({ tasks = [], employees = [], members = [], projectId = '', workspaceRef = '', preview = false, error: loadError = '', onCommand, onChat }) {
   const [selectedId, setSelectedId] = useState('')
   const [tab, setTab] = useState('detail')
   const [busy, setBusy] = useState(false)
