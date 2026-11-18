@@ -504,25 +504,29 @@ test('A10: a writable install saves a v1 file back once, with one migration even
   }
   // The state file is written just before the migration event is appended; waiting on the
   // version alone can read the event log mid-upgrade while the suite runs its files at once.
+  // 3.6b appends a second event to the same upgrade (the builtin templates it tops up), so
+  // the wait is for both: one event would still let the read in before the seed is written.
   const deadline = Date.now() + 2000
-  while (Date.now() < deadline && !(JSON.parse(readFileSync(stateFile, 'utf8')).version === 3 && eventCount() === 1)) {
+  while (Date.now() < deadline && !(JSON.parse(readFileSync(stateFile, 'utf8')).version === 3 && eventCount() === 2)) {
     await new Promise(resolve => setTimeout(resolve, 10))
   }
   const saved = JSON.parse(readFileSync(stateFile, 'utf8'))
   assert.equal(saved.version, 3)
   assert.equal(saved.revision, 7)
   assert.deepEqual(saved.acceptances, {})
-  assert.deepEqual(saved.templates, {})
+  // The same one save tops up the builtin templates a v1 file cannot have (3.6b).
+  assert.equal(Object.keys(saved.templates).length, 9)
   const events = readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
-  assert.deepEqual(events.map(event => event.type), ['company/migrated'])
+  assert.deepEqual(events.map(event => event.type), ['company/migrated', 'company/builtin-templates-seeded'])
   assert.deepEqual(events[0].data, { from: 1, to: 3 })
+  assert.deepEqual(events[1].data, { count: 9 })
   rt.company.close()
 
   // A second start on the now-current file has nothing to write back.
   const again = rtOf()
   install(again)
   await new Promise(resolve => setTimeout(resolve, 100))
-  assert.equal(readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean).length, 1)
+  assert.equal(readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean).length, 2)
   again.company.close()
   rmSync(home, { recursive: true, force: true })
 })
