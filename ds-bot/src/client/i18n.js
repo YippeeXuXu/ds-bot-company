@@ -1289,6 +1289,7 @@ Object.assign(ZH, HOST_ZH, {
   'Department chats are needed before the project starts.': '启动项目前需要绑定部门群。',
   'You can create a setup draft now. Bind each department chat before starting the project.': '可以先创建待配置项目；启动前请绑定各部门群。',
   'Existing group chat': '现有群聊', 'Choose a group chat': '选择群聊', 'Bind chat to {name}': '绑定群聊到 {name}',
+  'Create department group': '新建部门群',
   'Project coordinator': '项目协调员',
   'The coordinator can be assigned after creating the draft. One is required before launch.': '可先创建项目，启动前再指定协调员。',
   Employee: '员工', 'Choose an employee': '选择员工',

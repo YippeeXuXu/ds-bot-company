@@ -161,8 +161,17 @@ export function CompanySurface({ page, actions, roster }) {
   const previewData = () => { revision.current = 1; setPreview(true); setData(sample()); setError(''); setLoading(false); setNotice('') }
   const mutate = async (command, fields) => {
     if (preview) {
-      if (command === 'department.update') {
-        const department = { ...data.departments.find(item => item.id === fields.department_id), chat_ref: fields.chat_ref }
+      if (command === 'department.update' || command === 'department.group.bind') {
+        const chatRef = fields.chat_ref ?? fields.room_id
+        const department = { ...data.departments.find(item => item.id === fields.department_id), chat_ref: chatRef, room_id: chatRef }
+        setData(current => ({ ...current, departments: current.departments.map(item => item.id === department.id ? department : item) }))
+        setNotice('')
+        return { body: { department } }
+      }
+      // A sample department group is bound but never created: the preview keeps no rooms.
+      if (command === 'department.group.create') {
+        const roomId = `demo-room-${freshKey()}`
+        const department = { ...data.departments.find(item => item.id === fields.department_id), chat_ref: roomId, room_id: roomId }
         setData(current => ({ ...current, departments: current.departments.map(item => item.id === department.id ? department : item) }))
         setNotice('')
         return { body: { department } }
@@ -194,7 +203,8 @@ export function CompanySurface({ page, actions, roster }) {
     }
     writeKeys.current.delete(fingerprint)
     revision.current = result.revision
-    const field = command === 'company.init' ? 'company' : command === 'department.create' || command === 'department.update' ? 'department' : command === 'employee.create' ? 'employee' : command === 'project.create' ? 'project' : null
+    const departmentCommands = ['department.create', 'department.update', 'department.group.create', 'department.group.bind']
+    const field = command === 'company.init' ? 'company' : departmentCommands.includes(command) ? 'department' : command === 'employee.create' ? 'employee' : command === 'project.create' ? 'project' : null
     const created = field && result.body?.[field]
     if (created) setData(current => field === 'company' ? { ...current, company: created } : { ...current, [`${field}s`]: [...current[`${field}s`].filter(item => item.id !== created.id), created] })
     await load(undefined, true)

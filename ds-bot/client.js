@@ -1430,6 +1430,7 @@ Object.assign(ZH, HOST_ZH, {
   "Existing group chat": "现有群聊",
   "Choose a group chat": "选择群聊",
   "Bind chat to {name}": "绑定群聊到 {name}",
+  "Create department group": "新建部门群",
   "Project coordinator": "项目协调员",
   "The coordinator can be assigned after creating the draft. One is required before launch.": "可先创建项目，启动前再指定协调员。",
   Employee: "员工",
@@ -11747,6 +11748,9 @@ function ProjectWizard({ data, roster, preview, loading, error: loadError, mutat
     setDepartmentName("");
     setDepartmentChat("");
   });
+  const createDepartmentGroup = (departmentId) => submit(async () => {
+    await mutate("department.group.create", { department_id: departmentId });
+  });
   const bindDepartment = (departmentId) => submit(async () => {
     if (!departmentChat) return;
     await mutate("department.update", { department_id: departmentId, chat_ref: departmentChat });
@@ -11803,7 +11807,15 @@ function ProjectWizard({ data, roster, preview, loading, error: loadError, mutat
       (0, import_react22.createElement)("p", { className: "bc-muted" }, t("Choose source departments. Add their employees from the project page after creation.")),
       activeDepartments.length ? activeDepartments.map((department) => (0, import_react22.createElement)("label", { className: "bc-choice", key: department.id }, (0, import_react22.createElement)("input", { type: "checkbox", checked: selected.includes(department.id), onChange: () => toggle(department.id) }), department.name)) : (0, import_react22.createElement)("p", { className: "bc-muted" }, t("No departments yet. Add one below.")),
       (0, import_react22.createElement)("div", { className: "bc-row" }, field(t("New department"), departmentName, setDepartmentName, t("Department name"), false, true, 80), (0, import_react22.createElement)("button", { type: "button", className: "bc-button", disabled: busy || !departmentName.trim(), onClick: createDepartment }, t("Add department"))),
-      unbound.length ? (0, import_react22.createElement)("div", { className: "bc-exception", role: "status" }, (0, import_react22.createElement)("strong", null, t("Department chats are needed before the project starts.")), (0, import_react22.createElement)("p", null, t("You can create a setup draft now. Bind each department chat before starting the project.")), (0, import_react22.createElement)("label", { className: "bc-field" }, t("Existing group chat"), (0, import_react22.createElement)("select", { value: departmentChat, onChange: (event) => setDepartmentChat(event.target.value) }, (0, import_react22.createElement)("option", { value: "" }, t("Choose a group chat")), (roster?.rooms ?? []).map((room2) => (0, import_react22.createElement)("option", { key: room2.id, value: room2.id }, room2.name)))), unbound.map((department) => (0, import_react22.createElement)("button", { type: "button", className: "bc-button", key: department.id, disabled: busy || !departmentChat, onClick: () => bindDepartment(department.id) }, t("Bind chat to {name}", { name: department.name })))) : null,
+      unbound.length ? (0, import_react22.createElement)(
+        "div",
+        { className: "bc-exception", role: "status" },
+        (0, import_react22.createElement)("strong", null, t("Department chats are needed before the project starts.")),
+        (0, import_react22.createElement)("p", null, t("You can create a setup draft now. Bind each department chat before starting the project.")),
+        unbound.map((department) => (0, import_react22.createElement)("div", { className: "bc-row", key: `new-${department.id}` }, (0, import_react22.createElement)("span", null, department.name), (0, import_react22.createElement)("button", { type: "button", className: "bc-button", disabled: busy, onClick: () => createDepartmentGroup(department.id) }, t("Create department group")))),
+        (0, import_react22.createElement)("label", { className: "bc-field" }, t("Existing group chat"), (0, import_react22.createElement)("select", { value: departmentChat, onChange: (event) => setDepartmentChat(event.target.value) }, (0, import_react22.createElement)("option", { value: "" }, t("Choose a group chat")), (roster?.rooms ?? []).map((room2) => (0, import_react22.createElement)("option", { key: room2.id, value: room2.id }, room2.name)))),
+        unbound.map((department) => (0, import_react22.createElement)("button", { type: "button", className: "bc-button", key: department.id, disabled: busy || !departmentChat, onClick: () => bindDepartment(department.id) }, t("Bind chat to {name}", { name: department.name })))
+      ) : null,
       (0, import_react22.createElement)("div", { className: "bc-actions" }, (0, import_react22.createElement)("button", { type: "button", className: "bc-button", onClick: () => setStep(0) }, t("Back")), (0, import_react22.createElement)("button", { type: "button", className: "bc-button bc-primary", disabled: selected.length === 0, onClick: () => setStep(2) }, t("Continue")))
     ) : null,
     step === 2 ? (0, import_react22.createElement)(
@@ -12359,8 +12371,16 @@ function CompanySurface({ page, actions, roster }) {
   };
   const mutate = async (command, fields) => {
     if (preview) {
-      if (command === "department.update") {
-        const department = { ...data.departments.find((item) => item.id === fields.department_id), chat_ref: fields.chat_ref };
+      if (command === "department.update" || command === "department.group.bind") {
+        const chatRef = fields.chat_ref ?? fields.room_id;
+        const department = { ...data.departments.find((item) => item.id === fields.department_id), chat_ref: chatRef, room_id: chatRef };
+        setData((current) => ({ ...current, departments: current.departments.map((item) => item.id === department.id ? department : item) }));
+        setNotice("");
+        return { body: { department } };
+      }
+      if (command === "department.group.create") {
+        const roomId = `demo-room-${freshKey()}`;
+        const department = { ...data.departments.find((item) => item.id === fields.department_id), chat_ref: roomId, room_id: roomId };
         setData((current) => ({ ...current, departments: current.departments.map((item) => item.id === department.id ? department : item) }));
         setNotice("");
         return { body: { department } };
@@ -12392,7 +12412,8 @@ function CompanySurface({ page, actions, roster }) {
     }
     writeKeys.current.delete(fingerprint);
     revision.current = result.revision;
-    const field2 = command === "company.init" ? "company" : command === "department.create" || command === "department.update" ? "department" : command === "employee.create" ? "employee" : command === "project.create" ? "project" : null;
+    const departmentCommands = ["department.create", "department.update", "department.group.create", "department.group.bind"];
+    const field2 = command === "company.init" ? "company" : departmentCommands.includes(command) ? "department" : command === "employee.create" ? "employee" : command === "project.create" ? "project" : null;
     const created = field2 && result.body?.[field2];
     if (created) setData((current) => field2 === "company" ? { ...current, company: created } : { ...current, [`${field2}s`]: [...current[`${field2}s`].filter((item) => item.id !== created.id), created] });
     await load(void 0, true);
