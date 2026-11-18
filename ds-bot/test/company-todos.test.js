@@ -9,7 +9,7 @@ import test from 'node:test'
 import { createCompanyApi } from '../src/host/company/api.js'
 import { install } from '../src/host/company/index.js'
 import { pathRedactor } from '../src/host/company/selfreview/features.js'
-import { createCompanyStore } from '../src/host/company/store.js'
+import { COMPANY_VERSION, createCompanyStore } from '../src/host/company/store.js'
 import { projectHandlers } from '../src/host/company/projects.js'
 import { createTodos } from '../src/host/company/todos.js'
 
@@ -443,12 +443,12 @@ test('A10: a v1 company is read as the current version, revision untouched, upgr
   }
   writeFileSync(join(home, 'company', 'state.json'), JSON.stringify(legacy))
   const store = storeOf(home)
-  assert.equal(store.state.version, 5)
+  assert.equal(store.state.version, COMPANY_VERSION)
   assert.deepEqual(store.state.acceptances, {})
   assert.deepEqual(store.state.todo_log, {})
   assert.deepEqual(store.state.templates, {})
   assert.equal(store.state.revision, 7)
-  assert.deepEqual(store.migration(), { from: 1, to: 5 })
+  assert.deepEqual(store.migration(), { from: 1, to: COMPANY_VERSION })
 
   const api = apiOf(home, {})
   const result = await api.todos({})
@@ -459,7 +459,7 @@ test('A10: a v1 company is read as the current version, revision untouched, upgr
   store.clearMigration()
   assert.equal(store.migration(), undefined)
   const saved = JSON.parse(readFileSync(join(home, 'company', 'state.json'), 'utf8'))
-  assert.equal(saved.version, 5)
+  assert.equal(saved.version, COMPANY_VERSION)
   assert.equal(saved.revision, 7)
   assert.deepEqual(saved.acceptances, {})
   assert.deepEqual(saved.templates, {})
@@ -507,18 +507,18 @@ test('A10: a writable install saves a v1 file back once, with one migration even
   // 3.6b appends a second event to the same upgrade (the builtin templates it tops up), so
   // the wait is for both: one event would still let the read in before the seed is written.
   const deadline = Date.now() + 2000
-  while (Date.now() < deadline && !(JSON.parse(readFileSync(stateFile, 'utf8')).version === 5 && eventCount() === 2)) {
+  while (Date.now() < deadline && !(JSON.parse(readFileSync(stateFile, 'utf8')).version === COMPANY_VERSION && eventCount() === 2)) {
     await new Promise(resolve => setTimeout(resolve, 10))
   }
   const saved = JSON.parse(readFileSync(stateFile, 'utf8'))
-  assert.equal(saved.version, 5)
+  assert.equal(saved.version, COMPANY_VERSION)
   assert.equal(saved.revision, 7)
   assert.deepEqual(saved.acceptances, {})
   // The same one save tops up the builtin templates a v1 file cannot have (3.6b).
   assert.equal(Object.keys(saved.templates).length, 9)
   const events = readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
   assert.deepEqual(events.map(event => event.type), ['company/migrated', 'company/builtin-templates-seeded'])
-  assert.deepEqual(events[0].data, { from: 1, to: 5 })
+  assert.deepEqual(events[0].data, { from: 1, to: COMPANY_VERSION })
   assert.deepEqual(events[1].data, { count: 9 })
   rt.company.close()
 

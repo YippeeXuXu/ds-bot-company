@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { BUILTIN_TEMPLATES, builtinTemplateId, seedBuiltinTemplates } from '../src/host/company/builtin-templates.js'
 import { install } from '../src/host/company/index.js'
+import { COMPANY_VERSION } from '../src/host/company/store.js'
 
 // M1b-3.6b: the nine job templates that ship with the plugin. A company starts with them,
 // they are read-only, and a company file written before they existed is topped up once —
@@ -182,11 +183,11 @@ test('a version 3 company file is migrated once and its templates topped up (M1b
   assert.equal(Object.keys(saved.templates).length, 9)
   assert.equal(Object.values(saved.templates).every(template => template.source === 'builtin' && template.company_id === 'cmp_1'), true)
   // An upgrade is not a company change: a client's expected_revision still matches.
-  assert.equal(saved.version, 5)
+  assert.equal(saved.version, COMPANY_VERSION)
   assert.equal(saved.revision, 5)
   const events = readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
   assert.deepEqual(events.map(event => event.type), ['company/migrated', 'company/builtin-templates-seeded'])
-  assert.deepEqual(events[0].data, { from: 3, to: 5 })
+  assert.deepEqual(events[0].data, { from: 3, to: COMPANY_VERSION })
   assert.deepEqual(events[1].data, { count: 9 })
   rt.company.close()
 

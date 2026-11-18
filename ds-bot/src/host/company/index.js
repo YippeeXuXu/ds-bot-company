@@ -15,6 +15,7 @@ import { orgHandlers } from './org.js'
 import { projectHandlers } from './projects.js'
 import { pathRedactor } from './selfreview/features.js'
 import { spawnHandlers } from './spawn.js'
+import { MEMORY_ROW_REVISION_COMMANDS, appendMemory, memoryHandlers, memoryRow, withDoneMemory } from './memories.js'
 import { companyFail, createCompanyStore } from './store.js'
 import { TASK_ROW_REVISION_COMMANDS, taskHandlers } from './tasks.js'
 import { RUN_ROW_REVISION_COMMANDS, runHandlers } from './runs.js'
@@ -90,18 +91,28 @@ export function install(rt) {
   const now = () => Date.now()
   const warn = typeof rt.warn === 'function' ? rt.warn : (...args) => rt.ctx?.logger?.warn?.(...args)
   const store = createCompanyStore({ dir, now, warn })
+  // Two redactions in one lookup: the home becomes `<dsh-home>`, then the host's secret
+  // redactor runs over the result. A memory is written from live text, so this is the one
+  // place that must redact before saving rather than at read time (B-5).
+  const redact = (text) => {
+    const tagged = pathRedactor(rt.home)(text)
+    return typeof rt.redactSecrets === 'function' ? rt.redactSecrets(tagged) : tagged
+  }
   const org = orgHandlers({ botOf: id => rt.botOf?.(id), isPrivate: id => rt.isPrivate?.(id) === true, groups: groupAdapter(rt) })
   // The task commands are kept in a local so `task.submit` can be wrapped below without
   // duplicating the other five. The wrapper creates the delivery's pending acceptance in
   // the same draft, so commands.js commits both objects and their two events together.
   const taskCommands = taskHandlers()
+  // Kept in a local for the same reason: `acceptance.decide` is wrapped so the decision and
+  // the memory it leaves are committed together (M1b-5.1).
+  const acceptanceCommands = acceptanceHandlers()
   const commands = createCommands({
     store,
     now,
     // `acceptance.decide` is answered with the revision of the acceptance itself (the to-do
     // row carries it, contract A12), and every task command that writes is answered with the
     // task's own revision, so the envelope leaves those comparisons to their handlers.
-    rowRevisionCommands: new Set([...ROW_REVISION_COMMANDS, ...TASK_ROW_REVISION_COMMANDS, ...RUN_ROW_REVISION_COMMANDS]),
+    rowRevisionCommands: new Set([...ROW_REVISION_COMMANDS, ...TASK_ROW_REVISION_COMMANDS, ...RUN_ROW_REVISION_COMMANDS, ...MEMORY_ROW_REVISION_COMMANDS]),
     handlers: {
       ...org,
       // A new company is born with the nine builtin templates: they ride in the same commit
@@ -119,7 +130,10 @@ export function install(rt) {
         }
       },
       ...projectHandlers({ groups: groupAdapter(rt) }),
-      ...acceptanceHandlers(),
+      ...acceptanceCommands,
+      // The card reaching Done leaves one decision row in the same commit (M1b-5.1), so a
+      // decision cannot be remembered without being made.
+      'acceptance.decide': withDoneMemory(acceptanceCommands['acceptance.decide'], { redact: text => redact(text) }),
       // The project board's cards: one table and the five commands a card moves through.
       ...taskCommands,
       // `task.submit` moves the card and creates its pending acceptance in one commit
@@ -133,6 +147,9 @@ export function install(rt) {
       // one-active-profile rule and the role lists have one implementation.
       ...spawnHandlers({ roster: botRoster(rt, warn), createEmployee: org['employee.create'], warn }),
       ...templateIoHandlers(),
+      // The memory page's three commands (M1b-5.1). Writing happens on the two host events
+      // below, never from a screen.
+      ...memoryHandlers(),
     },
   })
   const execute = commands.execute
@@ -156,10 +173,7 @@ export function install(rt) {
     // Two redactions in one lookup: the home becomes `<dsh-home>`, then the host's secret
     // redactor runs over the result, exactly as the SelfReview features do it. Read time is
     // when this runs, so a target already on disk is tagged too (B-5).
-    redact: (text) => {
-      const tagged = pathRedactor(rt.home)(text)
-      return typeof rt.redactSecrets === 'function' ? rt.redactSecrets(tagged) : tagged
-    },
+    redact,
     // Answering a card is relaying to the host, never a company-level decision of its own
     // (contract §5.1). A lookup, because the approvals module installs before or after this
     // one depending on load order.
@@ -211,6 +225,97 @@ export function install(rt) {
   // `rt.company` is what the HTTP layer and the tools call.
   rt.company = { dir, store, execute, commands: commands.commands, api, close: () => store.close() }
   Object.assign(rt, { companyExecute: execute, companyStore: store, companyApi: api, companyState: () => store.state })
+  // M1b-5.1: a Bot's turn inside a project group is worth keeping, and so is a card reaching
+  // Done (wrapped above). Neither rides the command envelope: a turn is not a screen action,
+  // and bumping the company revision for every message would make an open board look stale
+  // to the next click. Both still write through the command queue, so a row never lands on
+  // another command's half-written state; the revision stays where the last command left it.
+  const memoryEvent = (row) => ({
+    id: `evt_${row.id}`,
+    cursor: store.state.revision,
+    at: new Date(row.created_at).toISOString(),
+    type: 'memory.created',
+    data: {
+      memory_id: row.id,
+      ownership_level: row.ownership_level,
+      scope_id: row.scope_id,
+      kind: row.kind,
+      source_kind: row.source_refs?.[0]?.type ?? 'turn',
+    },
+  })
+  const keepMemory = async (build) => {
+    try {
+      await commands.runExclusive(async () => {
+        const draft = structuredClone(store.state)
+        const row = build(draft)
+        if (row === undefined) return
+        const added = appendMemory(draft, row)
+        if (!added.created) return
+        const events = [memoryEvent(added.row)]
+        if (added.pruned.length > 0) {
+          events.push({
+            id: `evt_pruned_${added.row.id}`,
+            cursor: draft.revision,
+            at: new Date(added.row.created_at).toISOString(),
+            type: 'memory.pruned',
+            data: { count: added.pruned.length, oldest_created_at: added.prunedOldest },
+          })
+        }
+        await store.commit(draft)
+        await store.appendEvents(events)
+      })
+    } catch (error) {
+      // A memory that cannot be kept must not fail the turn that produced it.
+      warn('ds-bot: could not keep a memory: %s', error instanceof Error ? error.message : String(error))
+    }
+  }
+  // A turn's text arrives as assistant messages between turn/start and turn/end; the end is
+  // the moment the row is written, and only for a session that speaks in a group.
+  const turnText = new Map()
+  const onSessionEvent = (session, event) => {
+    if (event?.type === 'assistant/message') {
+      const text = (event.data?.message?.content ?? [])
+        .filter(part => part?.type === 'text' && typeof part.text === 'string')
+        .map(part => part.text)
+        .join('\n')
+        .trim()
+      if (text === '') return
+      // The last piece of text is the one that stands for the turn: earlier pieces are the
+      // Bot thinking out loud before it settles on the answer.
+      turnText.set(session.id, { turn: event.data?.turn, text, messageId: event.data?.message?.id ?? null })
+      return
+    }
+    if (event?.type !== 'turn/end') return
+    const held = turnText.get(session.id)
+    turnText.delete(session.id)
+    if (held === undefined || held.text === '') return
+    const turn = held.turn ?? event.data?.turn
+    if (turn === undefined) return
+    const owner = rt.groupOwners?.get?.(session.id)
+    if (owner === undefined) return
+    const { botId, roomId } = owner
+    void keepMemory((draft) => {
+      const project = Object.values(draft.projects ?? {}).find(entry => entry.group_chat_ref === roomId)
+      if (project === undefined) return undefined
+      const employee = Object.values(draft.employees ?? {}).find(profile => profile.bot_id === botId && profile.status === 'active')
+      return memoryRow({
+        at: now(),
+        projectId: project.id,
+        kind: 'fact',
+        statement: redact(held.text),
+        sourceRefs: [{ type: 'message_anchor', id: held.messageId ?? `${session.id}:${turn}`, anchor: `${session.id}#${turn}` }],
+        employeeId: employee?.id ?? null,
+        botId,
+        origin: { session_id: session.id, turn },
+        idempotencyKey: `turn:${session.id}:${turn}`,
+      })
+    })
+  }
+  if (typeof rt.ctx?.on === 'function') {
+    const off = rt.ctx.on('session/event', onSessionEvent)
+    // The listener lasts exactly as long as the plugin, the way the HTTP route does.
+    if (typeof off === 'function') rt.ctx.effect?.(() => off, 'ds-bot: company memory')
+  }
   // Routes live exactly as long as the plugin: the channel's own route is disposed the
   // same way, and a host reload must not leave three stale handlers on the carrier.
   if (typeof rt.ctx?.connection?.fetch?.register === 'function') {

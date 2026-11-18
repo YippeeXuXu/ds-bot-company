@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { createCommands } from '../src/host/company/commands.js'
 import { orgHandlers } from '../src/host/company/org.js'
-import { createCompanyStore } from '../src/host/company/store.js'
+import { COMPANY_VERSION, createCompanyStore } from '../src/host/company/store.js'
 
 const bots = { bot_a: { id: 'bot_a', name: 'Alpha' }, bot_b: { id: 'bot_b', name: 'Beta' } }
 const botOf = id => bots[id]
@@ -201,7 +201,7 @@ test('a file from a newer plugin version counts as corrupt', async () => {
   mkdirSync(companyDir(home), { recursive: true })
   writeFileSync(statePath(home), JSON.stringify({ version: 99, revision: 4 }))
   const { store } = open(home)
-  assert.match(store.readOnly(), /version 99 is not 5/)
+  assert.match(store.readOnly(), new RegExp(`version 99 is not ${COMPANY_VERSION}`))
   rmSync(home, { recursive: true, force: true })
 })
 

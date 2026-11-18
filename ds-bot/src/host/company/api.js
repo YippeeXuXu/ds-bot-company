@@ -110,6 +110,9 @@ const STATUS = new Map([
   ['run/not-found', 404],
   ['run/state-conflict', 409],
   ['run/deliver-failed', 422],
+  // Memories (M1b-5.1): an entry that is gone, and one that changed under the caller.
+  ['memory/not-found', 404],
+  ['memory/revision-conflict', 409],
   // The to-do view's own refusals: a bad window, a card that is gone, a card that changed
   // under the caller, an answer this build cannot give, and the D7 acceptance refusal.
   ['todo/invalid', 422],

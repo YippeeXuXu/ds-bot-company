@@ -47,6 +47,8 @@ test('apply registers listeners and effects in a fixed order', (t) => {
     'on subagent/end',
     'on tools/result',
     'on session/event',
+    'on session/event',
+    'effect ds-bot: company memory',
     'effect ds-bot: company api',
     'route POST /api/company/command',
     'route GET /api/company/model',
