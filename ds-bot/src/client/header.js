@@ -7,6 +7,7 @@ import { ActivityIndicator } from './activity-row.js'
 import { clockLabel, openingTurn, unseenSince } from './cells.js'
 import { viewBottom } from './motion.js'
 import { t } from './i18n.js'
+import { call } from './api.js'
 
 // -------------------------------------------------------------------------
 // Conversation header
@@ -43,6 +44,49 @@ function MemoryNotice({ shown }) {
     h('span', { className: 'bt-pill-mem-in', ref: inner }, h('span', { className: 'bt-pill-mem-ico' }, h(MemoryIcon)), label))
 }
 
+// An employee Bot wears its workplace line: role, presence and its project.
+// One read per page, refreshed when the company pages change something.
+let employeeCache = null
+let employeeRead = null
+const readEmployees = () => {
+  if (!employeeRead) {
+    const load = async () => {
+      try {
+        const model = await call('company-model', {})
+        employeeCache = {
+          employees: model?.employees ?? [],
+          projects: model?.projects ?? [],
+        }
+      } catch { employeeCache = { employees: [], projects: [] } }
+      employeeRead = null
+      return employeeCache
+    }
+    employeeRead = load()
+  }
+  return employeeRead
+}
+
+function useEmployeeOfBot(botId) {
+  const [employee, setEmployee] = useState(null)
+  useEffect(() => {
+    if (!botId) { setEmployee(null); return }
+    let live = true
+    const apply = () => {
+      readEmployees().then(cache => {
+        if (!live) return
+        const found = (cache?.employees ?? []).find(entry => entry.bot_id === botId) ?? null
+        const project = found ? (cache?.projects ?? []).find(entry => entry.id === found.project_id) : null
+        setEmployee(found ? { role: found.role ?? '', status: found.status ?? '', project: project?.name ?? '' } : null)
+      })
+    }
+    apply()
+    const onChange = () => { employeeCache = null; apply() }
+    window.addEventListener('bt-company-changed', onChange)
+    return () => { live = false; window.removeEventListener('bt-company-changed', onChange) }
+  }, [botId])
+  return employee
+}
+
 export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useMemoryNews, useTurnClock, useUi, useLive, useWork, useStore, useConversationViews, selectView, actions }) {
   const roster = useRoster(value => value)
   const selectedView = useStore?.(state => state.view)
@@ -73,6 +117,7 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
   const room = roster.roomsById[sessionId]
   const detailsOpen = useUi(state => state.details === sessionId)
   const name = bot?.name ?? room?.name ?? ''
+  const employee = useEmployeeOfBot(bot?.id)
   const useNews = useMemoryNews ?? noNews
   const memoryIds = bot ? [bot.id] : room ? [room.id, ...room.members] : []
   const notice = useMemoryNotice(memoryIds, useNews)
@@ -107,6 +152,7 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
     bot ? h(BotAvatar, { bot, size: 24, state: botState(running, doing, roster.questions?.[currentPart(bot)] !== undefined), badge: false })
       : room ? h(RoomAvatar, { room, roster, size: 24 }) : null,
     h('span', { className: 'bt-pill-name' }, away ? t('Back to chat') : bot?.name ?? room?.name ?? (title || t('New chat'))),
+    employee ? h('span', { className: 'bt-pill-sub' }, [employee.role, employee.status === 'active' ? t('Online') : null, employee.project].filter(Boolean).join(' \u00b7 ')) : null,
     h(MemoryNotice, { shown: memoryNotice }),
     h('span', { className: 'bt-pill-go', 'aria-hidden': true }, h(GoArrow))),
     h('span', { className: 'bt-sr', role: 'status' }, memoryNotice ? t('Memory updated') : ''),

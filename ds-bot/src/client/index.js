@@ -8,9 +8,10 @@ import { MENTION_ORIGIN, currentPart } from './text.js'
 import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } from './styles.js'
 import { lookOf } from './mark.js'
 import { TeamSidebar, YouAvatar, AccountLauncher, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts, openHarnessOnboarding, openHarnessSettings } from './sidebar.js'
-import { frameLayout, readSidebar, writeSidebar, toggledPref, DSH_NARROW } from './frame-layout.js'
+import { frameLayout, readSidebar, writeSidebar, toggledPref, reopenAsDrawer, DSH_NARROW } from './frame-layout.js'
 import { installFrameWatch } from './frame-watch.js'
 import { ProjectChatHeaderSlot } from './project-chat-overlay.js'
+import { DEPARTMENT_CHAT_CSS } from './department-chat.js'
 import { ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
 import { CHATS_SOURCE, atSources } from './at-menu.js'
 import { BtwDock, BtwTurnTail } from './btw.js'
@@ -541,8 +542,13 @@ export function apply(ctx) {
       sidebarPref.set(next)
     },
     toggleLeftHidden: () => {
+      const view = frame.getSnapshot()
+      const next = toggledPref(sidebarPref.getSnapshot(), sidebarSaved.shown)
       ui.set(state => (state.leftDrawer || state.panelYield ? { ...state, leftDrawer: false, panelYield: false } : state))
-      actions.setSidebarPref(toggledPref(sidebarPref.getSnapshot(), sidebarSaved.shown))
+      actions.setSidebarPref(next)
+      // A narrow window cannot dock the open column: reopened, it would land on
+      // the rail with no way back out, so it returns as the drawer it was.
+      if (next === 'open' && reopenAsDrawer({ viewport: view.viewport, sidebarWidth: sidebarSaved.width })) actions.setLeftDrawer(true)
     },
     setSidebarWidth: (width) => {
       sidebarSaved = { ...sidebarSaved, width }
@@ -910,6 +916,7 @@ export function apply(ctx) {
     () => installCompiledStyles(COMPANY_CSS, 'company'),
     () => installCompiledStyles(TODO_CSS, 'todos'),
     () => installCompiledStyles(PROJECT_CHAT_CSS, 'project-chat'),
+    () => installCompiledStyles(DEPARTMENT_CHAT_CSS, 'department-chat'),
     () => installCompiledStyles(SECRET_CSS, 'secrets'),
     () => installCompiledStyles(LEARNING_CSS, 'learning'),
     () => installCompiledStyles(MODEL_CSS + FOLDER_CSS + BOT_SETTINGS_CSS + GROUP_SETTINGS_CSS + AVATAR_LIBRARY_CSS, 'models'),
