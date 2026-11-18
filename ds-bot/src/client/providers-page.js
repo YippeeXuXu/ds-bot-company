@@ -38,7 +38,7 @@ export function ProvidersPage({ actions, run, Section }) {
 function keyState(key) {
   if (key === null) return null
   if (!key.configured) return ['missing', t('Needs an API key')]
-  return key.writable ? ['set', t('Key set')] : ['outside', t('Key set outside DS Bot')]
+  return key.writable ? ['set', t('Key set')] : ['outside', t('Key set outside DS Company')]
 }
 
 function ProviderRow({ provider, apply, actions, open, onToggle }) {
@@ -55,7 +55,7 @@ function ProviderRow({ provider, apply, actions, open, onToggle }) {
       state ? h('span', { className: 'bt-set-control' }, h('span', { className: 'bt-provider-state', 'data-state': state[0] }, state[1])) : null),
     open ? h('div', { className: 'bt-secret-edit' },
       provider.key?.writable ? h(KeyEditor, { provider, apply, actions }) : null,
-      provider.key && !provider.key.writable ? h('div', { className: 'bt-set-hint' }, t('This key comes from outside DS Bot, such as an environment variable, and cannot be changed here.')) : null,
+      provider.key && !provider.key.writable ? h('div', { className: 'bt-set-hint' }, t('This key comes from outside DS Company, such as an environment variable, and cannot be changed here.')) : null,
       provider.models.length > 0 ? h('div', { className: 'bt-secret-edit-block' },
         h('div', { className: 'bt-secret-edit-label' }, t('Models')),
         h('div', { className: 'bt-provider-models' },

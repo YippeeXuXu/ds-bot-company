@@ -14,29 +14,29 @@
 | `@Anvil你看下`（名字后面没空格） | 文件「Anvil你看下」 |
 | `@Anvil，帮我查`（名字后面直接跟标点） | 文件「Anvil，帮我查」 |
 
-**不受影响的：** 谁来回答。DS Bot 用自己的规则读「@名字」，被点名的 Bot 照样会被叫到。消息发出以后，会正常显示 Bot 的头像和名字。
+**不受影响的：** 谁来回答。DS Company 用自己的规则读「@名字」，被点名的 Bot 照样会被叫到。消息发出以后，会正常显示 Bot 的头像和名字。
 
 **小技巧：** 名字后面加一个空格（`@Anvil 你看下`）。这样只要名字里没有空格，等待时也会显示成 Bot。
 
 **原因：** 这些等待中的行由 DeepSeek Harness 自己画，它读「@」时一直读到下一个空格。插件目前改不了它们的显示。
 
-## DS Bot 没有加载：「disabling profile plugin row "bot"」
+## DS Company 没有加载：「disabling profile plugin row "bot"」
 
-**在哪里：** DSH Web（或 Desktop）能启动，但没有 DS Bot。日志里有这一行：
+**在哪里：** DSH Web（或 Desktop）能启动，但没有 DS Company。日志里有这一行：
 
 ```text
 dsh: disabling profile plugin row "bot": its declared peer dependencies cannot be validated: Cannot read properties of undefined (reading 'startsWith')
 ```
 
-换装别的 DS Bot 版本也没用。
+换装别的 DS Company 版本也没用。
 
-**原因：** DeepSeek Harness 加载插件前，会检查 profile 里的每一行插件配置。这条信息表示有一行的 id 是 `bot`，却没有包名。DS Bot 自己加的那一行带有包名 `ds-bot`，所以没有包名的那一行多半来自 profile 文件夹里的文件，比如 `cordis.patch.yml` 里一条已经对不上 DS Bot 那一行的 `- id: bot` 覆盖配置。我们没能复现这个问题，所以还不知道这样的一行是怎么留下来的。
+**原因：** DeepSeek Harness 加载插件前，会检查 profile 里的每一行插件配置。这条信息表示有一行的 id 是 `bot`，却没有包名。DS Company 自己加的那一行带有包名 `ds-company`，所以没有包名的那一行多半来自 profile 文件夹里的文件，比如 `cordis.patch.yml` 里一条已经对不上 DS Company 那一行的 `- id: bot` 覆盖配置。我们没能复现这个问题，所以还不知道这样的一行是怎么留下来的。
 
 **怎么处理：** profile 文件夹是 `~/.dsh/profiles/web/`（Windows：`C:\Users\<用户名>\.dsh\profiles\web\`）；设置了 `DSH_HOME` 时，是其中的 `profiles/web/`。Desktop 用 `profiles/desktop/`。
 
 1. 退出 DSH。
-2. 打开 profile 文件夹里的 `cordis.patch.yml`，找 `id: bot` 但没有 `name: ds-bot` 的一行，删掉这一行。改之前先备份这个文件。
-3. 确认同一文件夹的 `package.json` 在 `dependencies` 里有 `ds-bot`。没有的话，重新添加 DS Bot：`npx @deepseek-ai/dsh@0.2.1-rc.4 plugin --profile web add ds-bot`。
+2. 打开 profile 文件夹里的 `cordis.patch.yml`，找 `id: bot` 但没有 `name: ds-company` 的一行，删掉这一行。改之前先备份这个文件。
+3. 确认同一文件夹的 `package.json` 在 `dependencies` 里有 `ds-company`。没有的话，重新添加 DS Company：`npx @deepseek-ai/dsh@0.2.1-rc.4 plugin --profile web add ds-company`。
 4. 重新启动 DSH。
 
 想知道这一行来自哪里，可以运行 `npx @deepseek-ai/dsh@0.2.1-rc.4 --profile web --dump-config`。它会列出每一行插件配置，以及提供它的文件。如果要报告这个问题，只复制 `id: bot` 的那几行和文件名，不要带上 key 或你不想公开的路径。
@@ -53,7 +53,7 @@ Error: configured web provider "auto" is not registered
 
 错误码是 `WEB_PROVIDER_CONFIGURED_MISSING`。
 
-**原因：** 不管 `web-search-auto` 这一行开没开，DS Bot 的 `cordis.patch.yml` 都会把 `web` 行的 `searchProvider` 设成 `auto`；而它指定的 provider 不存在时，DeepSeek Harness 不会换用别的 provider。
+**原因：** 不管 `web-search-auto` 这一行开没开，DS Company 的 `cordis.patch.yml` 都会把 `web` 行的 `searchProvider` 设成 `auto`；而它指定的 provider 不存在时，DeepSeek Harness 不会换用别的 provider。
 
 **怎么处理：** profile 文件夹和上一条里的一样。
 
@@ -62,7 +62,7 @@ Error: configured web provider "auto" is not registered
 
    ```yaml
    - id: web-search-auto
-     name: ds-bot/web-search
+     name: ds-company/web-search
      disabled: true
    - id: web
      name: '@deepseek-ai/dsh-web'

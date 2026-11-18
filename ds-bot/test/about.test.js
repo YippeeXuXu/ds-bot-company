@@ -44,7 +44,7 @@ function page(update) {
   const tree = AboutPage({ useUpdate: select => select(update), actions, run, Section: 'section', Row: 'row' })
   const find = (node, pick) => (Array.isArray(node) ? node.flatMap(one => find(one, pick))
     : node && typeof node === 'object' ? [...pick(node), ...find(node.children, pick)] : [])
-  const [row] = find(tree, node => (node.props?.label === 'DS Bot' ? [node] : []))
+  const [row] = find(tree, node => (node.props?.label === 'DS Company' ? [node] : []))
   const buttons = find(row?.children ?? [], node => (node.type === 'button' ? [node] : []))
   return {
     hint: row?.props?.hint,
@@ -82,7 +82,7 @@ test('the six app update states set the DS Bot row\'s hint and button', () => {
 test('without an app update state the row keeps today\'s text and no button', () => {
   for (const ownApp of [undefined, null, 'checking', {}]) {
     const view = page({ source: 'app', ownApp })
-    assert.equal(view.hint, 'Updates come with the DS Bot app.')
+    assert.equal(view.hint, 'Updates come with the DS Company app.')
     assert.deepEqual(view.buttons, [])
   }
 })

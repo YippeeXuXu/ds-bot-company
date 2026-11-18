@@ -7,7 +7,7 @@ import { ProjectWizard } from './project-wizard.js'
 import { TodoPage } from './todo-page.js'
 
 const sample = () => ({
-  company: { id: 'demo-company', name: 'DS Bot Company', status: 'active' },
+  company: { id: 'demo-company', name: 'DS Company Company', status: 'active' },
   departments: [
     { id: 'demo-product', name: 'Product', chat_ref: 'demo-product-room', status: 'active' },
     { id: 'demo-engineering', name: 'Engineering', chat_ref: 'demo-engineering-room', status: 'active' },
@@ -17,7 +17,7 @@ const sample = () => ({
     { id: 'demo-designer', name: 'Designer', department_id: 'demo-product', status: 'active', role: 'Product', acceptance_role: 'memory_keeper', project_id: 'demo-project' },
     { id: 'demo-writer', name: 'Writer', department_id: 'demo-engineering', status: 'active', role: 'Executor', acceptance_role: 'executor', bot_id: 'third-bot' },
   ],
-  projects: [{ id: 'demo-project', name: 'DS Bot Company M1', goal: 'Make the project workspace usable for the team.', deliverable: 'Project pages and a bound group chat', acceptance: 'The project can be created, viewed and opened.', status: 'setup', source_department_ids: ['demo-product', 'demo-engineering'], coordinator_assignment_id: 'demo-member', group_chat_ref: 'demo-project-room', group_binding: { status: 'pending', room_id: 'demo-project-room', error: 'Sample: group members need reconciliation.' }, updated_at: Date.now(), revision: 1 }],
+  projects: [{ id: 'demo-project', name: 'DS Company Company M1', goal: 'Make the project workspace usable for the team.', deliverable: 'Project pages and a bound group chat', acceptance: 'The project can be created, viewed and opened.', status: 'setup', source_department_ids: ['demo-product', 'demo-engineering'], coordinator_assignment_id: 'demo-member', group_chat_ref: 'demo-project-room', group_binding: { status: 'pending', room_id: 'demo-project-room', error: 'Sample: group members need reconciliation.' }, updated_at: Date.now(), revision: 1 }],
   members: [{ id: 'demo-member', project_id: 'demo-project', employee_id: 'demo-coordinator', role: 'coordinator', membership_status: 'active' }, { id: 'demo-member-2', project_id: 'demo-project', employee_id: 'demo-designer', role: 'executor', membership_status: 'active' }],
   group: { group_chat_ref: 'demo-project-room', group_binding: { status: 'pending', room_id: 'demo-project-room' }, members: [], drifted: true },
   revision: 1,
