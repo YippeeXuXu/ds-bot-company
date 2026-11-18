@@ -7,7 +7,7 @@
 // group is made, read and re-membered. A project group is allowed to hold a single Bot
 // (Q1); no other group is.
 import { join } from 'node:path'
-import { ROW_REVISION_COMMANDS, acceptanceHandlers } from './acceptances.js'
+import { ROW_REVISION_COMMANDS, acceptanceHandlers, submitWithAcceptance } from './acceptances.js'
 import { createCompanyApi } from './api.js'
 import { seedBuiltinTemplates } from './builtin-templates.js'
 import { createCommands } from './commands.js'
@@ -90,6 +90,10 @@ export function install(rt) {
   const warn = typeof rt.warn === 'function' ? rt.warn : (...args) => rt.ctx?.logger?.warn?.(...args)
   const store = createCompanyStore({ dir, now, warn })
   const org = orgHandlers({ botOf: id => rt.botOf?.(id), isPrivate: id => rt.isPrivate?.(id) === true, groups: groupAdapter(rt) })
+  // The task commands are kept in a local so `task.submit` can be wrapped below without
+  // duplicating the other five. The wrapper creates the delivery's pending acceptance in
+  // the same draft, so commands.js commits both objects and their two events together.
+  const taskCommands = taskHandlers()
   const commands = createCommands({
     store,
     now,
@@ -116,7 +120,11 @@ export function install(rt) {
       ...projectHandlers({ groups: groupAdapter(rt) }),
       ...acceptanceHandlers(),
       // The project board's cards: one table and the five commands a card moves through.
-      ...taskHandlers(),
+      ...taskCommands,
+      // `task.submit` moves the card and creates its pending acceptance in one commit
+      // (contract §5.3.4). The row shape and the one-pending rule live in acceptances.js,
+      // so the task command itself stays about the card.
+      'task.submit': submitWithAcceptance(taskCommands['task.submit']),
       ...templateHandlers(),
       // The profile is written by the same handler `employee.create` uses, so the
       // one-active-profile rule and the role lists have one implementation.
