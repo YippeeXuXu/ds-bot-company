@@ -1,5 +1,6 @@
 import { createElement as h, useState } from 'react'
 import { t } from './i18n.js'
+import { TaskBoard } from './task-board.js'
 
 const label = value => ({ setup: t('Setup'), active: t('In progress'), paused: t('Paused'), archived: t('Archived') })[value] ?? t('Unknown status')
 const relation = (project, data) => (project?.source_department_ids ?? []).map(id => data.departments.find(item => item.id === id)?.name ?? id)
@@ -18,7 +19,7 @@ const memberError = failure => {
   return known ?? (failure?.message ? String(failure.message) : t('The change could not be saved.'))
 }
 
-export function ProjectPage({ project, data, preview, loading, error, onBack, onChat, onRetry, onCommand }) {
+export function ProjectPage({ project, data, tasks = [], tasksError = '', preview, loading, error, onBack, onChat, onRetry, onCommand, onTaskCommand }) {
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
   const [selectedEmployee, setSelectedEmployee] = useState('')
@@ -104,5 +105,12 @@ export function ProjectPage({ project, data, preview, loading, error, onBack, on
       project.status === 'setup' ? h('div', null, h('div', { className: 'bc-actions' }, h('button', { type: 'button', className: 'bc-button bc-primary', disabled: busy || startBlockers.length > 0, onClick: () => void run('project.start') }, busy ? t('Saving…') : t('Start project'))),
         startBlockers.length ? h('p', { className: 'bc-start-reason', role: 'status' }, t('Before starting: {items}.', { items: startBlockers.join(', ') })) : null) : null,
       actionError ? h('p', { className: 'bc-exception', role: 'alert' }, actionError) : null,
-      h('p', { className: 'bc-muted' }, t('Tasks, documents and approvals will appear here as their services become available.'))))
+      h(TaskBoard, {
+        tasks,
+        employees: data.employees,
+        preview,
+        error: tasksError,
+        onCommand: onTaskCommand,
+        onChat: () => onChat?.(),
+      })))
 }
