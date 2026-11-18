@@ -1447,6 +1447,41 @@ Object.assign(ZH, HOST_ZH, {
   "Add employee": "添加员工",
   "Employee role": "员工职责",
   "Independent acceptor": "独立验收 Bot",
+  "Keep the current role": "保留原角色（旧版）",
+  "Edit employee": "编辑员工",
+  "Edit {name}": "编辑{name}",
+  "Save": "保存",
+  Active: "在职",
+  Invited: "已邀请",
+  Left: "已离开",
+  Removed: "已移出",
+  "Left (read-only)": "已离开（只读）",
+  "Change role of {name}": "更改 {name} 的项目角色",
+  "Remove member": "移出项目",
+  "Confirm removal": "确认移出",
+  "Remove {name} from the project": "把 {name} 移出项目",
+  "The project already has a coordinator. The current one steps down first.": "项目已有协调员；要换人，先让原协调员转为其他角色或移出。",
+  "This employee is already in the project.": "这名员工已在项目组里。",
+  "This employee is already in another active project.": "这名员工已在另一个进行中的项目组里。",
+  "This member is no longer active in the project.": "这名成员已不在项目组里。",
+  "A project in this state cannot change members.": "项目当前状态不能调整成员。",
+  "Members who left keep their history in the project.": "离开的成员保留项目历史。",
+  "Suspend employee": "停用员工",
+  "Employee display name": "员工显示名",
+  "Reactivate employee": "启用员工",
+  "Dismissed employee": "已停用",
+  "On duty": "在岗",
+  "Hand the work over before dismissing:": "先移交这些工作，再停用：",
+  "Dismissing keeps the profile and history, and can be undone at any time.": "停用后档案与历史保留，可随时启用。",
+  "Dismissed employees keep their profile and history and can be reactivated at any time.": "已停用员工的档案与历史保留，可随时启用。",
+  "This employee is dismissed. Reactivate them before using them.": "这名员工已停用，请先启用。",
+  "This employee still holds work. Hand it over first.": "这名员工仍在承担工作，请先移交。",
+  "A department with this name already exists.": "已有同名部门，请换一个名字。",
+  "This Bot already has an employee profile.": "这个 Bot 已有员工档案。",
+  "That employee cannot take this department or lead it.": "这个员工不能归入该部门，也不能担任该部门负责人。",
+  "An employee keeps its Bot; hire the other Bot instead.": "员工不能换绑 Bot，请为另一个 Bot 新建员工档案。",
+  "The record changed while you were editing. Close it and try again.": "这条记录刚被改过，请关闭后重新打开。",
+  "The change could not be saved.": "这次修改没有保存成功。",
   "Project brief": "项目说明",
   "Project name": "项目名称",
   "Describe the goal": "描述项目目标",
@@ -1683,7 +1718,7 @@ var call = async (endpoint, payload, signal) => {
   if (!result.ok) {
     const code = result.error?.code ?? "bot/error";
     const message2 = hostText(result.error?.message ?? "Request failed");
-    const error = Object.assign(new Error(code === "bot/internal" ? `${message2} ${t("Settings → Feedback has the details.")}` : message2), { code });
+    const error = Object.assign(new Error(code === "bot/internal" ? `${message2} ${t("Settings → Feedback has the details.")}` : message2), { code, details: result.error?.details ?? {} });
     if (!REFUSALS.has(code)) {
       noteClientError(endpoint, Object.assign(new Error(result.error?.message ?? "Request failed"), { code }));
       markNoted(error);
@@ -11083,6 +11118,26 @@ var SIDEBAR_CSS = `
 // src/client/company-page.js
 var import_react20 = require("react");
 var archived = (item) => item?.status === "archived";
+var ACCEPTANCE_ROLES = ["executor", "coordinator", "acceptor", "memory_keeper"];
+var editedAcceptanceRole = (value) => ACCEPTANCE_ROLES.includes(value) ? value : "";
+var employeeUpdatePayload = ({ employeeId, name, departmentId, acceptanceRole }) => {
+  const change = { employee_id: employeeId, name, department_id: departmentId };
+  if (acceptanceRole) change.acceptance_role = acceptanceRole;
+  return change;
+};
+var companyErrorText = (failure) => {
+  const known = {
+    "department.name-taken": "A department with this name already exists.",
+    "employee.bot_already_employed": "This Bot already has an employee profile.",
+    "department/invalid": "That employee cannot take this department or lead it.",
+    "employee/immutable-field": "An employee keeps its Bot; hire the other Bot instead.",
+    "employee/inactive": "This employee is dismissed. Reactivate them before using them.",
+    "employee/still-referenced": "This employee still holds work. Hand it over first.",
+    "company/revision-conflict": "The record changed while you were editing. Close it and try again."
+  }[failure?.code];
+  const text = known ? t(known) : failure?.message;
+  return text ? String(text) : t("The change could not be saved.");
+};
 var initialOf = (name) => {
   const text = typeof name === "string" ? name.trim() : "";
   if (!text) return "·";
@@ -11114,7 +11169,7 @@ var botOpenable = (employee, roster) => {
 };
 var leadOf = (employees, department) => employees.find((item) => item.id === department.lead_employee_id) ?? null;
 function CompanyPageView(props) {
-  const { data, loading, error, roster, openDept, creating, pan, dragging } = props;
+  const { data, loading, error, roster, openDept, creating, pan, dragging, leadError, editing } = props;
   const departments = (data.departments ?? []).filter((item) => !archived(item));
   const employees = (data.employees ?? []).filter((item) => !archived(item));
   const projects = data.projects ?? [];
@@ -11130,7 +11185,7 @@ function CompanyPageView(props) {
   const department = openDept === null ? null : departments.find((item) => item.id === openDept) ?? null;
   const avatar = (employee, size = "sm") => (0, import_react20.createElement)("span", { className: `bc-co-face bc-co-face-${size}`, "aria-hidden": true }, initialOf(employee.name));
   const employeeRow = (employee) => {
-    const disabled = !botReady(employee);
+    const disabled = !botReady(employee) || employee.status !== "active";
     const detail = employee.role ? String(employee.role) : projectText(projects, employee);
     return (0, import_react20.createElement)(
       "button",
@@ -11222,11 +11277,40 @@ function CompanyPageView(props) {
     (0, import_react20.createElement)("p", { className: "bc-co-hint", role: "note" }, t("Drag empty space to pan · Click a department for its overview"))
   );
   const employeeDetailFor = (projects2, employee) => employee.role ? String(employee.role) : projectText(projects2, employee);
+  const roleText = (value) => ({
+    lead: t("Department lead"),
+    coordinator: t("Coordinator"),
+    acceptor: t("Independent acceptor"),
+    "memory keeper": t("Memory keeper"),
+    executor: t("Member")
+  })[value] ?? value;
+  const referencedList = (failure) => {
+    const details = failure?.details ?? {};
+    const departments2 = details.departments ?? [];
+    const projects2 = details.projects ?? [];
+    return (0, import_react20.createElement)(
+      "div",
+      { className: "bc-co-refs", role: "alert" },
+      (0, import_react20.createElement)("strong", null, t("Hand the work over before dismissing:")),
+      departments2.map((item) => (0, import_react20.createElement)(
+        "div",
+        { key: `d-${item.department_id}`, className: "bc-co-ref" },
+        (0, import_react20.createElement)("span", { className: "bc-co-ref-name" }, `${item.name} · ${t("Department lead")}`),
+        (0, import_react20.createElement)("button", { type: "button", className: "bc-co-ref-go", onClick: () => props.onOpenDepartmentRef(item.department_id) }, `${t("Open")} ›`)
+      )),
+      projects2.map((item) => (0, import_react20.createElement)(
+        "div",
+        { key: `p-${item.project_id}`, className: "bc-co-ref" },
+        (0, import_react20.createElement)("span", { className: "bc-co-ref-name" }, `${item.name} · ${(item.roles ?? []).map(roleText).join("、")}`),
+        (0, import_react20.createElement)("button", { type: "button", className: "bc-co-ref-go", onClick: () => props.onOpenProjectRef(item.project_id) }, `${t("Open")} ›`)
+      ))
+    );
+  };
   const overview = (department2) => {
     const staff = employees.filter((item) => item.department_id === department2.id);
     const lead = leadOf(employees, department2);
     const bound2 = Boolean(department2.chat_ref);
-    const canLead = staff.filter((item) => item.status !== "archived");
+    const canLead = staff.filter((item) => item.status === "active");
     return (0, import_react20.createElement)(
       "aside",
       {
@@ -11256,26 +11340,50 @@ function CompanyPageView(props) {
         (0, import_react20.createElement)("dt", null, t("Department group")),
         (0, import_react20.createElement)("dd", { className: bound2 ? void 0 : "bc-co-muted" }, bound2 ? t("Department group bound") : t("Department group not bound"))
       ),
+      leadError ? (0, import_react20.createElement)("p", { className: "bc-exception", role: "alert" }, leadError) : null,
       staff.length ? (0, import_react20.createElement)("div", { className: "bc-co-pop-emps" }, staff.map((employee) => (0, import_react20.createElement)(
-        "button",
-        {
-          key: employee.id,
+        "div",
+        { key: employee.id, className: "bc-co-row-wrap" },
+        (0, import_react20.createElement)(
+          "button",
+          {
+            type: "button",
+            className: "bc-co-row" + (botReady(employee) && employee.status === "active" ? "" : " is-disabled"),
+            "aria-disabled": botReady(employee) && employee.status === "active" ? void 0 : "true",
+            title: employeeTitle(employee),
+            onClick: () => openEmployee(employee)
+          },
+          avatar(employee),
+          (0, import_react20.createElement)(
+            "span",
+            { className: "bc-co-row-main" },
+            (0, import_react20.createElement)("strong", null, employee.name),
+            (0, import_react20.createElement)(
+              "span",
+              { className: "bc-co-sub" },
+              employeeDetailFor(projects, employee),
+              (0, import_react20.createElement)("span", { className: "bc-co-tag" }, employee.status === "disabled" ? t("Dismissed employee") : t("On duty"))
+            )
+          ),
+          (0, import_react20.createElement)("span", { className: "bc-co-row-go", "aria-hidden": true }, "›")
+        ),
+        props.canEdit ? (0, import_react20.createElement)("button", {
           type: "button",
-          className: "bc-co-row" + (botReady(employee) ? "" : " is-disabled"),
-          "aria-disabled": botReady(employee) ? void 0 : "true",
-          title: employeeTitle(employee),
-          onClick: () => openEmployee(employee)
-        },
-        avatar(employee),
-        (0, import_react20.createElement)("span", { className: "bc-co-row-main" }, (0, import_react20.createElement)("strong", null, employee.name), (0, import_react20.createElement)("span", { className: "bc-co-sub" }, employeeDetailFor(projects, employee))),
-        (0, import_react20.createElement)("span", { className: "bc-co-row-go", "aria-hidden": true }, "›")
+          className: "bc-co-row-edit",
+          "aria-label": t("Edit {name}", { name: employee.name }),
+          title: t("Edit employee"),
+          onClick: (event) => {
+            event.stopPropagation();
+            props.onEditOpen(employee);
+          }
+        }, "✎") : null
       ))) : (0, import_react20.createElement)("p", { className: "bc-co-muted" }, t("This department has no employees yet."))
     );
   };
   const createPanel = () => {
     if (!creating) return null;
     const departmentOptions = departments.map((item) => (0, import_react20.createElement)("option", { key: item.id, value: item.id }, item.name));
-    const bots = (roster?.bots ?? []).filter((bot) => !employees.some((employee) => employee.bot_id === bot.id && employee.status === "active") && !bot.private);
+    const bots = (roster?.bots ?? []).filter((bot) => !employees.some((employee) => employee.bot_id === bot.id) && !bot.private);
     return (0, import_react20.createElement)(
       "div",
       { className: "bc-co-create", role: "dialog", "aria-label": creating === "department" ? t("New department") : t("New employee") },
@@ -11340,7 +11448,61 @@ function CompanyPageView(props) {
         "div",
         { className: "bc-co-create-actions" },
         (0, import_react20.createElement)("button", { type: "button", className: "bc-button", onClick: props.onCloseCreate }, t("Cancel")),
-        (0, import_react20.createElement)("button", { type: "button", className: "bc-button bc-primary", disabled: props.draftBusy || !props.draftName.trim(), onClick: props.onCreate }, props.draftBusy ? t("Saving…") : t("Create"))
+        (0, import_react20.createElement)("button", { type: "button", className: "bc-button bc-primary", disabled: props.draftBusy || (creating === "department" ? !props.draftName.trim() : !props.draftBot || !props.draftDept), onClick: props.onCreate }, props.draftBusy ? t("Saving…") : t("Create"))
+      )
+    );
+  };
+  const editingEmployee = editing === null ? null : employees.find((item) => item.id === editing) ?? null;
+  const editPanel = () => {
+    if (!editingEmployee) return null;
+    const roles = [["executor", t("Executor")], ["coordinator", t("Coordinator")], ["acceptor", t("Independent acceptor")], ["memory_keeper", t("Memory keeper")]];
+    const roleOptions2 = props.editRole ? roles : [["", t("Keep the current role")], ...roles];
+    return (0, import_react20.createElement)(
+      "div",
+      { className: "bc-co-create bc-co-edit", role: "dialog", "aria-label": t("Edit employee") },
+      (0, import_react20.createElement)(
+        "div",
+        { className: "bc-co-pop-head" },
+        (0, import_react20.createElement)("strong", null, t("Edit employee")),
+        (0, import_react20.createElement)("span", { className: "bc-co-pop-name" }, editingEmployee.name),
+        (0, import_react20.createElement)("button", { type: "button", className: "bc-co-pop-close", "aria-label": t("Close"), onClick: props.onEditClose }, "×")
+      ),
+      (0, import_react20.createElement)(
+        "div",
+        { className: "bc-co-create-fields" },
+        (0, import_react20.createElement)(
+          "label",
+          { className: "bc-field" },
+          t("Employee display name"),
+          (0, import_react20.createElement)("input", { value: props.editName, maxLength: 80, onChange: (event) => props.onEditName(event.target.value), placeholder: t("Employee display name") })
+        ),
+        (0, import_react20.createElement)(
+          "label",
+          { className: "bc-field" },
+          t("Employee role"),
+          (0, import_react20.createElement)("select", { value: props.editRole, onChange: (event) => props.onEditRole(event.target.value) }, roleOptions2.map(([value, label2]) => (0, import_react20.createElement)("option", { key: value || "keep", value }, label2)))
+        ),
+        (0, import_react20.createElement)(
+          "label",
+          { className: "bc-field" },
+          t("Department"),
+          (0, import_react20.createElement)("select", { value: props.editDept, onChange: (event) => props.onEditDept(event.target.value) }, departments.map((item) => (0, import_react20.createElement)("option", { key: item.id, value: item.id }, item.name)))
+        )
+      ),
+      props.editError ? (0, import_react20.createElement)("p", { className: "bc-exception", role: "alert" }, props.editError) : null,
+      props.editRefusal ? referencedList(props.editRefusal) : null,
+      (0, import_react20.createElement)("p", { className: "bc-co-note" }, editingEmployee.status === "disabled" ? t("Dismissed employees keep their profile and history and can be reactivated at any time.") : t("Dismissing keeps the profile and history, and can be undone at any time.")),
+      (0, import_react20.createElement)(
+        "div",
+        { className: "bc-co-create-actions" },
+        props.onStatus ? (0, import_react20.createElement)(
+          "button",
+          { type: "button", className: "bc-button bc-danger", disabled: props.editBusy, onClick: () => props.onStatus(editingEmployee) },
+          editingEmployee.status === "disabled" ? t("Reactivate employee") : t("Suspend employee")
+        ) : null,
+        (0, import_react20.createElement)("span", { className: "bc-co-spacer" }),
+        (0, import_react20.createElement)("button", { type: "button", className: "bc-button", onClick: props.onEditClose }, t("Cancel")),
+        (0, import_react20.createElement)("button", { type: "button", className: "bc-button bc-primary", disabled: props.editBusy || !props.editName.trim(), onClick: props.onEditSave }, props.editBusy ? t("Saving…") : t("Save"))
       )
     );
   };
@@ -11392,7 +11554,7 @@ function CompanyPageView(props) {
       "div",
       { className: "bc-co-stage" },
       body,
-      department ? overview(department) : null,
+      editingEmployee ? editPanel() : department ? overview(department) : null,
       createPanel()
     )
   );
@@ -11407,6 +11569,14 @@ function CompanyPage(props) {
   const [draftRole, setDraftRole] = (0, import_react20.useState)("executor");
   const [draftBusy, setDraftBusy] = (0, import_react20.useState)(false);
   const [draftError, setDraftError] = (0, import_react20.useState)("");
+  const [leadError, setLeadError] = (0, import_react20.useState)("");
+  const [editing, setEditing] = (0, import_react20.useState)(null);
+  const [editName, setEditName] = (0, import_react20.useState)("");
+  const [editRole, setEditRole] = (0, import_react20.useState)("executor");
+  const [editDept, setEditDept] = (0, import_react20.useState)("");
+  const [editBusy, setEditBusy] = (0, import_react20.useState)(false);
+  const [editError, setEditError] = (0, import_react20.useState)("");
+  const [editRefusal, setEditRefusal] = (0, import_react20.useState)(null);
   const [pan, setPan] = (0, import_react20.useState)({ x: 0, y: 0 });
   const [dragging, setDragging] = (0, import_react20.useState)(false);
   const canvasRef = (0, import_react20.useRef)(null);
@@ -11424,6 +11594,10 @@ function CompanyPage(props) {
   };
   if (escapeGuard) {
     escapeGuard.current = () => {
+      if (editing !== null) {
+        closeEdit();
+        return true;
+      }
       if (creating) {
         closeDraft();
         return true;
@@ -11456,10 +11630,11 @@ function CompanyPage(props) {
   };
   const setLead = async (department, employeeId) => {
     if (!props.onCommand) return;
+    setLeadError("");
     try {
       await props.onCommand("department.update", { department_id: department.id, lead_employee_id: employeeId || null });
     } catch (failure) {
-      setDraftError(failure?.message ?? String(failure));
+      setLeadError(companyErrorText(failure));
     }
   };
   const create = async () => {
@@ -11480,9 +11655,60 @@ function CompanyPage(props) {
       }
       closeDraft();
     } catch (failure) {
-      setDraftError(failure?.message ?? String(failure));
+      setDraftError(companyErrorText(failure));
     } finally {
       setDraftBusy(false);
+    }
+  };
+  const openEdit = (employee) => {
+    closeDraft();
+    setEditing(employee.id);
+    setEditName(employee.name ?? "");
+    setEditRole(editedAcceptanceRole(employee.acceptance_role));
+    setEditDept(employee.department_id ?? "");
+    setEditError("");
+    setEditRefusal(null);
+  };
+  const closeEdit = () => {
+    setEditing(null);
+    setEditError("");
+    setEditRefusal(null);
+  };
+  const saveEdit = async () => {
+    if (!props.onCommand || editBusy) return;
+    setEditBusy(true);
+    setEditError("");
+    setEditRefusal(null);
+    try {
+      await props.onCommand("employee.update", employeeUpdatePayload({
+        employeeId: editing,
+        name: editName.trim(),
+        departmentId: editDept,
+        acceptanceRole: editRole
+      }));
+      closeEdit();
+    } catch (failure) {
+      setEditError(companyErrorText(failure));
+    } finally {
+      setEditBusy(false);
+    }
+  };
+  const setStatus = async (employee) => {
+    if (!props.onCommand || editBusy) return;
+    setEditBusy(true);
+    setEditError("");
+    setEditRefusal(null);
+    try {
+      await props.onCommand("employee.update", {
+        employee_id: employee.id,
+        status: employee.status === "disabled" ? "active" : "disabled"
+      });
+      closeEdit();
+    } catch (failure) {
+      setEditError(companyErrorText(failure));
+      if (failure?.code === "employee/still-referenced") setEditRefusal(failure);
+    } finally {
+      setEditBusy(false);
     }
   };
   return CompanyPageView({
@@ -11492,6 +11718,26 @@ function CompanyPage(props) {
     pan,
     dragging,
     canvasRef,
+    leadError,
+    editing,
+    editName,
+    editRole,
+    editDept,
+    editBusy,
+    editError,
+    editRefusal,
+    onEditOpen: openEdit,
+    onEditClose: closeEdit,
+    onEditName: setEditName,
+    onEditRole: setEditRole,
+    onEditDept: setEditDept,
+    onEditSave: () => void saveEdit(),
+    onStatus: (employee) => void setStatus(employee),
+    onOpenDepartmentRef: (id) => {
+      closeEdit();
+      setOpenDept(id);
+    },
+    onOpenProjectRef: (id) => props.onOpenProject?.(id),
     draftName,
     draftBot,
     draftDept,
@@ -11591,8 +11837,25 @@ var COMPANY_PAGE_CSS = `
 .bc-co-row-main{display:flex;flex:1;flex-direction:column;gap:0;min-width:0}
 .bc-co-row-main strong{font-size:12px;line-height:16px;font-weight:600}
 .bc-co-row-go{font-size:13px;color:var(--bt-ink-3)}
+.bc-co-tag{margin-left:8px;padding:0 6px;border-radius:999px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);font-size:10px;line-height:16px}
+.bc-co-note{margin:10px 0 0;font-size:11px;line-height:16px;color:var(--bt-ink-2)}
+.bc-co-refs{display:flex;flex-direction:column;gap:6px;margin-top:10px;padding:10px 12px;border:1px solid var(--bt-line-2);border-radius:10px;background:var(--bt-card)}
+.bc-co-refs strong{font-size:12px;line-height:17px;font-weight:600}
+.bc-co-ref{display:flex;align-items:center;gap:8px;min-width:0}
+.bc-co-ref-name{flex:1;min-width:0;font-size:12px;line-height:17px;color:var(--bt-ink-2);overflow-wrap:anywhere}
+.bc-co-ref-go{flex:none;border:0;border-radius:6px;background:none;padding:2px 4px;font:600 12px var(--bt-font);color:var(--bt-accent);cursor:pointer}
+.bc-co-ref-go:hover{background:var(--bt-hover)}
+.bc-co-ref-go:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}
 .bc-co-create-fields{display:flex;flex-direction:column;gap:10px}
-.bc-co-create-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.bc-co-create-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:12px}
+.bc-co-spacer{flex:1}
+.bc-co-row-wrap{display:flex;align-items:center;gap:2px}
+.bc-co-row-wrap .bc-co-row{flex:1;min-width:0}
+.bc-co-row-edit{flex:none;width:26px;height:26px;border:0;border-radius:8px;background:none;color:var(--bt-ink-3);font-size:13px;line-height:1;cursor:pointer;opacity:0;transition:opacity .12s ease}
+.bc-co-row-wrap:hover .bc-co-row-edit,.bc-co-row-edit:focus-visible{opacity:1}
+.bc-co-row-edit:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.bc-co-row-edit:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
+@media (hover:none){.bc-co-row-edit{opacity:1}}
 .bc-co-loading{display:flex;flex-direction:column;gap:8px;padding:20px 32px}
 `;
 
@@ -11600,10 +11863,24 @@ var COMPANY_PAGE_CSS = `
 var import_react21 = require("react");
 var label = (value) => ({ setup: t("Setup"), active: t("In progress"), paused: t("Paused"), archived: t("Archived") })[value] ?? t("Unknown status");
 var relation = (project, data) => (project?.source_department_ids ?? []).map((id) => data.departments.find((item) => item.id === id)?.name ?? id);
+var statusLabel = (value) => ({ active: t("Active"), invited: t("Invited"), left: t("Left"), removed: t("Removed"), archived_readonly: t("Left (read-only)") })[value] ?? value;
+var roleLabel = (value) => roleOptions().find(([option]) => option === value)?.[1] ?? value;
+var roleOptions = () => [["executor", t("Executor")], ["coordinator", t("Coordinator")], ["acceptor", t("Independent acceptor")], ["memory_keeper", t("Memory keeper")]];
+var memberError = (failure) => {
+  const known = {
+    "project/coordinator-exists": t("The project already has a coordinator. The current one steps down first."),
+    "project/member-exists": t("This employee is already in the project."),
+    "project/member-busy": t("This employee is already in another active project."),
+    "project/member-not-found": t("This member is no longer active in the project."),
+    "project/state-conflict": t("A project in this state cannot change members.")
+  }[failure?.code];
+  return known ?? (failure?.message ? String(failure.message) : t("The change could not be saved."));
+};
 function ProjectPage({ project, data, preview, loading, error, onBack, onChat, onRetry, onCommand }) {
   const [busy, setBusy] = (0, import_react21.useState)(false);
   const [actionError, setActionError] = (0, import_react21.useState)("");
   const [selectedEmployee, setSelectedEmployee] = (0, import_react21.useState)("");
+  const [pendingRemove, setPendingRemove] = (0, import_react21.useState)(null);
   const run2 = async (command, fields = {}) => {
     if (busy || preview || !project) return;
     setBusy(true);
@@ -11612,7 +11889,7 @@ function ProjectPage({ project, data, preview, loading, error, onBack, onChat, o
       await onCommand(command, { project_id: project.id, ...fields });
       return true;
     } catch (failure) {
-      setActionError(failure?.message ?? String(failure));
+      setActionError(memberError(failure));
       return false;
     } finally {
       setBusy(false);
@@ -11678,7 +11955,31 @@ function ProjectPage({ project, data, preview, loading, error, onBack, onChat, o
         (0, import_react21.createElement)("p", { className: "bc-detail-value" }, relation(project, data).join(" · ") || "—"),
         (0, import_react21.createElement)("div", { className: "bc-detail-label" }, t("Coordinator")),
         (0, import_react21.createElement)("p", { className: "bc-detail-value" }, coordinator ? employeeName(coordinator.employee_id) : t("Not assigned")),
-        members.length ? members.map((member) => (0, import_react21.createElement)("div", { className: "bc-member", key: member.id }, (0, import_react21.createElement)("span", null, employeeName(member.employee_id)), (0, import_react21.createElement)("small", null, `${member.role} · ${member.membership_status ?? member.status ?? "—"}`))) : (0, import_react21.createElement)("p", { className: "bc-muted" }, t("No members to show yet.")),
+        members.length ? members.map((member) => {
+          const status = member.membership_status ?? member.status;
+          const active = status === "active";
+          return (0, import_react21.createElement)(
+            "div",
+            { className: "bc-member bc-member-edit", key: member.id },
+            (0, import_react21.createElement)("span", { className: "bc-member-name" }, employeeName(member.employee_id)),
+            active && ["setup", "active"].includes(project.status) && roleOptions().some(([option]) => option === member.role) ? (0, import_react21.createElement)("select", {
+              className: "bc-member-role",
+              value: member.role,
+              "aria-label": t("Change role of {name}", { name: employeeName(member.employee_id) }),
+              disabled: busy || preview,
+              onChange: (event) => void run2("project.member.update", { employee_id: member.employee_id, role: event.target.value })
+            }, roleOptions().map(([value, text]) => (0, import_react21.createElement)("option", { key: value, value }, text))) : (0, import_react21.createElement)("small", { className: "bc-member-status" }, `${roleLabel(member.role)} · ${statusLabel(status)}`),
+            active && ["setup", "active"].includes(project.status) ? pendingRemove === member.id ? (0, import_react21.createElement)(
+              "span",
+              { className: "bc-member-actions" },
+              (0, import_react21.createElement)("button", { type: "button", className: "bc-button bc-danger", disabled: busy || preview, onClick: async () => {
+                if (await run2("project.member.remove", { employee_id: member.employee_id })) setPendingRemove(null);
+              } }, t("Confirm removal")),
+              (0, import_react21.createElement)("button", { type: "button", className: "bc-button", onClick: () => setPendingRemove(null) }, t("Cancel"))
+            ) : (0, import_react21.createElement)("button", { type: "button", className: "bc-member-remove", "aria-label": t("Remove {name} from the project", { name: employeeName(member.employee_id) }), disabled: busy || preview, onClick: () => setPendingRemove(member.id) }, t("Remove member")) : null
+          );
+        }) : (0, import_react21.createElement)("p", { className: "bc-muted" }, t("No members to show yet.")),
+        members.some((member) => member.membership_status === "left" || member.membership_status === "removed") ? (0, import_react21.createElement)("p", { className: "bc-muted" }, t("Members who left keep their history in the project.")) : null,
         ["setup", "active"].includes(project.status) && candidates.length ? (0, import_react21.createElement)(
           "div",
           { className: "bc-actions" },
@@ -12576,6 +12877,7 @@ function CompanySurface({ page, actions, roster }) {
           onRetryTodos: () => setTodoAttempt((value) => value + 1),
           onOpenEmployee: openEmployeeChat,
           onOpenProjects: () => actions.openCompanyPage("list"),
+          onOpenProject: (id) => actions.openCompanyPage("detail", id),
           onCommand: mutate,
           roster
         }) : onTodos ? (0, import_react24.createElement)(TodoPage, {
@@ -12639,7 +12941,7 @@ function CompanySurface({ page, actions, roster }) {
                     }
                   } },
                   (0, import_react24.createElement)("td", { className: "bc-td-project" }, (0, import_react24.createElement)("strong", null, item.name), (0, import_react24.createElement)("span", null, item.goal || t("No goal specified"))),
-                  (0, import_react24.createElement)("td", null, (0, import_react24.createElement)("span", { className: "bc-tag" }, statusLabel(item.status))),
+                  (0, import_react24.createElement)("td", null, (0, import_react24.createElement)("span", { className: "bc-tag" }, statusLabel2(item.status))),
                   (0, import_react24.createElement)("td", { className: "bc-td-num" }, pendingCount(item) || "—"),
                   (0, import_react24.createElement)("td", null, department || "—"),
                   (0, import_react24.createElement)("td", null, coordinator?.name ?? t("Coordinator pending")),
@@ -12657,7 +12959,7 @@ function CompanySurface({ page, actions, roster }) {
     )
   );
 }
-var statusLabel = (status) => ({ setup: t("Setup"), active: t("In progress"), paused: t("Paused"), archived: t("Archived") })[status] ?? t("Unknown status");
+var statusLabel2 = (status) => ({ setup: t("Setup"), active: t("In progress"), paused: t("Paused"), archived: t("Archived") })[status] ?? t("Unknown status");
 var COMPANY_CSS = COMPANY_PAGE_CSS + `
 .bc-surface{--bc-small:11px;--bc-label:12px;--bc-body:13px;--bc-title:17px;--bc-radius:12px;position:fixed;inset:0;z-index:1100;background:var(--bt-main);color:var(--bt-ink);font-family:var(--bt-font);overflow:auto;overscroll-behavior:contain}.bc-surface *{box-sizing:border-box}.bc-surface-workspace{left:var(--bt-company-left,0px)}.bc-shell{min-height:100vh;display:flex;flex-direction:column}.bc-header{height:52px;flex:none;display:flex;gap:12px;align-items:center;padding:0 max(20px,calc((100vw - 960px)/2));border-bottom:1px solid var(--bt-line);background:var(--bt-card)}.bc-brand{background:none;border:0;color:var(--bt-ink);font-size:15px;font-weight:700;cursor:pointer}.bc-header-context{color:var(--bt-ink-2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bc-icon{margin-left:auto;width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:var(--bt-ink);font-size:24px;cursor:pointer}.bc-content{width:min(100%,1000px);margin:0 auto;padding:32px 24px 64px}.bc-surface-workspace .bc-content{width:100%;max-width:none;padding:20px 32px 48px}.bc-surface-workspace .bc-page{max-width:none}.bc-surface-company .bc-content-company{padding:0}.bc-kicker{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--bt-ink-2)}.bc-lead{display:flex;justify-content:space-between;align-items:end;gap:20px;margin:0 0 28px}.bc-lead h1{font-size:var(--bc-title);line-height:24px;margin:8px 0}.bc-lead p,.bc-muted{color:var(--bt-ink-2);line-height:1.5}.bc-lead p{margin:0;font-size:13px}.bc-button{border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);padding:9px 13px;min-height:36px;font:600 13px var(--bt-font);cursor:pointer}.bc-button:hover,.bc-icon:hover,.bc-filter:hover{background:var(--bt-hover)}.bc-primary{min-height:40px;border-radius:999px;background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));border-color:var(--bt-accent)}.bc-primary:hover{filter:brightness(.94);background:var(--bt-accent)}.bc-button:disabled{opacity:.45;cursor:not-allowed}.bc-surface :is(button,input,textarea,select,summary):focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}.bc-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.bc-filters{display:flex;gap:4px;border:1px solid var(--bt-line);border-radius:8px;padding:3px}.bc-filter{border:0;border-radius:6px;background:transparent;color:var(--bt-ink-2);padding:7px 11px;font-size:12px;cursor:pointer}.bc-selected{background:var(--bt-active);color:var(--bt-ink);font-weight:600}.bc-search,.bc-field :is(input,textarea,select){border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);padding:9px 11px;font:13px var(--bt-font)}.bc-search{width:210px}.bc-list{border:1px solid var(--bt-line);border-radius:12px;overflow:hidden;background:var(--bt-card)}.bc-project-row{display:flex;width:100%;gap:20px;align-items:center;text-align:left;padding:17px 20px;border:0;border-bottom:1px solid var(--bt-line);background:transparent;color:var(--bt-ink);cursor:pointer}.bc-project-row:last-child{border:0}.bc-project-row:hover{background:var(--bt-hover)}.bc-project-main{min-width:0;flex:1;display:grid;gap:5px}.bc-project-main strong{font-size:14px}.bc-project-main span,.bc-project-main small,.bc-project-meta small{font-size:12px;color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bc-project-meta{min-width:140px;display:grid;justify-items:end;gap:5px}.bc-status{display:inline-flex;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);font-size:11px;font-weight:700;padding:4px 7px}.bc-status.bc-active{color:var(--bt-green)}.bc-status.bc-paused,.bc-status.bc-pending{color:var(--bt-star)}.bc-status.bc-archived{color:var(--bt-ink-2)}.bc-state{border:1px dashed var(--bt-line-2);border-radius:12px;padding:32px;text-align:center;color:var(--bt-ink-2);font-size:13px}.bc-state strong{color:var(--bt-ink);font-size:15px}.bc-state .bc-button{margin:5px}.bc-error{border-color:var(--bt-danger)}.bc-preview{padding:8px 24px;background:var(--bt-tag-bg);text-align:center;color:var(--bt-ink);font-size:12px;font-weight:700}.bc-notice{display:flex;gap:12px;align-items:center;justify-content:center;padding:8px 20px;background:var(--bt-tag-bg);font-size:12px}.bc-notice button{border:0;background:transparent;color:var(--bt-ink);cursor:pointer}.bc-back{background:none;border:0;color:var(--bt-ink-2);font:600 12px var(--bt-font);padding:6px 0;cursor:pointer}.bc-back:hover{color:var(--bt-ink)}.bc-section{background:var(--bt-card);border:1px solid var(--bt-line);border-radius:12px;padding:20px;margin:16px 0}.bc-section h2{font-size:14px;margin:0 0 14px}.bc-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.bc-field{display:grid;gap:6px;font-size:12px;font-weight:600}.bc-field :is(input,textarea,select){width:100%}.bc-field textarea{resize:vertical;min-height:72px}.bc-field small{font-weight:400;color:var(--bt-ink-2)}.bc-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.bc-detail-title{font-size:var(--bc-title);line-height:24px;margin:10px 0}.bc-detail-label{color:var(--bt-ink-2);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}.bc-detail-value{font-size:13px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}.bc-member{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--bt-line);font-size:13px}.bc-member small{font-size:11px;color:var(--bt-ink-2)}.bc-steps{display:flex;flex-wrap:wrap;gap:6px;margin:24px 0}.bc-step{font-size:11px;color:var(--bt-ink-2);padding:7px 10px;border:1px solid var(--bt-line);border-radius:6px}.bc-step[aria-current=step]{color:var(--bt-ink);border-color:var(--bt-accent);font-weight:700}.bc-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.bc-choice{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px}.bc-choice input{accent-color:var(--bt-accent)}.bc-exception{border-left:3px solid var(--bt-danger);padding:10px 12px;background:var(--bt-tag-bg);font-size:12px;line-height:1.5}.bc-exception strong{display:block}.bc-optional{margin-top:16px;border-top:1px solid var(--bt-line);padding-top:14px}.bc-optional summary{cursor:pointer;color:var(--bt-ink);font-size:13px;font-weight:600}.bc-optional[open] summary{margin-bottom:16px}.bc-start-reason{text-align:right;color:var(--bt-ink-2);font-size:12px;line-height:1.5}.bc-surface button{touch-action:manipulation}@media(max-width:620px){.bc-header{height:48px;padding:0 14px}.bc-content{padding:22px 14px 48px}.bc-lead{align-items:flex-start}.bc-lead h1{font-size:var(--bc-title)}.bc-toolbar{align-items:stretch;flex-direction:column}.bc-search{width:100%}.bc-project-row{padding:14px;gap:8px}.bc-project-meta{min-width:88px}.bc-grid{grid-template-columns:1fr}.bc-section{padding:16px}}
 .bc-surface{--bc-text-xs:11px;--bc-text-sm:12px;--bc-text-content:14px;--bc-text-heading:15px;--bc-text-title:17px;--bc-control-sm:28px;--bc-control-md:36px;--bc-control-lg:40px;--bc-radius-tag:4px;--bc-radius-field:8px;--bc-radius-row:10px;--bc-radius-card:12px;--bc-shadow-raised:0 2px 8px -1px color-mix(in srgb,var(--bt-ink) 6%,transparent),0 1px 2px color-mix(in srgb,var(--bt-ink) 4%,transparent);--bc-shadow-dock:0 0 0 .5px var(--bt-line-2),0 2px 8px -2px color-mix(in srgb,var(--bt-ink) 12%,transparent);--bc-mask-header:60px}
@@ -13244,7 +13546,7 @@ var initial2 = (name) => typeof name === "string" && name.trim() ? name.trim().s
 var swallow = () => {
 };
 var ROLE_LABEL = { coordinator: "Coordinator", executor: "Executor", acceptor: "Acceptor", memory_keeper: "Memory keeper", reviewer: "Reviewer", member: "Member" };
-var roleLabel = (role) => {
+var roleLabel2 = (role) => {
   const key = String(role || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
   const label2 = ROLE_LABEL[key];
   return label2 ? t(label2) : role;
@@ -13369,7 +13671,7 @@ function ProjectChatDrawer({ projectName, goal, stage, members, departments, pen
     (0, import_react27.createElement)("section", { className: "pc-sec" }, (0, import_react27.createElement)("h3", null, t("Overview")), (0, import_react27.createElement)("dl", { className: "pc-kv" }, overviewRows))
   ];
   if (rows2.length) {
-    sections.push((0, import_react27.createElement)("section", { className: "pc-sec" }, (0, import_react27.createElement)("h3", null, t("Members")), rows2.map((row, index) => (0, import_react27.createElement)("button", { key: row.id ?? index, type: "button", className: "pc-member", onClick: row.onOpen ?? swallow }, (0, import_react27.createElement)("span", null, row.name ?? ""), (0, import_react27.createElement)("small", null, roleLabel(row.role))))));
+    sections.push((0, import_react27.createElement)("section", { className: "pc-sec" }, (0, import_react27.createElement)("h3", null, t("Members")), rows2.map((row, index) => (0, import_react27.createElement)("button", { key: row.id ?? index, type: "button", className: "pc-member", onClick: row.onOpen ?? swallow }, (0, import_react27.createElement)("span", null, row.name ?? ""), (0, import_react27.createElement)("small", null, roleLabel2(row.role))))));
   }
   if (pendingRows2.length) {
     sections.push((0, import_react27.createElement)("section", { className: "pc-sec" }, (0, import_react27.createElement)("h3", null, t("Waiting for you")), pendingRows2.map((row, index) => {
@@ -13390,7 +13692,7 @@ function ProjectChatDrawer({ projectName, goal, stage, members, departments, pen
       { className: "pc-drawer-id" },
       (0, import_react27.createElement)("span", { className: "pc-drawer-kicker" }, t("Project overview")),
       (0, import_react27.createElement)("span", { className: "pc-drawer-name" }, projectName || t("Project details")),
-      (0, import_react27.createElement)("span", { className: "pc-drawer-role" }, stage || statusLabel("setup"))
+      (0, import_react27.createElement)("span", { className: "pc-drawer-role" }, stage || statusLabel2("setup"))
     ),
     (0, import_react27.createElement)("div", { className: "pc-drawer-body" }, sections),
     (0, import_react27.createElement)("div", { className: "pc-drawer-foot" }, (0, import_react27.createElement)("button", { type: "button", className: "pc-btn pc-btn-primary", onClick: onOpenConfig }, t("Open project settings")))
@@ -13435,7 +13737,7 @@ function ProjectChatPage({ project, stage: stageProp, faces, goal, nextStep, pen
     setLeaving(true);
     window.setTimeout(() => onBack?.(), 170);
   };
-  const stage = stageProp || statusLabel(project?.status);
+  const stage = stageProp || statusLabel2(project?.status);
   const headRef = (0, import_react27.useRef)(null);
   const [pinTop, setPinTop] = (0, import_react27.useState)(0);
   (0, import_react27.useEffect)(() => {
@@ -13633,7 +13935,7 @@ function ProjectChatSurface({ props, project, members, pendingCount, pinned, pen
       { className: "pc-frame" },
       (0, import_react27.createElement)(ProjectChatHeader, {
         projectName: project.name,
-        stage: statusLabel(project.status),
+        stage: statusLabel2(project.status),
         faces: (members || []).map((member) => member.name),
         goal: project.goal || "",
         pendingCount,
@@ -13646,7 +13948,7 @@ function ProjectChatSurface({ props, project, members, pendingCount, pinned, pen
       open ? (0, import_react27.createElement)(ProjectChatDrawer, {
         projectName: project.name,
         goal: project.goal || "",
-        stage: statusLabel(project.status),
+        stage: statusLabel2(project.status),
         members,
         departments: project.source_departments,
         pending,

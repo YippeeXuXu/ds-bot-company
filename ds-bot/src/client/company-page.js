@@ -9,6 +9,36 @@ import { t } from './i18n.js'
 
 const archived = item => item?.status === 'archived'
 
+// The server accepts exactly these four acceptance roles. Profiles written by an older
+// version can still carry `member` or `reviewer`; the edit panel must not send one back,
+// or a rename or a department move would be refused with a 422 about a field the person
+// never touched. An unknown value therefore reads as "keep what is there".
+export const ACCEPTANCE_ROLES = ['executor', 'coordinator', 'acceptor', 'memory_keeper']
+export const editedAcceptanceRole = value => (ACCEPTANCE_ROLES.includes(value) ? value : '')
+// The edit panel's save payload. A role left on "keep the current role" is not sent at
+// all, so an employee with an older role can still be renamed or moved between departments.
+export const employeeUpdatePayload = ({ employeeId, name, departmentId, acceptanceRole }) => {
+  const change = { employee_id: employeeId, name, department_id: departmentId }
+  if (acceptanceRole) change.acceptance_role = acceptanceRole
+  return change
+}
+
+// A refusal from the server carries a stable code. The ones a person can act on get a
+// sentence in their own language; anything unknown keeps the server's own words.
+export const companyErrorText = failure => {
+  const known = {
+    'department.name-taken': 'A department with this name already exists.',
+    'employee.bot_already_employed': 'This Bot already has an employee profile.',
+    'department/invalid': 'That employee cannot take this department or lead it.',
+    'employee/immutable-field': 'An employee keeps its Bot; hire the other Bot instead.',
+    'employee/inactive': 'This employee is dismissed. Reactivate them before using them.',
+    'employee/still-referenced': 'This employee still holds work. Hand it over first.',
+    'company/revision-conflict': 'The record changed while you were editing. Close it and try again.',
+  }[failure?.code]
+  const text = known ? t(known) : failure?.message
+  return text ? String(text) : t('The change could not be saved.')
+}
+
 // The first glyph of a name, whole: a grapheme cluster, never half of a surrogate pair.
 const initialOf = name => {
   const text = typeof name === 'string' ? name.trim() : ''
@@ -50,7 +80,7 @@ export const botOpenable = (employee, roster) => {
 const leadOf = (employees, department) => employees.find(item => item.id === department.lead_employee_id) ?? null
 
 export function CompanyPageView(props) {
-  const { data, loading, error, roster, openDept, creating, pan, dragging } = props
+  const { data, loading, error, roster, openDept, creating, pan, dragging, leadError, editing } = props
   const departments = (data.departments ?? []).filter(item => !archived(item))
   const employees = (data.employees ?? []).filter(item => !archived(item))
   const projects = data.projects ?? []
@@ -66,7 +96,7 @@ export function CompanyPageView(props) {
   const avatar = (employee, size = 'sm') => h('span', { className: `bc-co-face bc-co-face-${size}`, 'aria-hidden': true }, initialOf(employee.name))
 
   const employeeRow = employee => {
-    const disabled = !botReady(employee)
+    const disabled = !botReady(employee) || employee.status !== 'active'
     const detail = employee.role ? String(employee.role) : projectText(projects, employee)
     return h('button', {
       key: employee.id,
@@ -136,13 +166,36 @@ export function CompanyPageView(props) {
 
   const employeeDetailFor = (projects, employee) => employee.role ? String(employee.role) : projectText(projects, employee)
 
+  // A refusal to dismiss names every live place that still holds the employee. Each line
+  // leads where the hand-over happens: the department overview, or the project detail.
+  const roleText = value => ({
+    lead: t('Department lead'),
+    coordinator: t('Coordinator'),
+    acceptor: t('Independent acceptor'),
+    'memory keeper': t('Memory keeper'),
+    executor: t('Member'),
+  })[value] ?? value
+  const referencedList = failure => {
+    const details = failure?.details ?? {}
+    const departments = details.departments ?? []
+    const projects = details.projects ?? []
+    return h('div', { className: 'bc-co-refs', role: 'alert' },
+      h('strong', null, t('Hand the work over before dismissing:')),
+      departments.map(item => h('div', { key: `d-${item.department_id}`, className: 'bc-co-ref' },
+        h('span', { className: 'bc-co-ref-name' }, `${item.name} · ${t('Department lead')}`),
+        h('button', { type: 'button', className: 'bc-co-ref-go', onClick: () => props.onOpenDepartmentRef(item.department_id) }, `${t('Open')} ›`))),
+      projects.map(item => h('div', { key: `p-${item.project_id}`, className: 'bc-co-ref' },
+        h('span', { className: 'bc-co-ref-name' }, `${item.name} · ${(item.roles ?? []).map(roleText).join('、')}`),
+        h('button', { type: 'button', className: 'bc-co-ref-go', onClick: () => props.onOpenProjectRef(item.project_id) }, `${t('Open')} ›`))))
+  }
+
   const overview = department => {
     const staff = employees.filter(item => item.department_id === department.id)
     const lead = leadOf(employees, department)
     const bound = Boolean(department.chat_ref)
     // Only employees of this department can lead it, and only while they are active:
     // the server rejects anything else, so the list never offers it.
-    const canLead = staff.filter(item => item.status !== 'archived')
+    const canLead = staff.filter(item => item.status === 'active')
     return h('aside', {
       className: 'bc-co-pop',
       role: 'dialog',
@@ -166,25 +219,38 @@ export function CompanyPageView(props) {
         h('dd', null, t('{count} people', { count: staff.length })),
         h('dt', null, t('Department group')),
         h('dd', { className: bound ? undefined : 'bc-co-muted' }, bound ? t('Department group bound') : t('Department group not bound'))),
+      leadError ? h('p', { className: 'bc-exception', role: 'alert' }, leadError) : null,
       staff.length
-        ? h('div', { className: 'bc-co-pop-emps' }, staff.map(employee => h('button', {
-          key: employee.id,
-          type: 'button',
-          className: 'bc-co-row' + (botReady(employee) ? '' : ' is-disabled'),
-          'aria-disabled': botReady(employee) ? undefined : 'true',
-          title: employeeTitle(employee),
-          onClick: () => openEmployee(employee),
-        },
-          avatar(employee),
-          h('span', { className: 'bc-co-row-main' }, h('strong', null, employee.name), h('span', { className: 'bc-co-sub' }, employeeDetailFor(projects, employee))),
-          h('span', { className: 'bc-co-row-go', 'aria-hidden': true }, '›'))))
+        ? h('div', { className: 'bc-co-pop-emps' }, staff.map(employee => h('div', { key: employee.id, className: 'bc-co-row-wrap' },
+          h('button', {
+            type: 'button',
+            className: 'bc-co-row' + (botReady(employee) && employee.status === 'active' ? '' : ' is-disabled'),
+            'aria-disabled': botReady(employee) && employee.status === 'active' ? undefined : 'true',
+            title: employeeTitle(employee),
+            onClick: () => openEmployee(employee),
+          },
+            avatar(employee),
+            h('span', { className: 'bc-co-row-main' },
+              h('strong', null, employee.name),
+              h('span', { className: 'bc-co-sub' }, employeeDetailFor(projects, employee),
+                h('span', { className: 'bc-co-tag' }, employee.status === 'disabled' ? t('Dismissed employee') : t('On duty')))),
+            h('span', { className: 'bc-co-row-go', 'aria-hidden': true }, '›')),
+          props.canEdit
+            ? h('button', {
+              type: 'button',
+              className: 'bc-co-row-edit',
+              'aria-label': t('Edit {name}', { name: employee.name }),
+              title: t('Edit employee'),
+              onClick: event => { event.stopPropagation(); props.onEditOpen(employee) },
+            }, '✎')
+            : null)))
         : h('p', { className: 'bc-co-muted' }, t('This department has no employees yet.')))
   }
 
   const createPanel = () => {
     if (!creating) return null
     const departmentOptions = departments.map(item => h('option', { key: item.id, value: item.id }, item.name))
-    const bots = (roster?.bots ?? []).filter(bot => !employees.some(employee => employee.bot_id === bot.id && employee.status === 'active') && !bot.private)
+    const bots = (roster?.bots ?? []).filter(bot => !employees.some(employee => employee.bot_id === bot.id) && !bot.private)
     return h('div', { className: 'bc-co-create', role: 'dialog', 'aria-label': creating === 'department' ? t('New department') : t('New employee') },
       h('div', { className: 'bc-co-pop-head' },
         h('strong', null, creating === 'department' ? t('New department') : t('New employee')),
@@ -212,7 +278,41 @@ export function CompanyPageView(props) {
       props.draftError ? h('p', { className: 'bc-exception', role: 'alert' }, props.draftError) : null,
       h('div', { className: 'bc-co-create-actions' },
         h('button', { type: 'button', className: 'bc-button', onClick: props.onCloseCreate }, t('Cancel')),
-        h('button', { type: 'button', className: 'bc-button bc-primary', disabled: props.draftBusy || !props.draftName.trim(), onClick: props.onCreate }, props.draftBusy ? t('Saving…') : t('Create'))))
+        h('button', { type: 'button', className: 'bc-button bc-primary', disabled: props.draftBusy || (creating === 'department' ? !props.draftName.trim() : (!props.draftBot || !props.draftDept)), onClick: props.onCreate }, props.draftBusy ? t('Saving…') : t('Create'))))
+  }
+
+  const editingEmployee = editing === null ? null : employees.find(item => item.id === editing) ?? null
+  const editPanel = () => {
+    if (!editingEmployee) return null
+    const roles = [['executor', t('Executor')], ['coordinator', t('Coordinator')], ['acceptor', t('Independent acceptor')], ['memory_keeper', t('Memory keeper')]]
+    // A profile from an older version holds a role outside the four. Show that honestly as
+    // "keep the current role" instead of a wrong first option that state never agrees with.
+    const roleOptions = props.editRole ? roles : [['', t('Keep the current role')], ...roles]
+    return h('div', { className: 'bc-co-create bc-co-edit', role: 'dialog', 'aria-label': t('Edit employee') },
+      h('div', { className: 'bc-co-pop-head' },
+        h('strong', null, t('Edit employee')),
+        h('span', { className: 'bc-co-pop-name' }, editingEmployee.name),
+        h('button', { type: 'button', className: 'bc-co-pop-close', 'aria-label': t('Close'), onClick: props.onEditClose }, '×')),
+      h('div', { className: 'bc-co-create-fields' },
+        h('label', { className: 'bc-field' }, t('Employee display name'),
+          h('input', { value: props.editName, maxLength: 80, onChange: event => props.onEditName(event.target.value), placeholder: t('Employee display name') })),
+        h('label', { className: 'bc-field' }, t('Employee role'),
+          h('select', { value: props.editRole, onChange: event => props.onEditRole(event.target.value) }, roleOptions.map(([value, label]) => h('option', { key: value || 'keep', value }, label)))),
+        h('label', { className: 'bc-field' }, t('Department'),
+          h('select', { value: props.editDept, onChange: event => props.onEditDept(event.target.value) }, departments.map(item => h('option', { key: item.id, value: item.id }, item.name))))),
+      props.editError ? h('p', { className: 'bc-exception', role: 'alert' }, props.editError) : null,
+      props.editRefusal ? referencedList(props.editRefusal) : null,
+      h('p', { className: 'bc-co-note' }, editingEmployee.status === 'disabled'
+        ? t('Dismissed employees keep their profile and history and can be reactivated at any time.')
+        : t('Dismissing keeps the profile and history, and can be undone at any time.')),
+      h('div', { className: 'bc-co-create-actions' },
+        props.onStatus
+          ? h('button', { type: 'button', className: 'bc-button bc-danger', disabled: props.editBusy, onClick: () => props.onStatus(editingEmployee) },
+            editingEmployee.status === 'disabled' ? t('Reactivate employee') : t('Suspend employee'))
+          : null,
+        h('span', { className: 'bc-co-spacer' }),
+        h('button', { type: 'button', className: 'bc-button', onClick: props.onEditClose }, t('Cancel')),
+        h('button', { type: 'button', className: 'bc-button bc-primary', disabled: props.editBusy || !props.editName.trim(), onClick: props.onEditSave }, props.editBusy ? t('Saving…') : t('Save'))))
   }
 
   let body
@@ -241,7 +341,7 @@ export function CompanyPageView(props) {
         h('button', { type: 'button', className: 'bc-button', onClick: () => props.onCreateOpen('department') }, `＋ ${t('New department')}`),
         h('button', { type: 'button', className: 'bc-button', onClick: () => props.onCreateOpen('employee') }, `＋ ${t('New employee')}`)) : null) : null,
     h('div', { className: 'bc-co-stage' }, body,
-      department ? overview(department) : null,
+      editingEmployee ? editPanel() : department ? overview(department) : null,
       createPanel()))
 }
 
@@ -255,6 +355,14 @@ export function CompanyPage(props) {
   const [draftRole, setDraftRole] = useState('executor')
   const [draftBusy, setDraftBusy] = useState(false)
   const [draftError, setDraftError] = useState('')
+  const [leadError, setLeadError] = useState('')
+  const [editing, setEditing] = useState(null)
+  const [editName, setEditName] = useState('')
+  const [editRole, setEditRole] = useState('executor')
+  const [editDept, setEditDept] = useState('')
+  const [editBusy, setEditBusy] = useState(false)
+  const [editError, setEditError] = useState('')
+  const [editRefusal, setEditRefusal] = useState(null)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
   const canvasRef = useRef(null)
@@ -266,6 +374,7 @@ export function CompanyPage(props) {
   // one level each so the first Escape closes them instead of the page.
   if (escapeGuard) {
     escapeGuard.current = () => {
+      if (editing !== null) { closeEdit(); return true }
       if (creating) { closeDraft(); return true }
       if (openDept !== null) { setOpenDept(null); return true }
       return false
@@ -292,8 +401,9 @@ export function CompanyPage(props) {
 
   const setLead = async (department, employeeId) => {
     if (!props.onCommand) return
+    setLeadError('')
     try { await props.onCommand('department.update', { department_id: department.id, lead_employee_id: employeeId || null }) }
-    catch (failure) { setDraftError(failure?.message ?? String(failure)) }
+    catch (failure) { setLeadError(companyErrorText(failure)) }
   }
 
   const create = async () => {
@@ -313,8 +423,53 @@ export function CompanyPage(props) {
         })
       }
       closeDraft()
-    } catch (failure) { setDraftError(failure?.message ?? String(failure)) }
+    } catch (failure) { setDraftError(companyErrorText(failure)) }
     finally { setDraftBusy(false) }
+  }
+
+  const openEdit = employee => {
+    closeDraft()
+    setEditing(employee.id)
+    setEditName(employee.name ?? '')
+    setEditRole(editedAcceptanceRole(employee.acceptance_role))
+    setEditDept(employee.department_id ?? '')
+    setEditError('')
+    setEditRefusal(null)
+  }
+  const closeEdit = () => { setEditing(null); setEditError(''); setEditRefusal(null) }
+  const saveEdit = async () => {
+    if (!props.onCommand || editBusy) return
+    setEditBusy(true)
+    setEditError('')
+    setEditRefusal(null)
+    try {
+      await props.onCommand('employee.update', employeeUpdatePayload({
+        employeeId: editing,
+        name: editName.trim(),
+        departmentId: editDept,
+        acceptanceRole: editRole,
+      }))
+      closeEdit()
+    } catch (failure) { setEditError(companyErrorText(failure)) }
+    finally { setEditBusy(false) }
+  }
+  // Dismissing or reactivating never deletes anything: the server keeps the profile and
+  // its history, and refuses a dismissal that would orphan live work.
+  const setStatus = async employee => {
+    if (!props.onCommand || editBusy) return
+    setEditBusy(true)
+    setEditError('')
+    setEditRefusal(null)
+    try {
+      await props.onCommand('employee.update', {
+        employee_id: employee.id,
+        status: employee.status === 'disabled' ? 'active' : 'disabled',
+      })
+      closeEdit()
+    } catch (failure) {
+      setEditError(companyErrorText(failure))
+      if (failure?.code === 'employee/still-referenced') setEditRefusal(failure)
+    } finally { setEditBusy(false) }
   }
 
   return CompanyPageView({
@@ -324,6 +479,23 @@ export function CompanyPage(props) {
     pan,
     dragging,
     canvasRef,
+    leadError,
+    editing,
+    editName,
+    editRole,
+    editDept,
+    editBusy,
+    editError,
+    editRefusal,
+    onEditOpen: openEdit,
+    onEditClose: closeEdit,
+    onEditName: setEditName,
+    onEditRole: setEditRole,
+    onEditDept: setEditDept,
+    onEditSave: () => void saveEdit(),
+    onStatus: employee => void setStatus(employee),
+    onOpenDepartmentRef: id => { closeEdit(); setOpenDept(id) },
+    onOpenProjectRef: id => props.onOpenProject?.(id),
     draftName,
     draftBot,
     draftDept,
@@ -424,7 +596,24 @@ export const COMPANY_PAGE_CSS = `
 .bc-co-row-main{display:flex;flex:1;flex-direction:column;gap:0;min-width:0}
 .bc-co-row-main strong{font-size:12px;line-height:16px;font-weight:600}
 .bc-co-row-go{font-size:13px;color:var(--bt-ink-3)}
+.bc-co-tag{margin-left:8px;padding:0 6px;border-radius:999px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);font-size:10px;line-height:16px}
+.bc-co-note{margin:10px 0 0;font-size:11px;line-height:16px;color:var(--bt-ink-2)}
+.bc-co-refs{display:flex;flex-direction:column;gap:6px;margin-top:10px;padding:10px 12px;border:1px solid var(--bt-line-2);border-radius:10px;background:var(--bt-card)}
+.bc-co-refs strong{font-size:12px;line-height:17px;font-weight:600}
+.bc-co-ref{display:flex;align-items:center;gap:8px;min-width:0}
+.bc-co-ref-name{flex:1;min-width:0;font-size:12px;line-height:17px;color:var(--bt-ink-2);overflow-wrap:anywhere}
+.bc-co-ref-go{flex:none;border:0;border-radius:6px;background:none;padding:2px 4px;font:600 12px var(--bt-font);color:var(--bt-accent);cursor:pointer}
+.bc-co-ref-go:hover{background:var(--bt-hover)}
+.bc-co-ref-go:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}
 .bc-co-create-fields{display:flex;flex-direction:column;gap:10px}
-.bc-co-create-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.bc-co-create-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:12px}
+.bc-co-spacer{flex:1}
+.bc-co-row-wrap{display:flex;align-items:center;gap:2px}
+.bc-co-row-wrap .bc-co-row{flex:1;min-width:0}
+.bc-co-row-edit{flex:none;width:26px;height:26px;border:0;border-radius:8px;background:none;color:var(--bt-ink-3);font-size:13px;line-height:1;cursor:pointer;opacity:0;transition:opacity .12s ease}
+.bc-co-row-wrap:hover .bc-co-row-edit,.bc-co-row-edit:focus-visible{opacity:1}
+.bc-co-row-edit:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.bc-co-row-edit:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
+@media (hover:none){.bc-co-row-edit{opacity:1}}
 .bc-co-loading{display:flex;flex-direction:column;gap:8px;padding:20px 32px}
 `
