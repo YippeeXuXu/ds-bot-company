@@ -47,7 +47,7 @@ DS Company 是一个基于 [DeepSeek Harness](https://github.com/deepseek-ai/dee
 2. **包名或地址** 填 `ds-company`。在中国大陆，**安装源** 选 **中国大陆镜像源**。
 3. 点 **安装**，再点 **立即启用**。如果提示“下次启动生效”，完全退出 dsh 再打开。
 
-连不上 npm 时，第 2 步也可以填 [Releases](https://github.com/Fei2411/DS-Bot/releases) 里下载的 `ds-company-0.2.5.tgz` 的完整路径，或者 `github:Fei2411/DS-Bot#v0.2.1&path:/ds-bot`（需要装 Git）。
+npm 上还没有 `ds-company`，第 2 步填 [Releases](https://github.com/YippeeXuXu/ds-bot-company/releases) 里下载的 `ds-company-<版本>.tgz` 的完整路径，或者 `github:YippeeXuXu/ds-bot-company#<tag>&path:/ds-bot`（需要装 Git）。
 
 DS Company 0.2.1 及更早的版本在 DSH Desktop 0.2.1-rc.2 及以后的版本里不能自己更新：在插件页移除 `ds-company`，再添加 `ds-company`。Bot、聊天和记忆都会保留。
 

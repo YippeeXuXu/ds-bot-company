@@ -47,7 +47,7 @@ First install DSH and set up at least one model in it. DS Company uses the model
 2. In **Package name or address**, enter `ds-company`. In mainland China, set **Registry** to **Mainland China mirror**.
 3. Select **Install**, then **Enable now**. If DSH says the change takes effect at the next start, quit DSH completely and open it again.
 
-If npm is not reachable, in step 2 you can also enter the full path of `ds-company-0.2.5.tgz` downloaded from [Releases](https://github.com/Fei2411/DS-Bot/releases), or `github:Fei2411/DS-Bot#v0.2.1&path:/ds-bot` (needs Git).
+The npm registry does not have `ds-company` yet: in step 2, enter the full path of `ds-company-<version>.tgz` downloaded from [Releases](https://github.com/YippeeXuXu/ds-bot-company/releases), or `github:YippeeXuXu/ds-bot-company#<tag>&path:/ds-bot` (needs Git).
 
 DS Company 0.2.1 and earlier cannot update themselves in DSH Desktop 0.2.1-rc.2 or later: on the Plugins page, remove `ds-company` and add `ds-company` again. The Bots, chats and memory stay.
 

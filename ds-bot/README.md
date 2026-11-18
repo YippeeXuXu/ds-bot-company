@@ -35,15 +35,16 @@ Tested with dsh `0.2.1-rc.4` (Web) and `0.2.0-rc.2` (Web and Desktop).
 
 The [project page](../README.md#install) has the full steps for dsh Desktop and dsh Web. In short:
 
-- dsh Desktop: Settings → Plugins → add `ds-company` (npm), a `.tgz` file, or `github:Fei2411/DS-Bot#v0.1.7&path:/ds-bot`.
+- dsh Desktop: Settings → Plugins → add `ds-company` (npm), a `.tgz` file, or `github:YippeeXuXu/ds-bot-company#<tag>&path:/ds-bot`.
 - Command line: `dsh plugin --profile desktop add ds-company` (or `--profile web`).
+- The npm registry does not have `ds-company` yet: for now install the `.tgz` file or the `github:` address.
 
 To work on the plugin from a checkout, add it to a dsh profile as a linked dependency and a bundle:
 
 ```json
 {
   "dependencies": { "ds-company": "link:/path/to/ds-bot" },
-  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "ds-bot"] } }
+  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "ds-company"] } }
 }
 ```
 
