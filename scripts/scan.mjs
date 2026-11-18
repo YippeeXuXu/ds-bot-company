@@ -119,7 +119,7 @@ if (!files.includes('LICENSE')) add(MUST, 'license', 'LICENSE', 0, 'no LICENSE a
 if (!files.includes('ds-bot/package.json')) add(MUST, 'plugin-folder', '.', 0, 'no ds-bot/package.json')
 else {
   const pkg = JSON.parse(readFileSync(join(root, 'ds-bot/package.json'), 'utf8'))
-  if (pkg.name !== 'ds-bot') add(MUST, 'package', 'ds-bot/package.json', 0, `name is "${pkg.name}", expected "ds-bot"`)
+  if (pkg.name !== 'ds-company') add(MUST, 'package', 'ds-bot/package.json', 0, `name is "${pkg.name}", expected "ds-company"`)
   if (!files.includes('ds-bot/LICENSE')) add(MUST, 'package', 'ds-bot/LICENSE', 0, 'the package has no LICENSE file')
   if (!(pkg.files ?? []).includes('LICENSE')) add(MUST, 'package', 'ds-bot/package.json', 0, '"files" does not list LICENSE')
   for (const field of ['repository', 'homepage', 'bugs']) {

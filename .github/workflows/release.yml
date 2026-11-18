@@ -1,6 +1,6 @@
 name: Release
 
-# Publishes ds-bot to npm when a GitHub release is published, then attaches the desktop app's
+# Publishes ds-company to npm when a GitHub release is published, then attaches the desktop app's
 # Windows installer, macOS zips and Linux packages to the release. Windows and the Linux
 # AppImage update from latest.yml / latest-linux.yml; macOS and the Linux deb open the release
 # page for a manual download.
@@ -107,7 +107,7 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
         run: |
           npm pack
-          gh release upload "$TAG" "ds-bot-$(node -p "require('./package.json').version").tgz" --clobber
+          gh release upload "$TAG" "$(node -p "require('./package.json').name")-$(node -p "require('./package.json').version").tgz" --clobber
 
   app-windows:
     name: Desktop app installer (Windows)
