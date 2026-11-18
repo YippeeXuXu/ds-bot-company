@@ -67,6 +67,10 @@ const STATUS = new Map([
   // The coordinator post is one: promoting a second member is a conflict, not a server error.
   ['project/coordinator-exists', 409],
   ['project/state-conflict', 409],
+  // 4.5: archiving is refused while a delivery was never accepted or a dispatched Run is
+  // still working; those are conflicts with live work, not malformed input.
+  ['project/acceptance-required', 409],
+  ['project/runs-active', 409],
   ['project/group-pending', 409],
   ['project/group-failed', 409],
   ['company/invalid', 422],

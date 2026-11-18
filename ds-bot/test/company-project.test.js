@@ -681,8 +681,10 @@ test('archiving closes the pending acceptances of the project (M1c)', async () =
   const archived = await run(commands, 'project.archive', { operation_key: key('archive'), project_id: projectId })
   assert.equal(archived.status, 'committed')
   // The closed ids travel on the handler's own list, never on the response.
-  assert.deepEqual(Object.keys(archived.body).sort(), ['archived_members', 'left_members', 'project', 'suspended_employees'])
+  assert.deepEqual(Object.keys(archived.body).sort(), ['archived_members', 'closed_tasks', 'group', 'left_members', 'project', 'suspended_employees', 'unresolved'])
   assert.equal('closed_acceptances' in archived.body, false)
+  assert.deepEqual(archived.body.closed_tasks, [])
+  assert.deepEqual(archived.body.unresolved, [{ kind: 'acceptance', acceptance_id: pendingId, title: '第一版交付', task_id: null }])
 
   const closed = store.state.acceptances[pendingId]
   assert.equal(closed.state, 'cancelled')
@@ -703,7 +705,140 @@ test('archiving closes the pending acceptances of the project (M1c)', async () =
   const journal = readFileSync(join(home, 'company', 'events.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
   assert.equal(journal.some(event => event.type === 'acceptance.cancelled'), false)
   assert.equal(journal.at(-1).type, 'project.archived')
-  assert.deepEqual(Object.keys(journal.at(-1).data).sort(), ['archived_members', 'left_members', 'suspended_employees'])
+  assert.deepEqual(Object.keys(journal.at(-1).data).sort(), ['archived_members', 'closed_tasks', 'group', 'left_members', 'suspended_employees'])
+  assert.equal(journal.at(-1).data.group.readonly, true)
+  rmSync(home, { recursive: true, force: true })
+})
+
+// 4.5: archiving is the one closure that can cancel cards in bulk. It lists what it is
+// about to close first, then closes every open card with a reason — a card in Review takes
+// its pending record with it — and marks the group read-only for the client.
+test('archiving closes open cards with a reason and lists them before closing (4.5)', async () => {
+  const home = tempHome()
+  const { store, commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', { operation_key: key('create'), ...draft(seed_) })
+  const projectId = created.body.project.id
+  await run(commands, 'project.start', { operation_key: key('start'), project_id: projectId })
+
+  const taskRow = (id, title, stage, createdAt) => ({
+    id, project_id: projectId, title, stage, task_revision: 1, created_at: createdAt, updated_at: createdAt,
+    acceptance_checks: ['可运行'], hold_reason: 'none', dependencies: [], submissions: [],
+  })
+  store.state.tasks = {
+    tsk_doing: taskRow('tsk_doing', '写服务端', 'doing', 1),
+    tsk_review: taskRow('tsk_review', '写界面', 'review', 2),
+  }
+  store.state.acceptances = {
+    acc_done: { id: 'acc_done', project_id: projectId, task_id: null, title: '上一轮交付', state: 'accepted', revision: 2, decided_at: 90, created_at: 90 },
+    acc_pending: { id: 'acc_pending', project_id: projectId, task_id: 'tsk_review', task_revision: 2, title: '界面交付', state: 'pending', revision: 1, created_at: 100 },
+  }
+
+  const archived = await run(commands, 'project.archive', { operation_key: key('archive'), project_id: projectId })
+  assert.equal(archived.status, 'committed')
+  assert.deepEqual(archived.body.closed_tasks, [
+    { task_id: 'tsk_doing', title: '写服务端', stage: 'doing' },
+    { task_id: 'tsk_review', title: '写界面', stage: 'review' },
+  ])
+  assert.deepEqual(archived.body.unresolved, [
+    { kind: 'task', task_id: 'tsk_doing', title: '写服务端', stage: 'doing' },
+    { kind: 'task', task_id: 'tsk_review', title: '写界面', stage: 'review' },
+    { kind: 'acceptance', acceptance_id: 'acc_pending', title: '界面交付', task_id: 'tsk_review' },
+  ])
+  for (const id of ['tsk_doing', 'tsk_review']) {
+    const row = store.state.tasks[id]
+    assert.equal(row.stage, 'cancelled')
+    assert.equal(row.cancel_reason, 'project_archived')
+    assert.equal(row.task_revision, 2)
+    assert.equal(row.cancelled_at, row.updated_at)
+  }
+  assert.equal(store.state.acceptances.acc_pending.state, 'cancelled')
+  assert.equal(store.state.acceptances.acc_pending.close_reason, 'project_archived')
+  assert.equal(store.state.projects[projectId].group_binding.readonly, true)
+  assert.equal(archived.body.group.status, 'readonly_client')
+  assert.equal(archived.body.group.enforced, 'client')
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('archiving refuses a project whose Done card has no accepted record (4.5)', async () => {
+  const home = tempHome()
+  const { store, commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', { operation_key: key('create'), ...draft(seed_) })
+  const projectId = created.body.project.id
+  await run(commands, 'project.start', { operation_key: key('start'), project_id: projectId })
+  // Legacy or hand-written data: a Done card without the accepted record 4.4 writes.
+  store.state.tasks = { tsk_done: { id: 'tsk_done', project_id: projectId, title: '已交付但无记录', stage: 'done', task_revision: 2, created_at: 1 } }
+
+  await assert.rejects(
+    run(commands, 'project.archive', { operation_key: key('archive-refused'), project_id: projectId }),
+    error => error.code === 'project/acceptance-required' && error.details.tasks === 1,
+  )
+  assert.equal(store.state.projects[projectId].status, 'active')
+  assert.equal(store.state.tasks.tsk_done.stage, 'done')
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('archiving refuses while a dispatched Run is still working (4.5)', async () => {
+  const home = tempHome()
+  const { store, commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', { operation_key: key('create'), ...draft(seed_) })
+  const projectId = created.body.project.id
+  await run(commands, 'project.start', { operation_key: key('start'), project_id: projectId })
+  store.state.tasks = { tsk_doing: { id: 'tsk_doing', project_id: projectId, title: '还在做', stage: 'doing', task_revision: 1, created_at: 1 } }
+  store.state.acceptances = { acc_done: { id: 'acc_done', project_id: projectId, task_id: null, title: '上一轮', state: 'accepted', revision: 2, created_at: 90 } }
+  store.state.runs = { run_1: { id: 'run_1', project_id: projectId, task_id: 'tsk_doing', state: 'dispatched', ended_at: null } }
+
+  await assert.rejects(
+    run(commands, 'project.archive', { operation_key: key('archive-run'), project_id: projectId }),
+    error => error.code === 'project/runs-active' && error.details.runs[0].run_id === 'run_1',
+  )
+  assert.equal(store.state.projects[projectId].status, 'active')
+
+  // A Run that already failed no longer blocks; the card is closed by the archive.
+  store.state.runs.run_1.state = 'failed'
+  store.state.runs.run_1.ended_at = 99
+  const archived = await run(commands, 'project.archive', { operation_key: key('archive-after-fail'), project_id: projectId })
+  assert.equal(archived.status, 'committed')
+  assert.equal(store.state.tasks.tsk_doing.stage, 'cancelled')
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('a missing project group is marked for a check and never rebuilt by the archive (4.5)', async () => {
+  const home = tempHome()
+  const { store, commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', { operation_key: key('create'), ...draft(seed_) })
+  const projectId = created.body.project.id
+  const roomId = created.body.project.group_chat_ref
+  rooms.delete(roomId)
+
+  const archived = await run(commands, 'project.archive', { operation_key: key('archive-missing'), project_id: projectId })
+  assert.equal(archived.status, 'committed')
+  assert.equal(archived.body.group.status, 'missing')
+  assert.equal(archived.body.group.readonly, true)
+  assert.equal(store.state.projects[projectId].group_binding.status, 'pending')
+  assert.equal(store.state.projects[projectId].group_binding.readonly, true)
+  assert.equal(rooms.size, 1) // only the department room; no new project room
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('an empty project without a group archives and still carries the read-only mark (4.5)', async () => {
+  const home = tempHome()
+  const { store, commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', { operation_key: key('create'), ...draft(seed_), coordinator_employee_id: undefined })
+  const projectId = created.body.project.id
+  assert.equal(created.body.project.group_chat_ref, null)
+  assert.equal(created.body.project.group_binding.status, 'unbound')
+
+  const archived = await run(commands, 'project.archive', { operation_key: key('archive'), project_id: projectId })
+  assert.equal(archived.status, 'committed')
+  assert.equal(archived.body.group.status, 'unbound')
+  assert.equal(archived.body.group.readonly, true)
+  assert.equal(store.state.projects[projectId].group_binding.readonly, true)
+  assert.ok(store.state.projects[projectId].group_binding.checked_at > 0)
   rmSync(home, { recursive: true, force: true })
 })
 

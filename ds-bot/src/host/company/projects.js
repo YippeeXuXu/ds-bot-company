@@ -558,6 +558,61 @@ export function projectHandlers({ groups = {} } = {}) {
     'project.archive': async ({ state, payload, now }) => {
       const project = projectOf(state, text(payload.project_id, 'project_id', { max: 120 }))
       if (!OPEN.includes(project.status) && project.status !== 'paused') throw companyFail('project/state-conflict', `A project in ${project.status} cannot be archived.`, { project_id: project.id, status: project.status })
+
+      const isRow = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+      const tasks = Object.values(state.tasks ?? {})
+        .filter(task => isRow(task) && task.project_id === project.id)
+        .sort((left, right) => (left.created_at ?? 0) - (right.created_at ?? 0) || left.id.localeCompare(right.id))
+      const acceptances = Object.values(state.acceptances ?? {})
+        .filter(acceptance => isRow(acceptance) && acceptance.project_id === project.id)
+      const TERMINAL = new Set(['done', 'cancelled'])
+      const openTasks = tasks.filter(task => !TERMINAL.has(task.stage))
+      const pendingAcceptances = acceptances.filter(acceptance => acceptance.state === 'pending')
+
+      // 4.5: the final delivery has to be accepted. A card only reaches Done through
+      // `acceptance.decide`, so a Done card without an accepted record means the project
+      // was written before 4.4 or by hand; archiving it would hide work that never passed.
+      // Open cards are not a refusal: they are closed below with a reason and listed first.
+      if (tasks.some(task => task.stage === 'done') && !acceptances.some(acceptance => acceptance.state === 'accepted')) {
+        throw companyFail('project/acceptance-required', 'A Done card of this project has no accepted record, so the project cannot be archived yet.', { project_id: project.id, tasks: tasks.length, acceptances: acceptances.length })
+      }
+
+      // 4.5: a dispatched Run on a Doing card means a Bot is still working; archiving
+      // would close the card under it. The Run table arrives with 4.3, so a host without
+      // `state.runs` simply has nothing to stop.
+      const activeRuns = Object.values(state.runs ?? {})
+        .filter(run => isRow(run) && run.project_id === project.id)
+        .filter(run => run.state === 'dispatched' && (run.ended_at ?? null) === null)
+        .filter((run) => {
+          const task = run.task_id == null ? undefined : state.tasks?.[run.task_id]
+          return task === undefined || task.stage === 'doing'
+        })
+        .map(run => ({ run_id: run.id, task_id: run.task_id ?? null }))
+      if (activeRuns.length > 0) throw companyFail('project/runs-active', 'A dispatched Run is still working on this project.', { project_id: project.id, runs: activeRuns })
+
+      // What the archive closes, listed before any write. Cards and acceptance records are
+      // different objects, so a card in Review and its pending record are two lines.
+      const unresolved = [
+        ...openTasks.map(task => ({ kind: 'task', task_id: task.id, title: task.title, stage: task.stage })),
+        ...pendingAcceptances.map(acceptance => ({ kind: 'acceptance', acceptance_id: acceptance.id, title: acceptance.title, task_id: acceptance.task_id ?? null })),
+      ]
+
+      // One timestamp for the whole closure: a task's `cancelled_at` and `updated_at` must
+      // agree, and one `now()` call per row could straddle a millisecond boundary.
+      const closedAt = now()
+      const closedTasks = []
+      for (const task of openTasks) {
+        const from = task.stage
+        task.stage = 'cancelled'
+        task.cancelled_from = from
+        task.cancel_reason = 'project_archived'
+        task.cancelled_at = closedAt
+        task.hold_reason = 'none'
+        task.task_revision = (task.task_revision ?? 1) + 1
+        task.updated_at = closedAt
+        closedTasks.push({ task_id: task.id, title: task.title, stage: from })
+      }
+
       const archived = []
       const left = []
       const suspended = new Set()
@@ -565,12 +620,12 @@ export function projectHandlers({ groups = {} } = {}) {
       for (const member of Object.values(state.members).filter(entry => entry.project_id === project.id)) {
         if (member.membership_status === 'active') {
           member.membership_status = 'archived_readonly'
-          member.archived_at = now()
+          member.archived_at = closedAt
           member.archived_reason = 'project_archived'
           archived.push(member.employee_id)
         } else if (member.membership_status === 'invited') {
           member.membership_status = 'left'
-          member.left_at = now()
+          member.left_at = closedAt
           member.left_reason = 'project_archived'
           left.push(member.employee_id)
         }
@@ -583,7 +638,7 @@ export function projectHandlers({ groups = {} } = {}) {
         const employee = state.employees[employeeId]
         if (employee === undefined || employee.status !== 'active') continue
         employee.status = 'suspended'
-        employee.updated_at = now()
+        employee.updated_at = closedAt
         employee.revision = (employee.revision ?? 1) + 1
         suspendedEmployees.push(employeeId)
       }
@@ -595,12 +650,7 @@ export function projectHandlers({ groups = {} } = {}) {
       // only entry: `acceptance.submit` and `acceptance.decide` refuse an archived project,
       // so the read-side filter is for history, not for a second closure path.
       const closedAcceptances = []
-      // One timestamp for the whole closure: `decided_at` and `updated_at` must agree, and two
-      // `now()` calls can land on either side of a millisecond.
-      const closedAt = now()
-      for (const acceptance of Object.values(state.acceptances ?? {})) {
-        if (acceptance === null || typeof acceptance !== 'object' || Array.isArray(acceptance)) continue
-        if (acceptance.project_id !== project.id || acceptance.state !== 'pending') continue
+      for (const acceptance of pendingAcceptances) {
         acceptance.state = 'cancelled'
         acceptance.close_reason = 'project_archived'
         acceptance.decided_at = closedAt
@@ -608,19 +658,44 @@ export function projectHandlers({ groups = {} } = {}) {
         acceptance.revision = (acceptance.revision ?? 1) + 1
         closedAcceptances.push(acceptance.id)
       }
+
+      // 4.5: the host has no group-level read-only switch. The binding records the flag and
+      // the response says who enforces it: the client locks the composer for an archived
+      // project. A group that went missing is not rebuilt during archive (PRD D15); the
+      // binding waits for a check.
+      let groupStatus = 'unbound'
+      let groupNote = 'The project has no group chat.'
+      if (project.group_chat_ref != null) {
+        const canRead = typeof rooms.members === 'function'
+        const actual = canRead ? roomMembers(project) : undefined
+        if (!canRead) {
+          groupStatus = 'unknown'
+          groupNote = 'This host cannot read the group, so its read-only state was not checked.'
+        } else if (actual === undefined) {
+          groupStatus = 'missing'
+          groupNote = 'The project group is gone; the binding waits for a check and is not rebuilt during archive.'
+        } else {
+          groupStatus = 'readonly_client'
+          groupNote = 'This host has no read-only group switch; the client locks the composer while the project is archived.'
+        }
+        if (groupStatus === 'missing') project.group_binding = { ...project.group_binding, status: 'pending', error: 'group missing at archive' }
+      }
+      // Marked on every project, including one that never had a group: the binding is what
+      // the client reads, and a later writer must not take the project for live.
+      project.group_binding = { ...project.group_binding, readonly: true, checked_at: closedAt }
+
       project.status = 'archived'
-      project.archived_at = now()
-      project.updated_at = now()
+      project.archived_at = closedAt
+      project.updated_at = closedAt
       project.revision += 1
-      // The group stays: archived_readonly members keep read-only access, and the group is
-      // where the project's history is read (application layer refuses new turns there).
+      const group = { room_id: project.group_chat_ref ?? null, readonly: true, enforced: 'client', status: groupStatus, note: groupNote }
       return {
         aggregate_id: project.id,
-        body: { project, archived_members: archived, left_members: left, suspended_employees: suspendedEmployees },
-        events: [{ type: 'project.archived', data: { archived_members: archived, left_members: left, suspended_employees: suspendedEmployees } }],
+        body: { project, archived_members: archived, left_members: left, suspended_employees: suspendedEmployees, closed_tasks: closedTasks, unresolved, group },
+        events: [{ type: 'project.archived', data: { archived_members: archived, left_members: left, suspended_employees: suspendedEmployees, closed_tasks: closedTasks.map(task => task.task_id), group: { room_id: group.room_id, readonly: true, enforced: 'client', status: groupStatus } } }],
         // For logs and tests only. The command envelope copies `body`, `warning`, `events`
         // and `mutates`; every other key is dropped, so this closed list never reaches a
-        // response or an event (and the `archived` arrays above stay untouched).
+        // response or an event.
         closed_acceptances: closedAcceptances,
       }
     },
