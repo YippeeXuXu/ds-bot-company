@@ -13,8 +13,11 @@ import { createCommands } from './commands.js'
 import { orgHandlers } from './org.js'
 import { projectHandlers } from './projects.js'
 import { pathRedactor } from './selfreview/features.js'
+import { spawnHandlers } from './spawn.js'
 import { companyFail, createCompanyStore } from './store.js'
 import { templateHandlers } from './templates.js'
+import { nameProblem } from '../../shared/mentions.js'
+import { templateIoHandlers } from './template-io.js'
 
 // The roster side of a project group. `members` returns undefined when the group is gone,
 // which is how the project commands tell "missing" from "drifted".
@@ -40,11 +43,51 @@ const groupAdapter = (rt) => ({
   },
 })
 
+// The roster side of hiring from a template (M1b-3.4). Three host calls make one employee:
+// `createBot`, one `capabilityEndpoint` per skill, then the profile. `undo` is the way back,
+// and it answers whether the Bot is still there instead of swallowing the fact: a Bot that
+// cannot be deleted must reach the caller, not the log alone. `has` answers undefined when
+// the library cannot be read, so a host without it lets the attach call decide.
+const botRoster = (rt, warn) => ({
+  create: (options) => {
+    if (typeof rt.createBot !== 'function') throw new Error('This dsh does not create Bots.')
+    return rt.createBot(options)
+  },
+  byName: name => (typeof rt.findBot === 'function' ? rt.findBot(name) : undefined),
+  problem: name => nameProblem(name),
+  has: (name) => {
+    if (typeof rt.capabilityLibraryView !== 'function') return undefined
+    return rt.capabilityLibraryView().some(item => item?.name === name)
+  },
+  attach: async (botId, name) => {
+    if (typeof rt.capabilityEndpoint !== 'function') throw new Error('This dsh does not attach capabilities.')
+    await rt.capabilityEndpoint('bot-capability', { botId, name, attached: true })
+  },
+  undo: async (botId, attached) => {
+    for (const name of [...attached].reverse()) {
+      try {
+        await rt.capabilityEndpoint?.('bot-capability', { botId, name, attached: false })
+      } catch (error) {
+        warn('ds-bot: could not detach %s from %s: %s', name, botId, error instanceof Error ? error.message : String(error))
+      }
+    }
+    if (typeof rt.deleteBot !== 'function') return true
+    try {
+      await rt.deleteBot(botId)
+      return false
+    } catch (error) {
+      warn('ds-bot: could not delete %s: %s', botId, error instanceof Error ? error.message : String(error))
+      return true
+    }
+  },
+})
+
 export function install(rt) {
   const dir = join(rt.home, 'company')
   const now = () => Date.now()
   const warn = typeof rt.warn === 'function' ? rt.warn : (...args) => rt.ctx?.logger?.warn?.(...args)
   const store = createCompanyStore({ dir, now, warn })
+  const org = orgHandlers({ botOf: id => rt.botOf?.(id), isPrivate: id => rt.isPrivate?.(id) === true, groups: groupAdapter(rt) })
   const commands = createCommands({
     store,
     now,
@@ -52,10 +95,14 @@ export function install(rt) {
     // row carries it, contract A12), so the envelope leaves that comparison to its handler.
     rowRevisionCommands: ROW_REVISION_COMMANDS,
     handlers: {
-      ...orgHandlers({ botOf: id => rt.botOf?.(id), isPrivate: id => rt.isPrivate?.(id) === true, groups: groupAdapter(rt) }),
+      ...org,
       ...projectHandlers({ groups: groupAdapter(rt) }),
       ...acceptanceHandlers(),
       ...templateHandlers(),
+      // The profile is written by the same handler `employee.create` uses, so the
+      // one-active-profile rule and the role lists have one implementation.
+      ...spawnHandlers({ roster: botRoster(rt, warn), createEmployee: org['employee.create'], warn }),
+      ...templateIoHandlers(),
     },
   })
   const execute = commands.execute

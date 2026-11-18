@@ -51,6 +51,16 @@ const STATUS = new Map([
   ['template/name-taken', 409],
   ['template/builtin-readonly', 422],
   ['template/archived', 409],
+  // Hiring from a template (M1b-3.4): a name the team already shows, a skill the library does
+  // not hold, a host that refused the Bot, a skill that failed after the Bot existed. The last
+  // three are the request understood and refused, even though a Bot was made and undone.
+  ['employee/bot-name-taken', 409],
+  ['employee/capability-missing', 422],
+  ['employee/capability-failed', 422],
+  ['employee/bot-create-failed', 422],
+  // Template files (M1b-3.5): one bad row refuses the whole file, so a half-imported set of
+  // jobs never looks like success on the second profile.
+  ['template/import-invalid', 422],
   ['employee.bot_already_employed', 409],
   ['project/member-exists', 409],
   ['project/member-busy', 409],
