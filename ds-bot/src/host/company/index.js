@@ -9,6 +9,7 @@
 import { join } from 'node:path'
 import { ROW_REVISION_COMMANDS, acceptanceHandlers } from './acceptances.js'
 import { createCompanyApi } from './api.js'
+import { seedBuiltinTemplates } from './builtin-templates.js'
 import { createCommands } from './commands.js'
 import { orgHandlers } from './org.js'
 import { projectHandlers } from './projects.js'
@@ -96,6 +97,20 @@ export function install(rt) {
     rowRevisionCommands: ROW_REVISION_COMMANDS,
     handlers: {
       ...org,
+      // A new company is born with the nine builtin templates: they ride in the same commit
+      // as the company, so no screen ever shows a company without them. A company that is
+      // missing one (a file written before 3.6b that was read-only at startup) is topped up
+      // on the next call, which is why this one handler answers even when nothing else wrote.
+      'company.init': (args) => {
+        const outcome = org['company.init'](args)
+        const added = seedBuiltinTemplates(args.state, args.now)
+        if (added.length === 0) return outcome
+        return {
+          ...outcome,
+          mutates: true,
+          events: [...(outcome.events ?? []), { type: 'template.builtin-seeded', data: { count: added.length } }],
+        }
+      },
       ...projectHandlers({ groups: groupAdapter(rt) }),
       ...acceptanceHandlers(),
       ...templateHandlers(),
@@ -141,19 +156,37 @@ export function install(rt) {
   })
   // A company file written by an older plugin is read as the current version in memory; the
   // upgrade is saved back once, with the one event that records it, so the file stops being
-  // ambiguous. A read-only company keeps the pending upgrade for the next writable start.
+  // ambiguous. The same save tops up the builtin templates a file written before 3.6b cannot
+  // have: the nine rows are added once, in the file, not on every screen that lists them.
+  // A read-only company keeps both for the next writable start.
+  //
+  // Neither the upgrade nor the seed moves the company revision: no screen has seen the older
+  // shape, and a bump here would only make the first command after an upgrade look stale.
   const migration = store.migration()
-  if (migration !== undefined && store.readOnly() === undefined) {
+  if (store.readOnly() === undefined) {
     void (async () => {
-      try {
-        await store.commit(store.state)
-        await store.appendEvents([{
+      const draft = structuredClone(store.state)
+      const seeded = seedBuiltinTemplates(draft, now)
+      if (migration === undefined && seeded.length === 0) return
+      const events = [
+        ...(migration === undefined ? [] : [{
           id: 'evt_migrated',
-          cursor: store.state.revision,
+          cursor: draft.revision,
           at: new Date(now()).toISOString(),
           type: 'company/migrated',
           data: migration,
-        }])
+        }]),
+        ...(seeded.length === 0 ? [] : [{
+          id: 'evt_builtin_templates',
+          cursor: draft.revision,
+          at: new Date(now()).toISOString(),
+          type: 'company/builtin-templates-seeded',
+          data: { count: seeded.length },
+        }]),
+      ]
+      try {
+        await store.commit(draft)
+        await store.appendEvents(events)
         store.clearMigration()
       } catch (error) {
         warn('ds-bot: could not write the company upgrade: %s', error?.message ?? String(error))
