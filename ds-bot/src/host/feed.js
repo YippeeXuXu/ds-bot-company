@@ -20,12 +20,12 @@ export function install(rt) {
   const encoder = new TextEncoder()
   /** @type {Set<ReadableStreamDefaultController<Uint8Array>>} */
   const clients = new Set()
-  // A Request's signal is a dependent signal, and the source signal only holds it
-  // weakly. The host may not keep the Request alive once the response starts, so
-  // keep the signal here until the stream closes; otherwise the abort listener can
-  // be collected before the window aborts, and the stream never ends.
-  /** @type {Map<ReadableStreamDefaultController<Uint8Array>, AbortSignal>} */
-  const abortSignals = new Map()
+  /** @type {Map<ReadableStreamDefaultController<Uint8Array>, Request>} */
+  const requests = new Map()
+  // A Request's signal is a dependent signal and is only linked to its source while
+  // the Request exists. The host may not keep the Request alive once the response
+  // starts, so keep it here until the stream closes; otherwise aborting the window
+  // never reaches the feed and the stream does not end.
   const send = (controller, chunk) => {
     if ((controller.desiredSize ?? 0) < -MAX_QUEUED) {
       leave(controller)
@@ -33,7 +33,7 @@ export function install(rt) {
     }
     try { controller.enqueue(chunk) } catch {
       clients.delete(controller)
-      abortSignals.delete(controller)
+      requests.delete(controller)
     }
   }
   const publish = (event, data) => {
@@ -86,8 +86,8 @@ export function install(rt) {
   })
 
   const leave = (controller) => {
+    requests.delete(controller)
     clients.delete(controller)
-    abortSignals.delete(controller)
     if (clients.size === 0) writing.clear()
     try { controller.close() } catch { /* already closed or errored */ }
   }
@@ -106,9 +106,8 @@ export function install(rt) {
         },
         cancel() { leave(controller) },
       })
-      const signal = request.signal
-      abortSignals.set(controller, signal)
-      signal.addEventListener('abort', () => leave(controller), { once: true })
+      requests.set(controller, request)
+      request.signal.addEventListener('abort', () => leave(controller), { once: true })
       return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store' } })
     },
   }), 'ds-bot: live feed route')
