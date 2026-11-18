@@ -290,6 +290,31 @@ test('a profile the company layer refuses takes the Bot with it (M1b-3.4)', asyn
   assert.equal(Object.keys(env.store.state.employees).length, 0)
 })
 
+test('a refused profile that cannot delete its Bot names the Bot it leaves (M1b-3.4)', async (t) => {
+  const env = open({ failUndoDelete: true })
+  t.after(() => env.dispose())
+  const { department } = await ready(env)
+  const handlers = spawnHandlers({
+    roster: env.host.roster,
+    createEmployee: () => { throw companyFail('employee/private-bot', 'Bot is private and cannot hold a profile.') },
+  })
+
+  let refused
+  try {
+    await handlers['employee.create-from-template']({
+      state: env.store.state,
+      payload: { operation_key: 'k-hire', template_id: 'tpl_frontend', department_id: department.id, name: '蓝莓' },
+      now: () => 1,
+    })
+  } catch (error) {
+    refused = error
+  }
+
+  assert.equal(refused?.code, 'employee/private-bot', 'the refusal keeps its own code; the rollback only adds where the Bot is')
+  assert.equal(refused.details.bot_left_behind, 'bot_1')
+  assert.equal(Object.keys(env.store.state.employees).length, 0)
+})
+
 test('an archived template cannot be hired from (M1b-3.4)', async (t) => {
   const env = open()
   t.after(() => env.dispose())

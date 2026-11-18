@@ -149,6 +149,11 @@ export function spawnHandlers({ roster = {}, createEmployee, warn = () => {} } =
       } catch (error) {
         const left = await roster.undo(bot.id, attached)
         warn('ds-bot: rolling back %s after the profile was refused: %d attached, Bot left: %s', botName, attached.length, left === true)
+        // The Bot outlived the rollback: name it in the refusal, so a stray Bot is something
+        // the person is told about rather than something they find later.
+        if (left === true && error !== null && typeof error === 'object') {
+          error.details = { ...error.details, bot_left_behind: bot.id }
+        }
         throw error
       }
 
