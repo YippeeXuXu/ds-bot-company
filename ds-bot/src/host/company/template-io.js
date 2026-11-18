@@ -128,8 +128,11 @@ export function templateIoHandlers() {
         if (payload.template_ids.length > MAX_FILE_TEMPLATES) {
           throw companyFail('company/invalid', `template_ids holds at most ${MAX_FILE_TEMPLATES} ids.`, { field: 'template_ids', max: MAX_FILE_TEMPLATES })
         }
-        templates = payload.template_ids.map((id) => {
-          const template = state.templates[typeof id === 'string' ? id.trim() : '']
+        // A repeated id means one template, not two rows: keep the first mention so the
+        // requested order survives and the file never carries a template twice.
+        const ids = payload.template_ids.map(id => (typeof id === 'string' ? id.trim() : id))
+        templates = [...new Set(ids)].map((id) => {
+          const template = state.templates[typeof id === 'string' ? id : '']
           if (template === undefined || template.company_id !== company.id) throw companyFail('template/not-found', `No template ${id}.`, { template_id: id })
           if (template.status === 'archived') throw companyFail('template/archived', `Template ${template.name} is archived.`, { template_id: id })
           return template
