@@ -706,3 +706,78 @@ test('archiving closes the pending acceptances of the project (M1c)', async () =
   assert.deepEqual(Object.keys(journal.at(-1).data).sort(), ['archived_members', 'left_members', 'suspended_employees'])
   rmSync(home, { recursive: true, force: true })
 })
+
+// M1b-2.4: a dismissal is about live work, not about the row. A project that still names
+// the employee refuses it and says which post; once the work is handed over, the same
+// dismissal goes through.
+test('a project that still names an employee refuses the dismissal and says which post', async () => {
+  const home = tempHome()
+  const { commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', { operation_key: key('create'), ...draft(seed_) })
+  const project = created.body.project
+
+  const coordinator = await run(commands, 'employee.update', { operation_key: key('dismiss-alpha'), employee_id: seed_.alpha, status: 'disabled' }).catch(error => error)
+  assert.equal(coordinator.code, 'employee/still-referenced')
+  assert.deepEqual(coordinator.details.projects.map(entry => entry.roles), [['coordinator']])
+  assert.equal(coordinator.details.projects[0].project_id, project.id)
+  assert.match(coordinator.message, /coordinator on DS Bot Company M1/)
+
+  const acceptor = await run(commands, 'employee.update', { operation_key: key('dismiss-beta'), employee_id: seed_.beta, status: 'disabled' }).catch(error => error)
+  assert.equal(acceptor.code, 'employee/still-referenced')
+  assert.deepEqual(acceptor.details.projects[0].roles, ['acceptor'])
+
+  const keeper = await run(commands, 'employee.update', { operation_key: key('dismiss-keeper'), employee_id: seed_.keeper, status: 'disabled' }).catch(error => error)
+  assert.equal(keeper.code, 'employee/still-referenced')
+  assert.deepEqual(keeper.details.projects[0].roles, ['memory keeper'])
+
+  // Handing the post over is the way out: removing the coordinator empties the seat.
+  await run(commands, 'project.member.remove', { operation_key: key('remove-alpha'), project_id: project.id, employee_id: seed_.alpha })
+  const dismissed = await run(commands, 'employee.update', { operation_key: key('dismiss-alpha-again'), employee_id: seed_.alpha, status: 'disabled' })
+  assert.equal(dismissed.body.employee.status, 'disabled')
+
+  // A dismissed employee is not a member of anything any more.
+  const readded = await run(commands, 'project.member.add', { operation_key: key('add-alpha'), project_id: project.id, employee_id: seed_.alpha, role: 'executor' }).catch(error => error)
+  assert.equal(readded.code, 'employee/inactive')
+  assert.equal(readded.details.field, 'employee_id')
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('a dismissed employee cannot be named in a new project', async () => {
+  const home = tempHome()
+  const { commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const extra = await run(commands, 'employee.create', {
+    operation_key: key('delta'),
+    bot_id: 'bot_d',
+    department_id: seed_.department,
+    name: '键盘',
+  })
+  await run(commands, 'employee.update', { operation_key: key('dismiss-delta'), employee_id: extra.aggregate_id, status: 'disabled' })
+
+  const asCoordinator = await run(commands, 'project.create', {
+    operation_key: key('create-delta'),
+    ...draft(seed_, { coordinator_employee_id: extra.aggregate_id }),
+  }).catch(error => error)
+  assert.equal(asCoordinator.code, 'employee/inactive')
+  assert.equal(asCoordinator.details.field, 'coordinator_employee_id')
+
+  const asAcceptor = await run(commands, 'project.create', {
+    operation_key: key('create-delta-acceptor'),
+    ...draft(seed_, { acceptance_actor: extra.aggregate_id }),
+  }).catch(error => error)
+  assert.equal(asAcceptor.code, 'employee/inactive')
+  assert.equal(asAcceptor.details.field, 'acceptance_actor')
+
+  const asKeeper = await run(commands, 'project.create', {
+    operation_key: key('create-delta-keeper'),
+    ...draft(seed_, { memory_employee_id: extra.aggregate_id }),
+  }).catch(error => error)
+  assert.equal(asKeeper.code, 'employee/inactive')
+  assert.equal(asKeeper.details.field, 'memory_employee_id')
+
+  // Nothing was written by any of the three refusals.
+  const projects = await run(commands, 'project.list', { operation_key: key('list') })
+  assert.equal(projects.body.projects.length, 0)
+  rmSync(home, { recursive: true, force: true })
+})

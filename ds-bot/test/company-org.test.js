@@ -204,3 +204,90 @@ test('a lead has to belong to the department, and a new department has none yet'
   )
   rmSync(home, { recursive: true, force: true })
 })
+
+// M1b-2.4: the four refusals the configuration screen shows inline, each with the field
+// and the names a screen needs to say what happened. The codes are the contract: the
+// screen maps them, it does not read English.
+test('the four configuration refusals carry a stable code and the field to show', async () => {
+  const home = tempHome()
+  const { commands } = open(home)
+  await company(commands)
+  const product = await department(commands, '产品')
+
+  // 1. A department name is unique, whatever the case and the padding.
+  const clash = await department(commands, ' 产品 ').catch(error => error)
+  assert.equal(clash.code, 'department.name-taken')
+  assert.equal(clash.details.field, 'name')
+
+  // 2. A Bot holds one active profile; hiring it twice says which Bot.
+  await run(commands, 'employee.create', { operation_key: 'k-hire', bot_id: 'bot_a', department_id: product.aggregate_id, name: '小蓝' })
+  const taken = await run(commands, 'employee.create', { operation_key: 'k-hire-again', bot_id: 'bot_a', department_id: product.aggregate_id, name: '小蓝2' }).catch(error => error)
+  assert.equal(taken.code, 'employee.bot_already_employed')
+  assert.equal(taken.details.field, 'bot_id')
+  assert.equal(taken.details.bot_id, 'bot_a')
+
+  // 3. A Bot the team does not have is refused before anything is written.
+  const ghost = await run(commands, 'employee.create', { operation_key: 'k-ghost', bot_id: 'bot_ghost', department_id: product.aggregate_id, name: 'Ghost' }).catch(error => error)
+  assert.equal(ghost.code, 'employee/unknown-bot')
+  assert.equal(ghost.details.bot_id, 'bot_ghost')
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('an employee without live work is dismissed, listed apart, and re-activated', async () => {
+  const home = tempHome()
+  const { commands } = open(home)
+  await company(commands)
+  const dep = await department(commands, '产品')
+  const hired = await run(commands, 'employee.create', { operation_key: 'k-hire', bot_id: 'bot_a', department_id: dep.aggregate_id, name: '小蓝' })
+
+  const dismissed = await run(commands, 'employee.update', { operation_key: 'k-dismiss', employee_id: hired.aggregate_id, status: 'disabled' })
+  assert.equal(dismissed.status, 'committed')
+  assert.equal(dismissed.body.employee.status, 'disabled')
+  assert.equal(dismissed.body.employee.project_id, null)
+
+  // The profile keeps its row and its history; only the list of who is active changes.
+  const disabled = await run(commands, 'employee.list', { operation_key: 'k-list-disabled', status: 'disabled' })
+  assert.equal(disabled.body.employees.length, 1)
+  const active = await run(commands, 'employee.list', { operation_key: 'k-list-active', status: 'active' })
+  assert.equal(active.body.employees.length, 0)
+
+  const back = await run(commands, 'employee.update', { operation_key: 'k-rehire', employee_id: hired.aggregate_id, status: 'active' })
+  assert.equal(back.body.employee.status, 'active')
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('a dismissal is refused while the employee leads a department, and says which one', async () => {
+  const home = tempHome()
+  const { commands } = open(home)
+  await company(commands)
+  const dep = await department(commands, '产品')
+  const hired = await run(commands, 'employee.create', { operation_key: 'k-hire', bot_id: 'bot_a', department_id: dep.aggregate_id, name: '小蓝' })
+  await run(commands, 'department.update', { operation_key: 'k-lead', department_id: dep.aggregate_id, lead_employee_id: hired.aggregate_id })
+
+  const refusal = await run(commands, 'employee.update', { operation_key: 'k-dismiss', employee_id: hired.aggregate_id, status: 'disabled' }).catch(error => error)
+  assert.equal(refusal.code, 'employee/still-referenced')
+  assert.equal(refusal.details.employee_id, hired.aggregate_id)
+  assert.deepEqual(refusal.details.departments.map(entry => entry.role), ['lead'])
+  assert.match(refusal.message, /lead of 产品/)
+  // Nothing was written by the refusal.
+  assert.equal((await run(commands, 'employee.list', { operation_key: 'k-list' })).body.employees[0].status, 'active')
+
+  await run(commands, 'department.update', { operation_key: 'k-lead-clear', department_id: dep.aggregate_id, lead_employee_id: null })
+  const dismissed = await run(commands, 'employee.update', { operation_key: 'k-dismiss-again', employee_id: hired.aggregate_id, status: 'disabled' })
+  assert.equal(dismissed.body.employee.status, 'disabled')
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('an unknown status is refused with the values that are allowed', async () => {
+  const home = tempHome()
+  const { commands } = open(home)
+  await company(commands)
+  const dep = await department(commands)
+  const hired = await run(commands, 'employee.create', { operation_key: 'k-hire', bot_id: 'bot_a', department_id: dep.aggregate_id, name: '小蓝' })
+
+  const refusal = await run(commands, 'employee.update', { operation_key: 'k-fired', employee_id: hired.aggregate_id, status: 'fired' }).catch(error => error)
+  assert.equal(refusal.code, 'company/invalid')
+  assert.equal(refusal.details.field, 'status')
+  assert.deepEqual(refusal.details.allowed, ['active', 'disabled'])
+  rmSync(home, { recursive: true, force: true })
+})

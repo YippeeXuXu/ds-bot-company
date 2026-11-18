@@ -60,6 +60,47 @@ const employeeOf = (state, id) => {
 
 const activeProfileOf = (state, botId) => Object.values(state.employees).find(profile => profile.status === 'active' && profile.bot_id === botId)
 
+// M1b-2.4: an employee may be dismissed, and a dismissal must not leave a project, a
+// group or a department pointing at a row nobody serves. Everything that still names the
+// profile is collected here, so the refusal can say which places to hand over first.
+// 'suspended' is set by project.archive and read back like this; only these two are
+// requestable through employee.update.
+export const EMPLOYEE_STATUS = ['active', 'disabled']
+
+// A project that is over keeps its history: only a live project is a place to hand over.
+const liveProjectOf = project => !['archived', 'closed', 'cancelled', 'done'].includes(project.status)
+
+const dismissalReferencesOf = (state, profile) => {
+  const departments = Object.values(state.departments)
+    .filter(department => department.status !== 'archived' && department.lead_employee_id === profile.id)
+    .map(department => ({ department_id: department.id, name: department.name, role: 'lead' }))
+  const projects = []
+  for (const project of Object.values(state.projects)) {
+    if (!liveProjectOf(project)) continue
+    const roles = []
+    const assignment = project.coordinator_assignment_id == null ? undefined : state.members[project.coordinator_assignment_id]
+    if (assignment !== undefined && assignment.employee_id === profile.id && assignment.membership_status === 'active') roles.push('coordinator')
+    if (project.acceptance_actor === profile.id) roles.push('acceptor')
+    if (project.memory_assignment_id === profile.id) roles.push('memory keeper')
+    const membership = Object.values(state.members).find(member => member.project_id === project.id && member.employee_id === profile.id && ['active', 'invited'].includes(member.membership_status))
+    if (membership !== undefined && !roles.includes(membership.role)) roles.push(membership.role)
+    if (roles.length > 0) projects.push({ project_id: project.id, name: project.name, status: project.status, roles })
+  }
+  return { projects, departments }
+}
+
+const stillReferenced = (state, profile) => {
+  const references = dismissalReferencesOf(state, profile)
+  if (references.projects.length === 0 && references.departments.length === 0) return undefined
+  const places = [
+    ...references.departments.map(department => `lead of ${department.name}`),
+    ...references.projects.map(project => `${project.roles.join(' and ')} on ${project.name}`),
+  ]
+  const named = places.slice(0, 3).join('; ')
+  const rest = places.length > 3 ? `; and ${places.length - 3} more` : ''
+  return companyFail('employee/still-referenced', `Employee ${profile.name} still holds work: ${named}${rest}. Hand it over before dismissing them.`, { employee_id: profile.id, ...references })
+}
+
 // A department lead is one of its own active employees. The field is a pointer, not a
 // copy of a name: an employee who leaves the department must not keep the post, and the
 // check lives here so every caller of department.update gets it (PRD §13).
@@ -346,9 +387,35 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false, 
       }
       if (payload.acceptance_role !== undefined) profile.acceptance_role = acceptanceRole(payload.acceptance_role)
       if (payload.conversation_mode !== undefined) profile.conversation_mode = conversationMode(payload.conversation_mode, EMPLOYEE_MODES, 'conversation_mode')
+      if (payload.status !== undefined) {
+        const next = text(payload.status, 'status', { max: 20 })
+        if (!EMPLOYEE_STATUS.includes(next)) throw companyFail('company/invalid', `status is one of ${EMPLOYEE_STATUS.join(', ')}.`, { field: 'status', allowed: EMPLOYEE_STATUS })
+        if (next !== profile.status) {
+          if (next === 'disabled') {
+            // A dismissed employee stays on the roster and in history; only live work has
+            // to be handed over first, and the refusal names it (M1b-2.4).
+            const refusal = stillReferenced(state, profile)
+            if (refusal !== undefined) throw refusal
+            profile.status = 'disabled'
+            profile.project_id = null
+          } else {
+            // Hiring is refused while a Bot holds an active profile; re-activating an old
+            // profile takes the same rule, so the roster never has two active rows per Bot.
+            const holder = activeProfileOf(state, profile.bot_id)
+            if (holder !== undefined && holder.id !== profile.id) {
+              throw companyFail('employee.bot_already_employed', `Bot ${profile.bot_id} already holds an active employee profile.`, { field: 'bot_id', bot_id: profile.bot_id, employee_id: holder.id })
+            }
+            profile.status = 'active'
+          }
+        }
+      }
       profile.revision += 1
       profile.updated_at = now()
-      return { aggregate_id: profile.id, body: { employee: profile }, events: [{ type: 'employee.updated', data: {} }] }
+      return {
+        aggregate_id: profile.id,
+        body: { employee: profile },
+        events: [{ type: 'employee.updated', data: payload.status === undefined ? {} : { status: profile.status } }],
+      }
     },
 
     'employee.list': ({ state, payload }) => {
