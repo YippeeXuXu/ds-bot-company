@@ -9,6 +9,20 @@ import { t } from './i18n.js'
 
 const archived = item => item?.status === 'archived'
 
+// The server accepts exactly these four acceptance roles. Profiles written by an older
+// version can still carry `member` or `reviewer`; the edit panel must not send one back,
+// or a rename or a department move would be refused with a 422 about a field the person
+// never touched. An unknown value therefore reads as "keep what is there".
+export const ACCEPTANCE_ROLES = ['executor', 'coordinator', 'acceptor', 'memory_keeper']
+export const editedAcceptanceRole = value => (ACCEPTANCE_ROLES.includes(value) ? value : '')
+// The edit panel's save payload. A role left on "keep the current role" is not sent at
+// all, so an employee with an older role can still be renamed or moved between departments.
+export const employeeUpdatePayload = ({ employeeId, name, departmentId, acceptanceRole }) => {
+  const change = { employee_id: employeeId, name, department_id: departmentId }
+  if (acceptanceRole) change.acceptance_role = acceptanceRole
+  return change
+}
+
 // A refusal from the server carries a stable code. The ones a person can act on get a
 // sentence in their own language; anything unknown keeps the server's own words.
 export const companyErrorText = failure => {
@@ -271,6 +285,9 @@ export function CompanyPageView(props) {
   const editPanel = () => {
     if (!editingEmployee) return null
     const roles = [['executor', t('Executor')], ['coordinator', t('Coordinator')], ['acceptor', t('Independent acceptor')], ['memory_keeper', t('Memory keeper')]]
+    // A profile from an older version holds a role outside the four. Show that honestly as
+    // "keep the current role" instead of a wrong first option that state never agrees with.
+    const roleOptions = props.editRole ? roles : [['', t('Keep the current role')], ...roles]
     return h('div', { className: 'bc-co-create bc-co-edit', role: 'dialog', 'aria-label': t('Edit employee') },
       h('div', { className: 'bc-co-pop-head' },
         h('strong', null, t('Edit employee')),
@@ -280,7 +297,7 @@ export function CompanyPageView(props) {
         h('label', { className: 'bc-field' }, t('Employee display name'),
           h('input', { value: props.editName, maxLength: 80, onChange: event => props.onEditName(event.target.value), placeholder: t('Employee display name') })),
         h('label', { className: 'bc-field' }, t('Employee role'),
-          h('select', { value: props.editRole, onChange: event => props.onEditRole(event.target.value) }, roles.map(([value, label]) => h('option', { key: value, value }, label)))),
+          h('select', { value: props.editRole, onChange: event => props.onEditRole(event.target.value) }, roleOptions.map(([value, label]) => h('option', { key: value || 'keep', value }, label)))),
         h('label', { className: 'bc-field' }, t('Department'),
           h('select', { value: props.editDept, onChange: event => props.onEditDept(event.target.value) }, departments.map(item => h('option', { key: item.id, value: item.id }, item.name))))),
       props.editError ? h('p', { className: 'bc-exception', role: 'alert' }, props.editError) : null,
@@ -414,7 +431,7 @@ export function CompanyPage(props) {
     closeDraft()
     setEditing(employee.id)
     setEditName(employee.name ?? '')
-    setEditRole(employee.acceptance_role ?? 'executor')
+    setEditRole(editedAcceptanceRole(employee.acceptance_role))
     setEditDept(employee.department_id ?? '')
     setEditError('')
     setEditRefusal(null)
@@ -426,12 +443,12 @@ export function CompanyPage(props) {
     setEditError('')
     setEditRefusal(null)
     try {
-      await props.onCommand('employee.update', {
-        employee_id: editing,
+      await props.onCommand('employee.update', employeeUpdatePayload({
+        employeeId: editing,
         name: editName.trim(),
-        acceptance_role: editRole,
-        department_id: editDept,
-      })
+        departmentId: editDept,
+        acceptanceRole: editRole,
+      }))
       closeEdit()
     } catch (failure) { setEditError(companyErrorText(failure)) }
     finally { setEditBusy(false) }

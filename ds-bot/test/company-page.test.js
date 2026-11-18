@@ -10,7 +10,7 @@ import { build } from 'esbuild'
 const PLUGIN = dirname(dirname(fileURLToPath(import.meta.url)))
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { CompanyPageView, COMPANY_PAGE_CSS, botOpenable, companyErrorText } from './src/client/company-page.js'",
+    contents: "export { CompanyPageView, COMPANY_PAGE_CSS, botOpenable, companyErrorText, editedAcceptanceRole, employeeUpdatePayload } from './src/client/company-page.js'",
     resolveDir: PLUGIN,
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -26,7 +26,7 @@ const react = {
 const module = { exports: {} }
 const sandbox = { module, exports: module.exports, require: name => (name === 'react' ? react : {}), window: {} }
 runInNewContext(outputFiles[0].text, sandbox)
-const { CompanyPageView, COMPANY_PAGE_CSS, botOpenable, companyErrorText } = module.exports
+const { CompanyPageView, COMPANY_PAGE_CSS, botOpenable, companyErrorText, editedAcceptanceRole, employeeUpdatePayload } = module.exports
 
 const text = node => {
   if (node === null || node === undefined || node === false || node === true) return ''
@@ -278,6 +278,31 @@ test('the edit panel carries the profile fields and asks the surface to save', (
   assert.deepEqual(saved, ['save'])
   const empty = view({ openDept: 'dep_1', editing: 'emp_1', editName: ' ', editRole: 'coordinator', editDept: 'dep_1' })
   assert.equal(button(byClass(empty, 'bc-co-edit')[0], 'Save').props.disabled, true)
+})
+
+test('a profile written by an older version offers to keep its role, not a wrong first one', () => {
+  assert.equal(editedAcceptanceRole('member'), '')
+  assert.equal(editedAcceptanceRole('reviewer'), '')
+  assert.equal(editedAcceptanceRole(undefined), '')
+  assert.equal(editedAcceptanceRole('acceptor'), 'acceptor')
+  const tree = view({ openDept: 'dep_1', editing: 'emp_1', editName: '键盘', editRole: '', editDept: 'dep_1', data: model({ employees: [employee({ acceptance_role: 'member' })] }) })
+  const select = collect(byClass(tree, 'bc-co-edit')[0], node => node.type === 'select')[0]
+  const options = collect(select, node => node.type === 'option')
+  assert.equal(options.length, 5)
+  assert.equal(options[0].props.value, '')
+  assert.match(text(options[0]), /Keep the current role/)
+  const current = view({ openDept: 'dep_1', editing: 'emp_1', editName: '键盘', editRole: 'coordinator', editDept: 'dep_1' })
+  const currentSelect = collect(byClass(current, 'bc-co-edit')[0], node => node.type === 'select')[0]
+  assert.equal(collect(currentSelect, node => node.type === 'option').length, 4)
+})
+
+test('a save leaves an untouched legacy role out of the payload, and sends a chosen one', () => {
+  // The bundle runs in its own VM realm, so compare as data rather than by prototype.
+  const payload = input => JSON.stringify(employeeUpdatePayload(input))
+  assert.equal(payload({ employeeId: 'emp_1', name: '键盘', departmentId: 'dep_2', acceptanceRole: '' }),
+    JSON.stringify({ employee_id: 'emp_1', name: '键盘', department_id: 'dep_2' }))
+  assert.equal(payload({ employeeId: 'emp_1', name: '键盘', departmentId: 'dep_1', acceptanceRole: 'memory_keeper' }),
+    JSON.stringify({ employee_id: 'emp_1', name: '键盘', department_id: 'dep_1', acceptance_role: 'memory_keeper' }))
 })
 
 test('suspending and reactivating both run through the page status handler', () => {

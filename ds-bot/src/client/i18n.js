@@ -1300,6 +1300,7 @@ Object.assign(ZH, HOST_ZH, {
   'Choose a department': '选择部门', 'Employee display name (optional)': '员工显示名（可选）',
   'Use Bot name': '使用 Bot 名称', 'Add employee': '添加员工',
   'Employee role': '员工职责', 'Independent acceptor': '独立验收 Bot',
+  'Keep the current role': '保留原角色（旧版）',
   'Edit employee': '编辑员工', 'Edit {name}': '编辑{name}', 'Save': '保存',
   Active: '在职', Invited: '已邀请', Left: '已离开', Removed: '已移出', 'Left (read-only)': '已离开（只读）',
   'Change role of {name}': '更改 {name} 的项目角色', 'Remove member': '移出项目', 'Confirm removal': '确认移出',

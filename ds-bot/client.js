@@ -1447,6 +1447,7 @@ Object.assign(ZH, HOST_ZH, {
   "Add employee": "添加员工",
   "Employee role": "员工职责",
   "Independent acceptor": "独立验收 Bot",
+  "Keep the current role": "保留原角色（旧版）",
   "Edit employee": "编辑员工",
   "Edit {name}": "编辑{name}",
   "Save": "保存",
@@ -11117,6 +11118,13 @@ var SIDEBAR_CSS = `
 // src/client/company-page.js
 var import_react20 = require("react");
 var archived = (item) => item?.status === "archived";
+var ACCEPTANCE_ROLES = ["executor", "coordinator", "acceptor", "memory_keeper"];
+var editedAcceptanceRole = (value) => ACCEPTANCE_ROLES.includes(value) ? value : "";
+var employeeUpdatePayload = ({ employeeId, name, departmentId, acceptanceRole }) => {
+  const change = { employee_id: employeeId, name, department_id: departmentId };
+  if (acceptanceRole) change.acceptance_role = acceptanceRole;
+  return change;
+};
 var companyErrorText = (failure) => {
   const known = {
     "department.name-taken": "A department with this name already exists.",
@@ -11448,6 +11456,7 @@ function CompanyPageView(props) {
   const editPanel = () => {
     if (!editingEmployee) return null;
     const roles = [["executor", t("Executor")], ["coordinator", t("Coordinator")], ["acceptor", t("Independent acceptor")], ["memory_keeper", t("Memory keeper")]];
+    const roleOptions2 = props.editRole ? roles : [["", t("Keep the current role")], ...roles];
     return (0, import_react20.createElement)(
       "div",
       { className: "bc-co-create bc-co-edit", role: "dialog", "aria-label": t("Edit employee") },
@@ -11471,7 +11480,7 @@ function CompanyPageView(props) {
           "label",
           { className: "bc-field" },
           t("Employee role"),
-          (0, import_react20.createElement)("select", { value: props.editRole, onChange: (event) => props.onEditRole(event.target.value) }, roles.map(([value, label2]) => (0, import_react20.createElement)("option", { key: value, value }, label2)))
+          (0, import_react20.createElement)("select", { value: props.editRole, onChange: (event) => props.onEditRole(event.target.value) }, roleOptions2.map(([value, label2]) => (0, import_react20.createElement)("option", { key: value || "keep", value }, label2)))
         ),
         (0, import_react20.createElement)(
           "label",
@@ -11655,7 +11664,7 @@ function CompanyPage(props) {
     closeDraft();
     setEditing(employee.id);
     setEditName(employee.name ?? "");
-    setEditRole(employee.acceptance_role ?? "executor");
+    setEditRole(editedAcceptanceRole(employee.acceptance_role));
     setEditDept(employee.department_id ?? "");
     setEditError("");
     setEditRefusal(null);
@@ -11671,12 +11680,12 @@ function CompanyPage(props) {
     setEditError("");
     setEditRefusal(null);
     try {
-      await props.onCommand("employee.update", {
-        employee_id: editing,
+      await props.onCommand("employee.update", employeeUpdatePayload({
+        employeeId: editing,
         name: editName.trim(),
-        acceptance_role: editRole,
-        department_id: editDept
-      });
+        departmentId: editDept,
+        acceptanceRole: editRole
+      }));
       closeEdit();
     } catch (failure) {
       setEditError(companyErrorText(failure));
