@@ -105,8 +105,6 @@ export const taskActionCommand = (action, task) => {
     start: ['task.dispatch', base],
     'to-ready': ['task.move', { ...base, to: 'ready' }],
     submit: ['task.submit', base],
-    accept: ['acceptance.decide', base],
-    return: ['acceptance.decide', base],
     reopen: ['task.reopen', base],
   }[action] ?? null
 }

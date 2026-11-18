@@ -1375,6 +1375,8 @@ Object.assign(ZH, HOST_ZH, {
   'Closed on archive': '归档时关闭',
   'Acceptance: {title}': '验收：{title}',
   'Will be closed': '将被关闭',
+  'Checking tasks and acceptances…': '正在核对任务与验收…',
+  'The archive check could not be loaded.': '无法读取归档清单。',
   'dependency': '项依赖',
   'dependencies': '项依赖',
   'Details': '详情',

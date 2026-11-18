@@ -278,8 +278,8 @@ export function acceptanceHandlers() {
       if (project === undefined) throw companyFail('project/not-found', `No project ${projectId}.`, { project_id: projectId })
       const taskId = payload.task_id === undefined || payload.task_id === null ? null : text(payload.task_id, 'task_id', 120)
       const wanted = payload.state === undefined ? null : text(payload.state, 'state', 20)
-      if (wanted !== null && !['pending', 'accepted', 'returned'].includes(wanted)) {
-        throw companyFail('company/invalid', 'state is one of pending, accepted, returned.', { field: 'state', allowed: ['pending', 'accepted', 'returned'] })
+      if (wanted !== null && !['pending', 'accepted', 'returned', 'cancelled', 'expired'].includes(wanted)) {
+        throw companyFail('company/invalid', 'state is one of pending, accepted, returned, cancelled, expired.', { field: 'state', allowed: ['pending', 'accepted', 'returned', 'cancelled', 'expired'] })
       }
       const limit = payload.limit === undefined ? 50 : payload.limit
       if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
