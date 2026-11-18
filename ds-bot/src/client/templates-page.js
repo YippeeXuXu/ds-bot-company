@@ -1,5 +1,5 @@
 import { createElement as h, useEffect, useRef, useState } from 'react'
-import { ACCEPTANCE_ROLES, companyErrorText } from './company-page.js'
+import { companyErrorText } from './company-page.js'
 import { t } from './i18n.js'
 
 // 3.3 / 3.4 — the employee template library. A template is a reusable job

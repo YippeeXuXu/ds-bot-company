@@ -27,7 +27,7 @@ const module = { exports: {} }
 const sandbox = { module, exports: module.exports, require: name => (name === 'react' ? react : {}), window: {} }
 runInNewContext(outputFiles[0].text, sandbox)
 const {
-  TemplatesPageView, TEMPLATES_CSS, sortedTemplates, overrideText,
+  TemplatesPageView, TEMPLATES_CSS, sortedTemplates,
   templateUpdatePayload, templateCopyPayload, createBotPayload, templateErrorText,
 } = module.exports
 
@@ -239,7 +239,6 @@ test('the preview shows the library but offers no write actions', () => {
 test('the edit form starts from the template and cannot be saved without a name', () => {
   const form = { name: '前端工程师', role: '前端工程师', instructions: '写页面', model: 'deepseek/deepseek-v4', effort: 'medium', skills: ['browser'] }
   const tree = TemplatesPageView(props({ form }))
-  const inputs = byClass(tree, 'bc-tpl-form')[0]
   const chips = byClass(tree, 'bc-tpl-skills-edit')[0]
   const pressed = collect(chips, node => node.type === 'button').filter(node => node.props['aria-pressed'])
   assert.equal(pressed.length, 1)
