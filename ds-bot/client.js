@@ -1528,7 +1528,7 @@ Object.assign(ZH, HOST_ZH, {
   "Results": "成果",
   "Run history": "执行历史",
   "Discussion": "关联讨论",
-  "Draft": "草稿",
+  "Draft": "待启动",
   "Doing": "执行中",
   "Review": "待验收",
   "Done": "完成",

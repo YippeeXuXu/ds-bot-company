@@ -1381,7 +1381,7 @@ Object.assign(ZH, HOST_ZH, {
   'Results': '成果',
   'Run history': '执行历史',
   'Discussion': '关联讨论',
-  'Draft': '草稿', 'Doing': '执行中', 'Review': '待验收', 'Done': '完成',
+  'Draft': '待启动', 'Doing': '执行中', 'Review': '待验收', 'Done': '完成',
   'Not started': '未开始', 'Waiting for acceptance': '待验收', Preview: '预览',
   'Done is only written by an acceptance decision. Submit this task for review first.': '只有验收决定能把任务置为「完成」。先把它提交验收。',
   'This task cannot move that way. Reload and try again.': '这张任务不能这样移动。刷新后再试。',
