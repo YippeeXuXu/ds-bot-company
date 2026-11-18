@@ -288,7 +288,7 @@ test('A12: a stale row revision is refused and the acceptance keeps its pending 
 
   const events = eventsOf(home)
   const decidedEvent = events.find(event => event.type === 'acceptance.decided')
-  assert.deepEqual(decidedEvent.data, { acceptance_id: 'acc_1', project_id: 'prj_1', decision: 'accept' })
+  assert.deepEqual(decidedEvent.data, { acceptance_id: 'acc_1', project_id: 'prj_1', decision: 'accept', task_id: null, task_stage: null })
 
   const twice = await api.command({ command: 'acceptance.decide', operation_key: 'decide-4', expected_revision: 4, payload: { acceptance_id: 'acc_1', decision: 'return' } })
   assert.equal(twice.status, 409)
@@ -309,7 +309,7 @@ test('a decision writes the project onto its event, so the project page can find
   const decided = await api.command({ command: 'acceptance.decide', operation_key: 'decide-project', expected_revision: 3, payload: { acceptance_id: 'acc_1', decision: 'return', opinion: '补测试' } })
   assert.equal(decided.status, 200)
   const event = eventsOf(home).findLast(entry => entry.type === 'acceptance.decided')
-  assert.deepEqual(event.data, { acceptance_id: 'acc_1', project_id: 'prj_1', decision: 'return' })
+  assert.deepEqual(event.data, { acceptance_id: 'acc_1', project_id: 'prj_1', decision: 'return', task_id: null, task_stage: null })
 
   const page = await api.events({ project_id: 'prj_1' })
   assert.deepEqual(page.body.events.map(entry => entry.type), ['acceptance.decided'])
@@ -361,7 +361,7 @@ test('B: a submitted acceptance names the employee on its event, and the project
 
   // The write carries the submitting employee, so a reader needs no second lookup.
   const written = eventsOf(home).findLast(entry => entry.type === 'acceptance.submitted')
-  assert.deepEqual(written.data, { acceptance_id: acceptanceId, project_id: 'prj_1', employee_id: 'emp_1' })
+  assert.deepEqual(written.data, { acceptance_id: acceptanceId, project_id: 'prj_1', employee_id: 'emp_1', task_id: null })
 
   // The project page gets the same line back through the filtered read.
   const page = await api.events({ project_id: 'prj_1' })
