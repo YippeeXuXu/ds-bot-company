@@ -16,7 +16,7 @@ const { JSDOM } = createRequire(join(process.env.DSH_HARNESS ?? join(PLUGIN, '..
 // fixtures retain refs across commits and run their layout effects after each render.
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { SHELL_CSS } from './src/client/styles.js'\nexport { SIDEBAR_CSS, TeamSidebar } from './src/client/sidebar.js'",
+    contents: "export { SHELL_CSS } from './src/client/styles.js'\nexport { SIDEBAR_CSS, TeamSidebar, TitleToggle } from './src/client/sidebar.js'",
     resolveDir: PLUGIN,
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -38,11 +38,11 @@ const module = { exports: {} }
 const viewport = { innerWidth: 1280 }
 const sandbox = {
   module, exports: module.exports,
-  require: name => (name === 'react' ? react : {}),
+  require: name => (name === 'react' ? react : name === 'react-dom' ? { createPortal: node => node } : {}),
   window: viewport,
 }
 runInNewContext(outputFiles[0].text, sandbox)
-const { SHELL_CSS, SIDEBAR_CSS, TeamSidebar } = module.exports
+const { SHELL_CSS, SIDEBAR_CSS, TeamSidebar, TitleToggle } = module.exports
 
 function navigationSidebar(wide, { leftDrawer = false } = {}) {
   const calls = []
@@ -373,6 +373,30 @@ test('the column\'s top row hides it, on the rail too, and its edge is a drag gr
   assert.equal(find(hidden, node => node.type?.name === 'LeftColumn'), undefined)
   const toggle = find(hidden, node => node.type?.name === 'TitleToggle')
   assert.equal(toggle.props.hidden, true)
+  // 变异：把 TitleToggle 改成只在 Windows 标题栏下渲染，这里找不到节点，测试就必须红。
+  // 浮起的开关点下去必须走同一条收起/展开动作。
+  toggle.props.onToggle()
+  assert.deepEqual(calls, ['toggle', 'toggle', 'toggle'])
+})
+
+// 变异守卫：把 TitleToggle 改成只在 Windows 标题栏下渲染（`if (!titlebar) return null`），
+// 这条就取不到按钮而变红；普通窗口里浮起的「展开侧边栏」必须真的在。
+test('off a Windows title bar the floating switch is a button that brings the column back', () => {
+  const { document } = new JSDOM('<!doctype html><html><body></body></html>').window
+  sandbox.document = document
+  try {
+    const calls = []
+    const button = TitleToggle({ hidden: true, onToggle: () => calls.push('toggle') })
+    assert.equal(button?.type, 'button')
+    assert.equal(button.props.className, 'bt-round bt-title-toggle')
+    assert.equal(button.props['aria-label'], 'Expand sidebar')
+    button.props.onClick()
+    assert.deepEqual(calls, ['toggle'])
+    // 展开的那一栏自带收起按钮，浮起的开关只在隐藏时出现。
+    assert.equal(TitleToggle({ hidden: false, onToggle() {} }), null)
+  } finally {
+    delete sandbox.document
+  }
 })
 
 test('the logo row takes no room in an open sidebar under a Windows title bar', () => {
