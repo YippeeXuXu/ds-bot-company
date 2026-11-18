@@ -148,19 +148,37 @@ export function CompanySurface({ page, actions, roster }) {
     setTasksError('')
     // Tasks live behind their own read command: the project answer does not carry the
     // board, and the board must tell an empty project from a failed read. A reviewed card
-    // needs its pending acceptance to offer Accept/Return, so one extra read attaches the
-    // records by task id; that read failing leaves the board usable but the decision locked.
+    // needs its pending acceptance to offer Accept/Return, and a Doing card needs its runs
+    // to show execution history and offer run.fail, so two extra reads attach the records
+    // by task id; either read failing leaves the board usable, only that part locked.
     void Promise.all([
       call('company-command', { command: 'task.list', payload: { project_id: selected, operation_key: `task-list-${freshKey()}` } }),
       call('company-command', { command: 'acceptance.list', payload: { project_id: selected, state: 'pending', limit: 200, operation_key: `acceptance-list-${freshKey()}` } })
         .catch(() => null),
+      call('company-command', { command: 'run.list', payload: { project_id: selected, limit: 200, operation_key: `run-list-${freshKey()}` } })
+        .catch(() => null),
     ])
-      .then(([result, acceptanceResult]) => {
+      .then(([result, acceptanceResult, runResult]) => {
         if (controller.signal.aborted) return
         const pending = new Map((acceptanceResult?.body?.acceptances ?? [])
           .filter(row => row.task_id)
           .map(row => [row.task_id, row]))
-        setTasks((result?.body?.tasks ?? []).map(task => pending.has(task.id) ? { ...task, acceptance: pending.get(task.id) } : task))
+        const runsByTask = new Map()
+        for (const run of runResult?.body?.runs ?? []) {
+          if (!run?.task_id) continue
+          const list = runsByTask.get(run.task_id) ?? []
+          list.push(run)
+          runsByTask.set(run.task_id, list)
+        }
+        setTasks((result?.body?.tasks ?? []).map(task => {
+          const runs = runsByTask.get(task.id) ?? []
+          const latest = runs[0]
+          return {
+            ...task,
+            ...(pending.has(task.id) ? { acceptance: pending.get(task.id) } : {}),
+            ...(runs.length ? { runs, ...(latest?.state === 'failed' ? { last_run_status: 'failed' } : {}) } : {}),
+          }
+        }))
       })
       .catch(failure => { if (!controller.signal.aborted) setTasksError(message(failure)) })
     void call('company-model', { project_id: selected }, controller.signal)

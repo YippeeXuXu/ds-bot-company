@@ -1516,6 +1516,16 @@ Object.assign(ZH, HOST_ZH, {
   "Reopen task": "恢复任务",
   "Accept task": "通过验收",
   "Return task": "退回任务",
+  "Mark dispatch failed": "标记派单失败",
+  "Why did the dispatch fail?": "这次派单为什么失败？",
+  "Dispatch failed": "派单失败",
+  Dispatched: "已派单",
+  "This task has no dispatch to mark failed.": "这张任务还没有派单记录，无法标记失败。",
+  "This task was moved to Doing without a dispatch, so there is no run to mark failed.": "这张任务是直接移到「执行中」的，没有派单记录可标记失败。",
+  "The brief did not reach the Bot. The task is still Ready; try again or mark the dispatch failed.": "任务简报没有送达 Bot，任务仍在「就绪」；可以重试，或标记这次派单失败。",
+  "This dispatch no longer exists. Reload the board.": "这条执行记录已不存在，刷新看板。",
+  "This dispatch already ended. Reload the board.": "这条执行记录已经结束，刷新看板。",
+  "This employee has no Bot to dispatch to.": "这位员工还没有可派单的 Bot。",
   "Summary of the work": "这次做了什么",
   "Artifacts": "成果链接",
   "One link or path per line.": "每行一个链接或路径。",
@@ -12108,7 +12118,7 @@ var taskActionCommand = (action, task) => {
   if (!task?.id) return null;
   const base = { task_id: task.id, expected_revision: taskRevision(task) };
   return {
-    start: ["task.move", { ...base, to: "doing" }],
+    start: ["task.dispatch", base],
     "to-ready": ["task.move", { ...base, to: "ready" }],
     submit: ["task.submit", base],
     accept: ["acceptance.decide", base],
@@ -12122,6 +12132,12 @@ var taskSubmitCommand = (task, { summary = "", artifacts = [], notes = [] } = {}
   summary,
   artifact_refs: artifacts,
   check_notes: notes
+});
+var taskFailCommand = (task, reason) => ({
+  task_id: task.id,
+  run_id: task.latest_run_id,
+  expected_revision: taskRevision(task),
+  reason
 });
 var taskReopenCommand = (task, reason) => ({
   task_id: task.id,
@@ -12148,6 +12164,10 @@ function taskErrorText(failure) {
     "task/dependency-unmet": t("A dependency is still open. Finish it before starting this task."),
     "task/dependency-missing": t("A dependency of this task no longer exists."),
     "task/missing-input": t("This change needs more input before it can be saved."),
+    "run/deliver-failed": t("The brief did not reach the Bot. The task is still Ready; try again or mark the dispatch failed."),
+    "run/not-found": t("This dispatch no longer exists. Reload the board."),
+    "run/state-conflict": t("This dispatch already ended. Reload the board."),
+    "company/unsupported": t("This employee has no Bot to dispatch to."),
     "acceptance/not-pending": t("This task is no longer waiting for acceptance."),
     "acceptance/state-conflict": t("This task already has a pending acceptance record."),
     "company/revision-conflict": t("The board changed elsewhere. Reload and try again.")
@@ -12282,10 +12302,11 @@ function TaskDetail({ task, employees, tab, busy, error, onTab, onClose, onActio
   const actions = [];
   if (stage === "draft") actions.push(["to-ready", t("Move to Ready")]);
   if (stage === "ready") actions.push(["start", t("Start")]);
-  if (stage === "doing") actions.push(["submit", t("Submit for acceptance")]);
+  if (stage === "doing") actions.push(["submit", t("Submit for acceptance")], ["fail", t("Mark dispatch failed")]);
   if (stage === "review") actions.push(["accept", t("Accept")], ["return", t("Return to Ready")]);
   if (stage === "done") actions.push(["reopen", t("Reopen")]);
   const blocked = stage === "review" && !acceptanceReady(task);
+  const canFail = stage !== "doing" || Boolean(task.latest_run_id);
   const rows2 = [
     [t("Owner"), owner || t("Not assigned")],
     [t("Priority"), task.priority ? String(task.priority) : t("Not set")],
@@ -12324,7 +12345,8 @@ function TaskDetail({ task, employees, tab, busy, error, onTab, onClose, onActio
         { className: "bc-tb-panel", role: "tabpanel" },
         task.goal || task.description ? (0, import_react21.createElement)("p", { className: "bc-tb-doc" }, task.goal ?? task.description) : (0, import_react21.createElement)("p", { className: "bc-muted" }, t("No description yet.")),
         (0, import_react21.createElement)("dl", { className: "bc-tb-kv" }, rows2.map(([label2, value]) => (0, import_react21.createElement)("div", { key: label2 }, (0, import_react21.createElement)("dt", null, label2), (0, import_react21.createElement)("dd", null, value)))),
-        blocked ? (0, import_react21.createElement)("p", { className: "bc-muted bc-tb-hint" }, t("This task has no acceptance record yet. Submit it for review, then accept it — Done cannot be reached by dragging.")) : null
+        blocked ? (0, import_react21.createElement)("p", { className: "bc-muted bc-tb-hint" }, t("This task has no acceptance record yet. Submit it for review, then accept it — Done cannot be reached by dragging.")) : null,
+        stage === "doing" && !task.latest_run_id ? (0, import_react21.createElement)("p", { className: "bc-muted bc-tb-hint" }, t("This task was moved to Doing without a dispatch, so there is no run to mark failed.")) : null
       ) : null,
       tab === "results" ? (0, import_react21.createElement)(
         "div",
@@ -12342,8 +12364,13 @@ function TaskDetail({ task, employees, tab, busy, error, onTab, onClose, onActio
         runs.length ? (0, import_react21.createElement)("ol", { className: "bc-tb-runs" }, runs.map((run2, index) => (0, import_react21.createElement)(
           "li",
           { key: run2.id ?? index },
-          (0, import_react21.createElement)("strong", null, run2.summary ?? run2.action ?? run2.status ?? t("Run")),
-          (0, import_react21.createElement)("span", null, taskWhen(run2.at ?? run2.created_at))
+          (0, import_react21.createElement)(
+            "div",
+            null,
+            (0, import_react21.createElement)("strong", null, run2.state === "failed" ? t("Dispatch failed") : t("Dispatched")),
+            run2.failure_reason ? (0, import_react21.createElement)("p", { className: "bc-muted bc-tb-runreason" }, run2.failure_reason) : null
+          ),
+          (0, import_react21.createElement)("span", null, taskWhen(run2.dispatched_at ?? run2.created_at))
         ))) : (0, import_react21.createElement)("p", { className: "bc-muted" }, t("No runs yet."))
       ) : null,
       tab === "discussion" ? (0, import_react21.createElement)(
@@ -12357,7 +12384,7 @@ function TaskDetail({ task, employees, tab, busy, error, onTab, onClose, onActio
         key: action,
         type: "button",
         className: `bc-button${action === "start" || action === "accept" ? " bc-primary" : ""}`,
-        disabled: busy || blocked && (action === "accept" || action === "return"),
+        disabled: busy || blocked && (action === "accept" || action === "return") || action === "fail" && !canFail,
         onClick: () => onAction(action, task)
       }, label2))) : null
     )
@@ -12371,16 +12398,18 @@ function TaskDialog({ dialog, busy, error, onClose, onSend }) {
   const [notes, setNotes] = (0, import_react21.useState)(() => checks.map(() => ""));
   const [reason, setReason] = (0, import_react21.useState)("");
   const [opinion, setOpinion] = (0, import_react21.useState)("");
-  const title = dialog.kind === "submit" ? t("Submit for acceptance") : dialog.kind === "reopen" ? t("Reopen task") : dialog.decision === "accept" ? t("Accept task") : t("Return task");
+  const title = dialog.kind === "submit" ? t("Submit for acceptance") : dialog.kind === "reopen" ? t("Reopen task") : dialog.kind === "fail" ? t("Mark dispatch failed") : dialog.decision === "accept" ? t("Accept task") : t("Return task");
   const artifactList = artifacts.split("\n").map((line) => line.trim()).filter(Boolean);
   const notesFilled = notes.length === checks.length && notes.every((note) => note.trim());
-  const canSubmit = dialog.kind === "submit" ? Boolean(summary.trim()) && artifactList.length > 0 && artifactList.length <= 50 && notesFilled : dialog.kind === "reopen" ? Boolean(reason.trim()) && reason.trim().length <= 500 : dialog.decision === "accept" ? true : Boolean(opinion.trim());
+  const canSubmit = dialog.kind === "submit" ? Boolean(summary.trim()) && artifactList.length > 0 && artifactList.length <= 50 && notesFilled : dialog.kind === "reopen" || dialog.kind === "fail" ? Boolean(reason.trim()) && reason.trim().length <= 500 : dialog.decision === "accept" ? true : Boolean(opinion.trim());
   const send = () => {
     if (!canSubmit) return;
     if (dialog.kind === "submit") {
       onSend(taskSubmitCommand(task, { summary: summary.trim(), artifacts: artifactList, notes: notes.map((note) => note.trim()) }));
     } else if (dialog.kind === "reopen") {
       onSend(taskReopenCommand(task, reason.trim()));
+    } else if (dialog.kind === "fail") {
+      onSend(taskFailCommand(task, reason.trim()));
     } else {
       onSend(taskDecideCommand(task, dialog.decision, opinion.trim()));
     }
@@ -12424,10 +12453,10 @@ function TaskDialog({ dialog, busy, error, onClose, onSend }) {
             (0, import_react21.createElement)("input", { value: notes[index] ?? "", maxLength: 1e3, onChange: (event) => setNotes((current) => current.map((note, position) => position === index ? event.target.value : note)) })
           ))
         ) : null,
-        dialog.kind === "reopen" ? (0, import_react21.createElement)(
+        dialog.kind === "reopen" || dialog.kind === "fail" ? (0, import_react21.createElement)(
           "label",
           { className: "bc-field" },
-          (0, import_react21.createElement)("span", null, t("Reason")),
+          (0, import_react21.createElement)("span", null, dialog.kind === "fail" ? t("Why did the dispatch fail?") : t("Reason")),
           (0, import_react21.createElement)("input", { value: reason, maxLength: 500, onChange: (event) => setReason(event.target.value) })
         ) : null,
         dialog.kind === "decide" ? (0, import_react21.createElement)(
@@ -12579,6 +12608,15 @@ function TaskBoard({ tasks = [], employees = [], preview = false, loading = fals
       setDialog({ kind: action, task });
       return;
     }
+    if (action === "fail") {
+      if (!task.latest_run_id) {
+        setError(t("This task has no dispatch to mark failed."));
+        return;
+      }
+      setDialogError("");
+      setDialog({ kind: "fail", task });
+      return;
+    }
     if (action === "accept" || action === "return") {
       if (!acceptanceReady(task)) {
         setError(t("This task has no acceptance record yet. Submit it for review, then accept it — Done cannot be reached by dragging."));
@@ -12592,7 +12630,7 @@ function TaskBoard({ tasks = [], employees = [], preview = false, loading = fals
     if (request) void send(request[0], request[1]);
   };
   const dialogSend = async (fields) => {
-    const command = dialog.kind === "submit" ? "task.submit" : dialog.kind === "reopen" ? "task.reopen" : "acceptance.decide";
+    const command = dialog.kind === "submit" ? "task.submit" : dialog.kind === "reopen" ? "task.reopen" : dialog.kind === "fail" ? "run.fail" : "acceptance.decide";
     const ok = await send(command, fields, "dialog");
     if (ok) {
       setDialog(null);
@@ -12702,6 +12740,8 @@ var TASK_BOARD_CSS = `
 .bc-tb-list li,.bc-tb-runs li{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid var(--bt-line);font-size:13px}
 .bc-tb-list li:first-child,.bc-tb-runs li:first-child{border-top:0}
 .bc-tb-list span,.bc-tb-runs span{font-size:11px;color:var(--bt-ink-3);white-space:nowrap}
+.bc-tb-runs li>div{min-width:0}
+.bc-tb-runreason{margin:3px 0 0;font-size:11px;line-height:16px;color:var(--bt-danger,var(--bt-ink-2));overflow-wrap:anywhere}
 .bc-tb-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:18px;border-top:1px solid var(--bt-line);padding-top:14px}
 .bc-tb-modal{position:fixed;inset:0;z-index:1400;display:flex;align-items:center;justify-content:center;padding:24px;background:color-mix(in srgb,var(--bt-ink) 26%,transparent)}
 .bc-tb-modalcard{width:min(460px,100%);max-height:calc(100vh - 48px);overflow:auto;padding:16px;border:1px solid var(--bt-line-2);border-radius:12px;background:var(--bt-card);box-shadow:0 18px 48px -16px color-mix(in srgb,var(--bt-ink) 34%,transparent)}
@@ -14396,11 +14436,27 @@ function CompanySurface({ page, actions, roster }) {
     setTasksError("");
     void Promise.all([
       call("company-command", { command: "task.list", payload: { project_id: selected, operation_key: `task-list-${freshKey()}` } }),
-      call("company-command", { command: "acceptance.list", payload: { project_id: selected, state: "pending", limit: 200, operation_key: `acceptance-list-${freshKey()}` } }).catch(() => null)
-    ]).then(([result, acceptanceResult]) => {
+      call("company-command", { command: "acceptance.list", payload: { project_id: selected, state: "pending", limit: 200, operation_key: `acceptance-list-${freshKey()}` } }).catch(() => null),
+      call("company-command", { command: "run.list", payload: { project_id: selected, limit: 200, operation_key: `run-list-${freshKey()}` } }).catch(() => null)
+    ]).then(([result, acceptanceResult, runResult]) => {
       if (controller.signal.aborted) return;
       const pending = new Map((acceptanceResult?.body?.acceptances ?? []).filter((row) => row.task_id).map((row) => [row.task_id, row]));
-      setTasks((result?.body?.tasks ?? []).map((task) => pending.has(task.id) ? { ...task, acceptance: pending.get(task.id) } : task));
+      const runsByTask = /* @__PURE__ */ new Map();
+      for (const run2 of runResult?.body?.runs ?? []) {
+        if (!run2?.task_id) continue;
+        const list = runsByTask.get(run2.task_id) ?? [];
+        list.push(run2);
+        runsByTask.set(run2.task_id, list);
+      }
+      setTasks((result?.body?.tasks ?? []).map((task) => {
+        const runs = runsByTask.get(task.id) ?? [];
+        const latest = runs[0];
+        return {
+          ...task,
+          ...pending.has(task.id) ? { acceptance: pending.get(task.id) } : {},
+          ...runs.length ? { runs, ...latest?.state === "failed" ? { last_run_status: "failed" } : {} } : {}
+        };
+      }));
     }).catch((failure) => {
       if (!controller.signal.aborted) setTasksError(message(failure));
     });

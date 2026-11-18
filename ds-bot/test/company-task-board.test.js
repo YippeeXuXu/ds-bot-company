@@ -8,7 +8,7 @@ import { build } from 'esbuild'
 const PLUGIN = dirname(dirname(fileURLToPath(import.meta.url)))
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { TaskBoardView, TASK_BOARD_CSS, TASK_COLUMNS, TASK_TABS, TASK_STAGE_WORDS, taskActionCommand, taskSubmitCommand, taskReopenCommand, taskDecideCommand, acceptanceReady, taskRevision, taskMoveTargets, taskStatusLabel, taskStage, taskErrorText, taskBadges, taskDependencyCount, taskOwnerName, taskWhen } from './src/client/task-board.js'",
+    contents: "export { TaskBoardView, TASK_BOARD_CSS, TASK_COLUMNS, TASK_TABS, TASK_STAGE_WORDS, taskActionCommand, taskSubmitCommand, taskFailCommand, taskReopenCommand, taskDecideCommand, acceptanceReady, taskRevision, taskMoveTargets, taskStatusLabel, taskStage, taskErrorText, taskBadges, taskDependencyCount, taskOwnerName, taskWhen } from './src/client/task-board.js'",
     resolveDir: PLUGIN,
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -29,7 +29,7 @@ const sandbox = { module, exports: module.exports, require: name => (name === 'r
 runInNewContext(outputFiles[0].text, sandbox)
 const {
   TaskBoardView, TASK_BOARD_CSS, TASK_COLUMNS, TASK_TABS, TASK_STAGE_WORDS, taskActionCommand,
-  taskSubmitCommand, taskReopenCommand, taskDecideCommand, acceptanceReady, taskRevision, taskMoveTargets,
+  taskSubmitCommand, taskFailCommand, taskReopenCommand, taskDecideCommand, acceptanceReady, taskRevision, taskMoveTargets,
   taskStatusLabel, taskStage, taskErrorText, taskBadges, taskDependencyCount, taskOwnerName, taskWhen,
 } = module.exports
 
@@ -154,13 +154,14 @@ test('the actions follow the column of the task', () => {
   assert.match(labelsFor('draft'), /Move to Ready/)
   assert.match(labelsFor('ready'), /Start/)
   assert.match(labelsFor('doing'), /Submit for acceptance/)
+  assert.match(labelsFor('doing'), /Mark dispatch failed/)
   assert.match(labelsFor('review'), /Accept/)
   assert.match(labelsFor('review'), /Return to Ready/)
   assert.match(labelsFor('done'), /Reopen/)
 })
 
 test('actions and drops map to the contract commands', () => {
-  assert.deepEqual(plain(taskActionCommand('start', { id: 't1', task_revision: 4 })), ['task.move', { task_id: 't1', expected_revision: 4, to: 'doing' }])
+  assert.deepEqual(plain(taskActionCommand('start', { id: 't1', task_revision: 4 })), ['task.dispatch', { task_id: 't1', expected_revision: 4 }])
   assert.deepEqual(plain(taskActionCommand('to-ready', { id: 't1', task_revision: 2 })), ['task.move', { task_id: 't1', expected_revision: 2, to: 'ready' }])
   assert.deepEqual(plain(taskActionCommand('submit', { id: 't1', task_revision: 3 })), ['task.submit', { task_id: 't1', expected_revision: 3 }])
   assert.deepEqual(plain(taskActionCommand('reopen', { id: 't1', task_revision: 5 })), ['task.reopen', { task_id: 't1', expected_revision: 5 }])
@@ -198,6 +199,34 @@ test('submit, reopen and acceptance payloads only carry what the contract asks f
   assert.equal(taskDecideCommand({ id: 't1' }, 'accept'), null)
   assert.equal(acceptanceReady(item), true)
   assert.equal(acceptanceReady({ id: 't1' }), false)
+})
+
+test('a dispatch can be marked failed with its run and a reason', () => {
+  assert.deepEqual(plain(taskFailCommand({ id: 't1', task_revision: 6, latest_run_id: 'run_1' }, 'Bot 没有响应')),
+    { task_id: 't1', run_id: 'run_1', expected_revision: 6, reason: 'Bot 没有响应' })
+  const dispatched = view({ selectedId: 'task_doing', tasks: [task({ id: 'task_doing', stage: 'doing', latest_run_id: 'run_1' })] })
+  const fail = button(byClass(dispatched, 'bc-tb-actions')[0], 'Mark dispatch failed')
+  assert.equal(fail.props.disabled, false)
+  const legacy = view({ selectedId: 'task_doing', tasks: [task({ id: 'task_doing', stage: 'doing' })] })
+  assert.equal(button(byClass(legacy, 'bc-tb-actions')[0], 'Mark dispatch failed').props.disabled, true)
+  assert.match(text(byClass(legacy, 'bc-tb-hint')[0]), /without a dispatch/)
+  const dialog = view({ dialog: { kind: 'fail', task: task({ stage: 'doing', latest_run_id: 'run_1' }) }, onDialogSend() {}, onDialogClose() {} })
+  assert.match(text(byClass(dialog, 'bc-tb-modalcard')[0]), /Mark dispatch failed/)
+  assert.match(text(byClass(dialog, 'bc-tb-modalcard')[0]), /Why did the dispatch fail/)
+  assert.equal(button(byClass(dialog, 'bc-tb-modalcard')[0], 'Save').props.disabled, true)
+})
+
+test('the history tab shows dispatched and failed runs with the failure reason', () => {
+  const item = task({ id: 'task_doing', stage: 'doing', latest_run_id: 'run_2', last_run_status: 'failed', runs: [
+    { id: 'run_2', state: 'failed', failure_reason: 'Bot 没有响应', dispatched_at: Date.now() - 5 * 60 * 1000 },
+    { id: 'run_1', state: 'dispatched', dispatched_at: Date.now() - 30 * 60 * 1000 },
+  ] })
+  const tree = view({ selectedId: 'task_doing', tab: 'history', tasks: [item] })
+  const history = text(byClass(tree, 'bc-tb-panel')[0])
+  assert.match(history, /Dispatch failed/)
+  assert.match(history, /Bot 没有响应/)
+  assert.match(history, /Dispatched/)
+  assert.match(text(byClass(tree, 'bc-tb-card')[0]), /Last run failed/)
 })
 
 test('a review task without an acceptance record cannot be accepted or returned', () => {
