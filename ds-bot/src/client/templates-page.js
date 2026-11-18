@@ -1,6 +1,7 @@
 import { createElement as h, useEffect, useRef, useState } from 'react'
 import { companyErrorText } from './company-page.js'
 import { t } from './i18n.js'
+import { installLeaveGuard } from './leave-guard.js'
 
 // 3.3 / 3.4 — the employee template library. A template is a reusable job
 // description: a job title, the instructions the Bot starts with, the model and
@@ -18,6 +19,22 @@ const ROLE_LABELS = () => [
 ]
 
 const STATUS_ORDER = item => (item.source === 'builtin' ? 0 : 1)
+
+// B1: an edit is dirty when anything the user can type differs from what the
+// template held when the editor opened. Trailing spaces do not count.
+const EDITED_FIELDS = ['name', 'role', 'instructions', 'model', 'effort']
+
+const sameSkills = (left = [], right = []) => {
+  const a = [...left].sort()
+  const b = [...right].sort()
+  return a.length === b.length && a.every((value, index) => value === b[index])
+}
+
+export const formDirty = (base, form) => {
+  if (!base || !form) return false
+  if (EDITED_FIELDS.some(field => String(form[field] ?? '').trim() !== String(base[field] ?? '').trim())) return true
+  return !sameSkills(base.skills, form.skills)
+}
 export const sortedTemplates = templates => [...(templates ?? [])]
   .filter(item => item.status !== 'archived')
   .sort((left, right) => STATUS_ORDER(left) - STATUS_ORDER(right) || (left.created_at ?? 0) - (right.created_at ?? 0))
@@ -167,7 +184,7 @@ export function TemplatesPageView(props) {
     templates = [], template = null, departments = [], roster = {}, loading = false,
     error = '', failure = '', preview = false, flash = '', form = null,
     copyOpen = false, copyName = '', botDialog = null, archiveArmed = false, busy = false,
-    effortOptions = [], handlers = {},
+    effortOptions = [], leavePrompt = false, handlers = {},
   } = props
   const title = template ? template.source === 'builtin' ? t('Builtin template') : t('Saved copy') : ''
   const modalCard = useModalFocus(Boolean(botDialog))
@@ -348,7 +365,23 @@ export function TemplatesPageView(props) {
       h('span', { className: 'bc-tpl-count' }, t('{count} templates', { count: templates.length }))),
     flash ? h('div', { className: 'bc-notice bc-tpl-flash', role: 'status' }, flash) : null,
     body(),
+    leavePrompt ? leaveModal() : null,
     botDialog ? botModal() : null)
+
+  function leaveModal() {
+    const canSave = !busy && Boolean(String(form?.name ?? '').trim())
+    return h('div', { className: 'bc-tpl-modal', role: 'presentation' },
+      h('div', { className: 'bc-tpl-modal-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('Unsaved template changes'), ref: modalCard },
+        h('div', { className: 'bc-co-pop-head' },
+          h('strong', null, t('Save the changes to this template?')),
+          h('span', { className: 'bc-co-pop-name' }, form?.name ?? '')),
+        h('p', { className: 'bc-co-note' }, t('Leaving the editor now throws away what you typed. Save it, discard it, or keep editing.')),
+        h('div', { className: 'bc-co-create-actions' },
+          h('button', { type: 'button', className: 'bc-button', onClick: () => handlers.onLeaveCancel?.() }, t('Keep editing')),
+          h('button', { type: 'button', className: 'bc-button', onClick: () => handlers.onLeaveDiscard?.() }, t('Discard changes')),
+          h('button', { type: 'button', className: 'bc-button bc-primary', disabled: !canSave, onClick: () => handlers.onLeaveSave?.() },
+            busy ? t('Saving…') : t('Save and leave')))))
+  }
 
   function botModal() {
     const dialog = botDialog
@@ -396,6 +429,9 @@ export function TemplatesPage(props) {
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState('')
   const [flash, setFlash] = useState('')
+  const [leavePrompt, setLeavePrompt] = useState(null)
+  const [formBase, setFormBase] = useState(null)
+  const dirtyRef = useRef(false)
 
   const template = templates.find(item => item.id === selectedId) ?? templates[0] ?? null
   const effortRef = form ? form.model : template?.model
@@ -409,15 +445,34 @@ export function TemplatesPage(props) {
     effortOptions.push({ value: shownEffort, label: t('{id} (not in this model)', { id: shownEffort }) })
   }
 
-  const closeForm = () => { setForm(null); setFailure('') }
-  const select = id => {
+  const dirty = formDirty(formBase, form)
+  dirtyRef.current = dirty
+
+  // Every way out of a dirty editor asks first: switching template, Cancel,
+  // Escape, the page close button and leaving for another screen all land here.
+  const requestLeave = proceed => {
+    if (!dirtyRef.current) { proceed(); return }
+    setLeavePrompt({ proceed })
+  }
+
+  const leaveNow = proceed => {
+    dirtyRef.current = false
+    setLeavePrompt(null)
+    proceed()
+  }
+
+  const closeForm = () => { setForm(null); setFormBase(null); setFailure('') }
+  const cancelEdit = () => requestLeave(closeForm)
+  const applySelect = id => {
     setSelectedId(id)
     setForm(null)
+    setFormBase(null)
     setCopyOpen(false)
     setArchiveArmed(false)
     setFailure('')
     setFlash('')
   }
+  const select = id => requestLeave(() => applySelect(id))
 
   const run = async (work, done) => {
     if (!onCommand) return
@@ -433,14 +488,16 @@ export function TemplatesPage(props) {
     setFailure('')
     setCopyOpen(false)
     setArchiveArmed(false)
-    setForm({
+    const base = {
       name: template.name ?? '',
       role: template.role ?? '',
       instructions: template.instructions ?? '',
       model: template.model ?? '',
       effort: template.effort ?? '',
       skills: [...(template.skills ?? [])],
-    })
+    }
+    setForm(base)
+    setFormBase({ ...base, skills: [...base.skills] })
   }
 
   const saveEdit = () => run(async () => {
@@ -504,6 +561,33 @@ export function TemplatesPage(props) {
     } finally { setBusy(false) }
   }
 
+  const leaveSaving = async () => {
+    const prompt = leavePrompt
+    if (!prompt || !form || !onCommand) return
+    setBusy(true)
+    setFailure('')
+    try {
+      await onCommand('template.update', templateUpdatePayload({
+        templateId: template.id,
+        name: form.name.trim(),
+        role: form.role,
+        instructions: form.instructions,
+        model: form.model,
+        effort: form.effort,
+        skills: form.skills,
+      }))
+      setFlash(t('The template was saved.'))
+      dirtyRef.current = false
+      setForm(null)
+      setFormBase(null)
+      setLeavePrompt(null)
+      prompt.proceed()
+    } catch (error) {
+      setLeavePrompt(null)
+      setFailure(templateErrorText(error))
+    } finally { setBusy(false) }
+  }
+
   const archive = () => run(async () => {
     await onCommand('template.archive', { template_id: template.id })
     setArchiveArmed(false)
@@ -511,17 +595,38 @@ export function TemplatesPage(props) {
     setFlash(t('The template was archived.'))
   })
 
-  // The surface gives Escape to the page first: the dialog closes, then the edit
-  // form, then the archive question — the page itself only leaves afterwards.
+  // The surface gives Escape to the page first: the question closes, then the
+  // dialogs, then the editor (asking when it is dirty). The page leaves last.
   if (escapeGuard) {
     escapeGuard.current = () => {
+      if (leavePrompt) { setLeavePrompt(null); return true }
       if (botDialog) { setBotDialog(null); return true }
-      if (form) { closeForm(); return true }
+      if (form) { cancelEdit(); return true }
       if (copyOpen) { setCopyOpen(false); return true }
       if (archiveArmed) { setArchiveArmed(false); return true }
       return false
     }
   }
+
+  // The page close button, the sidebar and the other surfaces all go through the
+  // shared guard, so a dirty editor stops them before it is unmounted.
+  useEffect(() => {
+    if (!form) return
+    return installLeaveGuard(proceed => {
+      if (!dirtyRef.current) return false
+      setLeavePrompt({ proceed })
+      return true
+    })
+  }, [form])
+
+  // A browser reload or tab close cannot show a custom question; the native one
+  // is the only ask the platform gives us there.
+  useEffect(() => {
+    if (!dirty) return
+    const warn = event => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
 
   return h(TemplatesPageView, {
     templates,
@@ -540,11 +645,12 @@ export function TemplatesPage(props) {
     archiveArmed,
     busy,
     effortOptions,
+    leavePrompt: Boolean(leavePrompt),
     handlers: {
       onSelect: select,
       onRetry: props.onRetry,
       onStartEdit: startEdit,
-      onCancelEdit: closeForm,
+      onCancelEdit: cancelEdit,
       onForm: (field, value) => setForm(current => current ? { ...current, [field]: value } : current),
       onToggleSkill: name => setForm(current => {
         if (!current) return current
@@ -562,6 +668,9 @@ export function TemplatesPage(props) {
       onCreateBot: createBot,
       onArchiveArm: setArchiveArmed,
       onArchive: archive,
+      onLeaveSave: leaveSaving,
+      onLeaveDiscard: () => { const prompt = leavePrompt; if (!prompt) return; closeForm(); leaveNow(prompt.proceed) },
+      onLeaveCancel: () => setLeavePrompt(null),
     },
   })
 }
