@@ -10,7 +10,7 @@ import { build } from 'esbuild'
 const PLUGIN = dirname(dirname(fileURLToPath(import.meta.url)))
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { TemplatesPageView, TEMPLATES_CSS, sortedTemplates, overrideText, templateUpdatePayload, templateCopyPayload, createBotPayload, templateErrorText } from './src/client/templates-page.js'",
+    contents: "export { TemplatesPage, TemplatesPageView, TEMPLATES_CSS, sortedTemplates, overrideText, formDirty, templateUpdatePayload, templateCopyPayload, createBotPayload, templateErrorText } from './src/client/templates-page.js'\nexport { askLeave } from './src/client/leave-guard.js'",
     resolveDir: PLUGIN,
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -319,4 +319,131 @@ test('the fresh sheet says what a template is', () => {
   assert.match(TEMPLATES_CSS, /\.bc-tpl-modal-card/)
   const tree = TemplatesPageView(props({ flash: '“小前” is on the team with 2 skills.' }))
   assert.match(text(byClass(tree, 'bc-tpl-flash')[0]), /is on the team with 2 skills/)
+})
+
+// B1 — an 8000-character job description must not vanish because a click landed
+// on the wrong thing. The container is rendered with a small hook runtime so the
+// real paths run: Cancel, switching template, Escape, the page close button and
+// leaving for another screen (the shared leave guard).
+const sameDeps = (left, right) => Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((value, index) => value === right[index])
+
+const browser = () => ({ listeners: {}, addEventListener(name, fn) { (this.listeners[name] ??= []).push(fn) }, removeEventListener(name, fn) { this.listeners[name] = (this.listeners[name] ?? []).filter(item => item !== fn) } })
+
+const containerRenderer = (props, win = browser()) => {
+  const slots = []
+  const runtime = {
+    createElement: (type, properties, ...children) => ({ type, props: { ...properties, children } }),
+    Fragment: Symbol('Fragment'),
+    useState: initial => {
+      const index = runtime.cursor++
+      if (!(index in slots)) slots[index] = { value: typeof initial === 'function' ? initial() : initial }
+      const slot = slots[index]
+      const set = value => { slot.value = typeof value === 'function' ? value(slot.value) : value; render() }
+      return [slot.value, set]
+    },
+    useRef: current => {
+      const index = runtime.cursor++
+      if (!(index in slots)) slots[index] = { current }
+      return slots[index]
+    },
+    useEffect: (fn, deps) => {
+      const index = runtime.cursor++
+      const previous = slots[index]
+      if (previous && sameDeps(previous.deps, deps)) return
+      previous?.cleanup?.()
+      const slot = { deps }
+      slots[index] = slot
+      const cleanup = fn()
+      slot.cleanup = typeof cleanup === 'function' ? cleanup : null
+    },
+    cursor: 0,
+  }
+  const instance = { exports: {} }
+  runInNewContext(outputFiles[0].text, { module: instance, exports: instance.exports, require: name => (name === 'react' ? runtime : {}), window: win })
+  const { TemplatesPage, askLeave } = instance.exports
+  let tree = null
+  let rendering = false
+  let queued = false
+  const render = () => {
+    if (rendering) { queued = true; return }
+    rendering = true
+    do { queued = false; runtime.cursor = 0; tree = TemplatesPage({ ...props, escapeGuard: guard }) } while (queued)
+    rendering = false
+  }
+  const guard = { current: null }
+  render()
+  return { get tree() { return tree }, get guard() { return guard }, render, askLeave, win, unmount () { slots.forEach(slot => slot.cleanup?.()) } }
+}
+
+const boardProps = (patch = {}) => ({
+  data: { templates: [builtin(), copy()], departments },
+  roster,
+  escapeGuard: { current: null },
+  onCommand: async () => ({ body: {} }),
+  ...patch,
+})
+
+test('a dirty editor asks before it closes, and discarding drops the draft', () => {
+  const commands = []
+  const view = containerRenderer(boardProps({ onCommand: async (command, fields) => { commands.push([command, fields]); return { body: {} } } }))
+  view.tree.props.handlers.onStartEdit()
+  view.tree.props.handlers.onForm('instructions', '写了一半的说明')
+  assert.equal(view.tree.props.form.instructions, '写了一半的说明')
+  view.tree.props.handlers.onCancelEdit()
+  assert.equal(view.tree.props.leavePrompt, true)
+  assert.ok(view.tree.props.form, 'the form stays while the question is open')
+  view.tree.props.handlers.onLeaveDiscard()
+  assert.equal(view.tree.props.leavePrompt, false)
+  assert.equal(view.tree.props.form, null)
+  assert.deepEqual(commands, [], 'discarding must not write')
+})
+
+test('switching template, Escape and the page close all ask first, save-and-leave resumes the move', async () => {
+  const commands = []
+  const view = containerRenderer(boardProps({ onCommand: async (command, fields) => { commands.push([command, fields]); return { body: {} } } }))
+  view.tree.props.handlers.onSelect('tpl_copy')
+  view.tree.props.handlers.onStartEdit()
+  view.tree.props.handlers.onForm('name', '项目统筹（改）')
+
+  // Switching template.
+  view.tree.props.handlers.onSelect('tpl_builtin')
+  assert.equal(view.tree.props.leavePrompt, true)
+  assert.equal(view.tree.props.template.id, 'tpl_copy', 'the selected template does not move until the question is answered')
+  assert.equal(view.guard.current(), true, 'Escape is taken by the question, not the form')
+  assert.equal(view.tree.props.leavePrompt, false, 'Escape closes the question first')
+  assert.equal(view.tree.props.form.name, '项目统筹（改）', 'closing the question keeps the draft')
+  view.tree.props.handlers.onSelect('tpl_builtin')
+  view.tree.props.handlers.onLeaveCancel()
+  assert.equal(view.tree.props.form.name, '项目统筹（改）', 'the Cancel choice keeps the editor open')
+  view.tree.props.handlers.onSelect('tpl_builtin')
+  view.tree.props.handlers.onLeaveSave()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(commands[0][0], 'template.update')
+  assert.equal(commands[0][1].name, '项目统筹（改）')
+  assert.equal(view.tree.props.form, null)
+  assert.equal(view.tree.props.template.id, 'tpl_builtin', 'the template switch resumes after the save')
+})
+
+test('the shared guard stops the page close and leaving for another screen', () => {
+  const view = containerRenderer(boardProps())
+  view.tree.props.handlers.onStartEdit()
+  view.tree.props.handlers.onForm('role', '前端开发')
+  assert.equal(view.win.listeners.beforeunload?.length, 1, 'a browser reload gets the native question')
+  let left = false
+  assert.equal(view.askLeave(() => { left = true }), true, 'the page close asks instead of leaving')
+  assert.equal(view.tree.props.leavePrompt, true)
+  assert.equal(left, false)
+  view.tree.props.handlers.onLeaveDiscard()
+  assert.equal(left, true, 'discarding resumes the navigation the page close asked for')
+})
+
+test('a clean editor leaves without a question', () => {
+  const view = containerRenderer(boardProps())
+  view.tree.props.handlers.onStartEdit()
+  let left = false
+  assert.equal(view.askLeave(() => { left = true }), false)
+  assert.equal(left, false, 'the caller runs its own navigation')
+  view.tree.props.handlers.onCancelEdit()
+  assert.equal(view.tree.props.leavePrompt, false)
+  assert.equal(view.tree.props.form, null)
 })
