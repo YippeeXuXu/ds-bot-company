@@ -95,7 +95,7 @@ const acceptanceActorOf = (state, value, requirement, field = 'acceptance_actor'
   }
   if (value === 'user') return 'user'
   const employee = employeeOf(state, text(value, field, { max: 120 }))
-  if (employee.status !== 'active') throw companyFail('project/invalid', `Employee ${employee.id} is not active.`, { field, employee_id: employee.id })
+  if (employee.status !== 'active') throw companyFail('employee/inactive', `Employee ${employee.id} is dismissed; re-activate them before naming them as the acceptor.`, { field, employee_id: employee.id })
   if (requirement === 'owner_only') throw companyFail('project/owner-required', 'owner_only acceptance belongs to the owner, not to a Bot.', { field, employee_id: employee.id })
   return employee.id
 }
@@ -205,7 +205,7 @@ export function projectHandlers({ groups = {} } = {}) {
         ? undefined
         : employeeOf(state, text(payload.coordinator_employee_id, 'coordinator_employee_id', { max: 120 }))
       if (coordinator !== undefined) {
-        if (coordinator.status !== 'active') throw companyFail('project/invalid', `Employee ${coordinator.id} is not active.`, { field: 'coordinator_employee_id' })
+        if (coordinator.status !== 'active') throw companyFail('employee/inactive', `Employee ${coordinator.id} is dismissed; re-activate them before making them the coordinator.`, { field: 'coordinator_employee_id', employee_id: coordinator.id })
         if (!sourceIds.includes(coordinator.department_id)) {
           throw companyFail('project/invalid', `The coordinator must come from one of the source departments.`, { field: 'coordinator_employee_id', department_id: coordinator.department_id, source_department_ids: sourceIds })
         }
@@ -216,7 +216,7 @@ export function projectHandlers({ groups = {} } = {}) {
       const requirement = requirementOf(payload.acceptance_requirement)
       const acceptanceActor = acceptanceActorOf(state, payload.acceptance_actor, requirement)
       const memoryEmployee = payload.memory_employee_id === undefined ? undefined : employeeOf(state, text(payload.memory_employee_id, 'memory_employee_id', { max: 120 }))
-      if (memoryEmployee !== undefined && memoryEmployee.status !== 'active') throw companyFail('project/invalid', `Employee ${memoryEmployee.id} is not active.`, { field: 'memory_employee_id' })
+      if (memoryEmployee !== undefined && memoryEmployee.status !== 'active') throw companyFail('employee/inactive', `Employee ${memoryEmployee.id} is dismissed; re-activate them before naming them as the memory keeper.`, { field: 'memory_employee_id', employee_id: memoryEmployee.id })
 
       const projectId = newId('prj')
       const project = {
@@ -343,7 +343,7 @@ export function projectHandlers({ groups = {} } = {}) {
           ? null
           : employeeOf(state, text(payload.memory_assignment_id, 'memory_assignment_id', { max: 120 }))
         if (keeper !== null) {
-          if (keeper.status !== 'active') throw companyFail('project/invalid', `Employee ${keeper.id} is not active.`, { field: 'memory_assignment_id' })
+          if (keeper.status !== 'active') throw companyFail('employee/inactive', `Employee ${keeper.id} is dismissed; re-activate them before naming them as the memory keeper.`, { field: 'memory_assignment_id', employee_id: keeper.id })
           if (keeper.company_id !== project.company_id) throw companyFail('project/invalid', `Employee ${keeper.id} belongs to another company.`, { field: 'memory_assignment_id' })
         }
         project.memory_assignment_id = keeper?.id ?? null
@@ -374,7 +374,7 @@ export function projectHandlers({ groups = {} } = {}) {
       if (!OPEN.includes(project.status)) throw companyFail('project/state-conflict', `A project in ${project.status} cannot take members.`, { project_id: project.id, status: project.status })
       const role = employeeRole(payload.role)
       const employee = employeeOf(state, text(payload.employee_id, 'employee_id', { max: 120 }))
-      if (employee.status !== 'active') throw companyFail('project/invalid', `Employee ${employee.id} is not active.`, { field: 'employee_id' })
+      if (employee.status !== 'active') throw companyFail('employee/inactive', `Employee ${employee.id} is dismissed; re-activate them before adding them to a project.`, { field: 'employee_id', employee_id: employee.id })
       const already = Object.values(state.members).find(member => member.project_id === project.id && member.employee_id === employee.id && member.membership_status !== 'left')
       if (already !== undefined) throw companyFail('project/member-exists', `Employee ${employee.id} is already in this project.`, { project_id: project.id, employee_id: employee.id, membership_status: already.membership_status })
       if (busyMembership(state, employee.id) !== undefined) {

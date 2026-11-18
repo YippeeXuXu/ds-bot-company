@@ -1,18 +1,28 @@
-import { createElement as h, useEffect, useRef, useState } from 'react'
+import { createElement as h, useRef, useState } from 'react'
 import { t } from './i18n.js'
 
-// P12: the company page inside the project surface. Two tabs (overview, organization)
-// share the single `company-model` read the surface already makes, so switching tabs
-// never re-reads. A department opens inside the chart tab as a second layer instead of
-// a new route, and an employee node leaves the panel for that Bot's private chat.
-// Everything here is read-only: no create, bind, assign or start action exists yet.
+// P12: the company page inside the project surface, laid out like the 01 screen of the
+// virtual prototype: one page, no tabs. A header carries the company name, the counts and
+// the two create actions; below it a pannable canvas holds the company node over one
+// column per department, each column pairing the department card with its employees.
+// A department opens its overview in place, over the canvas, instead of swapping the page.
 
 const archived = item => item?.status === 'archived'
 
-// The employee's second line: the role only when the read model has one, then the
-// project in one of four states — outside any project, the project's name, an archived
-// project's name, or a missing project. The same function feeds the chart node and the
-// department page row so both always read one rule.
+// The first glyph of a name, whole: a grapheme cluster, never half of a surrogate pair.
+const initialOf = name => {
+  const text = typeof name === 'string' ? name.trim() : ''
+  if (!text) return '·'
+  try {
+    const step = new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)[Symbol.iterator]().next()
+    const glyph = step.done ? text.slice(0, 1) : step.value.segment
+    return String(glyph || text.slice(0, 1)).toUpperCase()
+  } catch { return text.slice(0, 1).toUpperCase() }
+}
+
+// The employee's second line: the role when the read model has one, otherwise the project
+// in one of four states — outside any project, the project's name, an archived project's
+// name, or a missing project.
 const projectText = (projects, employee) => {
   if (!employee.project_id) return t('Outside projects')
   const project = projects.find(item => item.id === employee.project_id)
@@ -20,13 +30,12 @@ const projectText = (projects, employee) => {
   if (archived(project)) return t('Project: {name} (archived)', { name: project.name })
   return t('Project: {name}', { name: project.name })
 }
-const employeeDetail = (projects, employee) => [employee.role ? String(employee.role) : '', projectText(projects, employee)].filter(Boolean).join(' · ')
 
-const departmentLine = (staff, department) => `${t('{count} people', { count: staff.length })} · ${department.chat_ref ? t('Department group bound') : t('Department group not bound')}`
-const companyLine = (departments, employees, projects) => t('{d} departments · {e} employees · {p} active projects', {
+const companyLine = (departments, employees, projects) => t('{d} departments · {e} employees · {p} projects · {a} in progress', {
   d: departments.length,
   e: employees.length,
-  p: projects.filter(item => item.status === 'active').length,
+  p: projects.length,
+  a: projects.filter(item => item.status === 'active').length,
 })
 
 // A Bot id opens a chat only once the roster resolves it. The roster is assembled
@@ -38,199 +47,172 @@ export const botOpenable = (employee, roster) => {
   return Boolean(roster.byId?.[employee.bot_id] ?? roster.bots?.find(bot => bot.id === employee.bot_id))
 }
 
+const leadOf = (employees, department) => employees.find(item => item.id === department.lead_employee_id) ?? null
+
 export function CompanyPageView(props) {
-  const { data, loading, error, todos, todoLoading, todoError, tab, deptId, chain, overflow, wrapRef, tabRefs, deptButtons, backRef } = props
+  const { data, loading, error, roster, openDept, creating, pan, dragging } = props
   const departments = (data.departments ?? []).filter(item => !archived(item))
   const employees = (data.employees ?? []).filter(item => !archived(item))
   const projects = data.projects ?? []
-  const outside = employees.filter(item => !item.project_id)
-  // A failed read is not a zero: the card shows a dash and its own retry, and stale
-  // numbers from an earlier read must not be mistaken for the current count.
-  const waiting = !todoError && Number.isInteger(todos?.counts?.waiting_total) ? todos.counts.waiting_total : null
-  const department = deptId === null ? null : departments.find(item => item.id === deptId) ?? null
-  const dim = chain !== null && chain !== 'co'
-  const lit = nodeDepartment => chain === null || chain === 'co' || chain === nodeDepartment
-  // A bound Bot the roster cannot resolve cannot open a chat either, so both cases take
-  // the same disabled shape; only the title tells the user which one it is.
-  const botReady = employee => botOpenable(employee, props.roster)
+  const botReady = employee => botOpenable(employee, roster)
   const openEmployee = employee => { if (botReady(employee)) props.onOpenEmployee(employee) }
   const employeeTitle = employee => {
     if (!employee.bot_id) return t('This employee has no Bot yet.')
     if (!botReady(employee)) return t('This employee cannot open a private chat right now.')
     return t('Chat privately with {name}', { name: employee.name })
   }
+  const department = openDept === null ? null : departments.find(item => item.id === openDept) ?? null
 
-  const tabButton = (value, label) => h('button', {
-    key: value,
-    type: 'button',
-    role: 'tab',
-    id: `bc-co-tab-${value}`,
-    'aria-selected': tab === value ? 'true' : 'false',
-    'aria-controls': `bc-co-panel-${value}`,
-    tabIndex: 0,
-    className: 'bc-co-tab' + (tab === value ? ' is-active' : ''),
-    ref: element => { if (element) tabRefs.current.set(value, element) },
-    onClick: () => props.onSelectTab(value),
-  }, label)
-  const onTabKey = event => {
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
-    event.preventDefault()
-    const next = tab === 'overview' ? 'org' : 'overview'
-    props.onSelectTab(next)
-    tabRefs.current.get(next)?.focus?.()
-  }
-  const tabs = h('div', { className: 'bc-co-tabs', role: 'tablist', 'aria-label': t('Company sections'), onKeyDown: onTabKey },
-    [tabButton('overview', t('Overview')), tabButton('org', t('Organization'))])
+  const avatar = (employee, size = 'sm') => h('span', { className: `bc-co-face bc-co-face-${size}`, 'aria-hidden': true }, initialOf(employee.name))
 
-  const statCard = (label, value, sub, options = {}) => h('div', {
-    key: label,
-    className: 'bc-co-stat' + (options.strong ? ' is-strong' : ''),
-    tabIndex: 0,
-    role: 'group',
-    'aria-label': `${label} ${value}${sub ? `，${sub}` : ''}${options.retry ? `，${t('Could not read. Click to try again.')}` : ''}`,
-  },
-    h('span', { className: 'bc-co-stat-label' }, label),
-    h('span', { className: 'bc-co-stat-value' }, value),
-    options.retry
-      ? h('button', { type: 'button', className: 'bc-co-stat-retry', onClick: options.retry }, t('Could not read. Click to try again.'))
-      : sub ? h('span', { className: 'bc-co-stat-sub' }, sub) : null)
-
-  const overview = h('div', { className: 'bc-co-overview', role: 'tabpanel', id: 'bc-co-panel-overview', 'aria-labelledby': 'bc-co-tab-overview' },
-    h('div', { className: 'bc-co-stats' },
-      // The decision count reads its own route: a failure here dims this card only and
-      // never replaces the whole page with an error.
-      statCard(t('Waiting for you'), waiting === null ? '—' : String(waiting), waiting > 0 ? t('Includes approvals and acceptances') : null, {
-        strong: waiting > 0,
-        retry: todoError ? props.onRetryTodos : null,
-      }),
-      statCard(t('Projects in progress'), String(projects.filter(item => item.status === 'active').length)),
-      statCard(t('Departments'), String(departments.length)),
-      statCard(t('Employees'), String(employees.length), t('{count} outside projects', { count: outside.length }))),
-    todoLoading && !todos && !todoError
-      ? h('p', { className: 'bc-co-hint', role: 'status' }, t('Reading the decision count…'))
-      : null)
-
-  const employeeButton = (employee, staff) => {
+  const employeeRow = employee => {
     const disabled = !botReady(employee)
-    const detail = employeeDetail(projects, employee)
+    const detail = employee.role ? String(employee.role) : projectText(projects, employee)
     return h('button', {
       key: employee.id,
       type: 'button',
-      className: 'bc-co-node bc-co-emp' + (lit(staff.id) ? ' is-lit' : '') + (disabled ? ' is-disabled' : ''),
+      className: 'bc-co-emp' + (disabled ? ' is-disabled' : ''),
       'aria-label': t('Employee: {name}, {detail}', { name: employee.name, detail }),
       'aria-disabled': disabled ? 'true' : undefined,
-      // A native `disabled` button cannot take focus, and every node has to stay in the
-      // Tab order; `aria-disabled` keeps it focusable while blocking the action.
       tabIndex: 0,
       title: employeeTitle(employee),
-      onMouseEnter: () => props.onChain(staff.id),
-      onMouseLeave: () => props.onChain(null),
-      onFocus: () => props.onChain(staff.id),
-      onBlur: () => props.onChain(null),
-      onClick: () => openEmployee(employee),
+      onClick: event => { event.stopPropagation(); openEmployee(employee) },
     },
-      h('span', { className: 'bc-co-node-text' },
+      avatar(employee),
+      h('span', { className: 'bc-co-emp-text' },
         h('strong', null, employee.name),
-        h('span', { className: 'bc-co-sub' }, detail)))
+        h('span', { className: 'bc-co-sub' }, detail)),
+      h('span', { className: 'bc-co-emp-go', 'aria-hidden': true }, '›'))
   }
 
-  const departmentButton = (department, staff) => h('button', {
-    key: department.id,
-    type: 'button',
-    className: 'bc-co-node bc-co-dept' + (lit(department.id) ? ' is-lit' : ''),
-    'aria-label': t('Department: {name}, {count} people', { name: department.name, count: staff.length }),
-    tabIndex: 0,
-    ref: element => { if (element) deptButtons.current.set(department.id, element) },
-    onMouseEnter: () => props.onChain(department.id),
-    onMouseLeave: () => props.onChain(null),
-    onFocus: () => props.onChain(department.id),
-    onBlur: () => props.onChain(null),
-    onClick: () => props.onShowDept(department.id),
-  },
-    h('span', { className: 'bc-co-node-text' },
-      h('strong', null, department.name),
-      h('span', { className: 'bc-co-sub' }, departmentLine(staff, department))))
-
-  const chart = !data.company ? null : h('div', { className: 'bc-co-wrap', ref: wrapRef },
-    h('div', { className: 'bc-co' + (dim ? ' is-dim' : ''), role: 'group', 'aria-label': t('Organization chart') },
-      // The company node is the root of the chart, not an action: it labels the
-      // structure, stays lit at all times and never takes focus or a click.
-      h('div', { className: 'bc-co-node bc-co-company is-lit' },
-        h('span', { className: 'bc-co-node-text' },
-          h('strong', null, data.company.name),
-          h('span', { className: 'bc-co-sub' }, companyLine(departments, employees, projects)))),
-      h('div', { className: 'bc-co-branches' },
-        departments.map(department => {
-          const staff = employees.filter(item => item.department_id === department.id)
-          return h('div', { className: 'bc-co-branch', key: department.id },
-            departmentButton(department, staff),
-            h('div', { className: 'bc-co-emps' },
-              staff.length
-                ? staff.map(employee => employeeButton(employee, department))
-                : h('span', { className: 'bc-co-none' }, t('No employees yet'))))
-        }))),
-    overflow ? h('p', { className: 'bc-co-hint', role: 'note' }, t('Scroll sideways on a narrow screen to see the whole structure.')) : null)
-
-  const organization = h('div', { className: 'bc-co-org', role: 'tabpanel', id: 'bc-co-panel-org', 'aria-labelledby': 'bc-co-tab-org' },
-    departments.length
-      ? chart
-      : h('div', { className: 'bc-state bc-co-state' },
-        h('strong', null, t('No departments yet')),
-        h('p', null, t('Employees get a department once departments exist.'))))
-
-  const departmentPage = department => {
-    if (!department) {
-      return h('div', { className: 'bc-state bc-co-state' },
-        h('strong', null, t('This department no longer exists.')),
-        h('button', { type: 'button', className: 'bc-button', onClick: props.onBackToOrg }, t('Back to organization')))
-    }
+  const departmentCard = department => {
     const staff = employees.filter(item => item.department_id === department.id)
+    const lead = leadOf(employees, department)
     const bound = Boolean(department.chat_ref)
-    const row = employee => {
-      const disabled = !botReady(employee)
-      const detail = employeeDetail(projects, employee)
-      return h('button', {
-        key: employee.id,
-        type: 'button',
-        className: 'bc-co-row' + (disabled ? ' is-disabled' : ''),
-        'aria-disabled': disabled ? 'true' : undefined,
-        tabIndex: 0,
-        title: employeeTitle(employee),
-        onClick: () => openEmployee(employee),
-      },
-        h('span', { className: 'bc-co-row-main' },
-          h('strong', null, employee.name),
-          h('span', { className: 'bc-co-sub' }, detail)),
-        h('span', { className: 'bc-co-row-go', 'aria-hidden': true }, '→'))
-    }
-    return h('section', { className: 'bc-co-deptpage', 'aria-label': department.name },
-      h('div', { className: 'bc-co-depthead' },
+    // A whole card opens the overview, as in the prototype; the name inside is the
+    // keyboard and screen-reader entry, because a card cannot hold its own employees
+    // as buttons and be a button itself.
+    return h('div', {
+      key: department.id,
+      className: 'bc-co-dept' + (openDept === department.id ? ' is-open' : ''),
+      onClick: () => props.onOpenDept(department.id),
+    },
+      h('div', { className: 'bc-co-dept-head' },
         h('button', {
           type: 'button',
-          className: 'bc-co-back',
-          'aria-label': t('Back to organization'),
-          title: t('Back to organization'),
-          ref: backRef,
-          onClick: props.onBackToOrg,
-        }, '←'),
-        h('div', { className: 'bc-co-depttitle' },
-          h('h2', null, department.name),
-          h('p', null, t('{count} people', { count: staff.length })))),
-      // Only the two blocks the read model can fill. Capability allocation and the
-      // department owner have no fields yet, so they render nothing rather than an
-      // empty shell.
-      h('section', { className: 'bc-co-block' },
-        h('h3', null, t('Department group')),
-        bound
-          ? h('p', { className: 'bc-co-line' }, t('Department group bound'))
-          : h('div', null,
-            h('p', { className: 'bc-co-line' }, t('Department group not bound')),
-            h('p', { className: 'bc-co-muted' }, t('Department chats are needed before the project starts.')))),
-      h('section', { className: 'bc-co-block' },
-        h('h3', null, t('Employees')),
+          className: 'bc-co-dept-name',
+          'aria-expanded': openDept === department.id ? 'true' : 'false',
+          onClick: event => { event.stopPropagation(); props.onOpenDept(department.id) },
+        }, department.name),
+        h('span', { className: 'bc-co-tag' + (bound ? ' is-ok' : '') }, bound ? t('Group built') : t('Not built'))),
+      h('p', { className: 'bc-co-dept-meta' }, lead ? t('Lead {name} · {count} people', { name: lead.name, count: staff.length }) : t('No lead yet · {count} people', { count: staff.length })),
+      department.description ? h('p', { className: 'bc-co-dept-desc' }, department.description) : null,
+      h('div', { className: 'bc-co-emps' },
         staff.length
-          ? h('div', { className: 'bc-co-rows' }, staff.map(row))
-          : h('p', { className: 'bc-co-muted' }, t('This department has no employees yet.'))))
+          ? staff.map(employee => employeeRow(employee))
+          : h('span', { className: 'bc-co-none' }, t('No employees yet'))))
+  }
+
+  const chart = !data.company ? null : h('div', {
+    className: 'bc-co-canvas' + (dragging ? ' is-panning' : ''),
+    role: 'group',
+    'aria-label': t('Organization chart'),
+    ref: props.canvasRef,
+    onPointerDown: props.onPanStart,
+    onPointerMove: props.onPanMove,
+    onPointerUp: props.onPanEnd,
+    onPointerCancel: props.onPanEnd,
+  },
+    h('div', { className: 'bc-co-band', style: { transform: `translate(${pan.x}px, ${pan.y}px)` } },
+      h('div', { className: 'bc-co-co' },
+        h('div', { className: 'bc-co-co-card' },
+          h('strong', null, data.company.name),
+          h('span', { className: 'bc-co-sub' }, companyLine(departments, employees, projects))),
+        props.onOpenProjects
+          ? h('button', { type: 'button', className: 'bc-co-co-link', onClick: props.onOpenProjects }, `${t('View projects')} ›`)
+          : null),
+      h('div', { className: 'bc-co-cols' }, departments.map(departmentCard))),
+    h('p', { className: 'bc-co-hint', role: 'note' }, t('Drag empty space to pan · Click a department for its overview')))
+
+  const employeeDetailFor = (projects, employee) => employee.role ? String(employee.role) : projectText(projects, employee)
+
+  const overview = department => {
+    const staff = employees.filter(item => item.department_id === department.id)
+    const lead = leadOf(employees, department)
+    const bound = Boolean(department.chat_ref)
+    // Only employees of this department can lead it, and only while they are active:
+    // the server rejects anything else, so the list never offers it.
+    const canLead = staff.filter(item => item.status !== 'archived')
+    return h('aside', {
+      className: 'bc-co-pop',
+      role: 'dialog',
+      'aria-label': t('Department overview: {name}', { name: department.name }),
+      onClick: event => event.stopPropagation(),
+    },
+      h('div', { className: 'bc-co-pop-head' },
+        h('strong', null, t('Department overview')),
+        h('span', { className: 'bc-co-pop-name' }, department.name),
+        h('button', { type: 'button', className: 'bc-co-pop-close', 'aria-label': t('Close'), onClick: props.onCloseDept }, '×')),
+      h('dl', { className: 'bc-co-kv' },
+        h('dt', null, t('Lead')),
+        h('dd', null, props.canEdit
+          ? h('select', {
+            value: department.lead_employee_id ?? '',
+            'aria-label': t('Lead of {name}', { name: department.name }),
+            onChange: event => props.onSetLead(department, event.target.value),
+          }, h('option', { value: '' }, t('No lead assigned')), canLead.map(item => h('option', { key: item.id, value: item.id }, item.name)))
+          : lead?.name ?? t('No lead assigned')),
+        h('dt', null, t('Members')),
+        h('dd', null, t('{count} people', { count: staff.length })),
+        h('dt', null, t('Department group')),
+        h('dd', { className: bound ? undefined : 'bc-co-muted' }, bound ? t('Department group bound') : t('Department group not bound'))),
+      staff.length
+        ? h('div', { className: 'bc-co-pop-emps' }, staff.map(employee => h('button', {
+          key: employee.id,
+          type: 'button',
+          className: 'bc-co-row' + (botReady(employee) ? '' : ' is-disabled'),
+          'aria-disabled': botReady(employee) ? undefined : 'true',
+          title: employeeTitle(employee),
+          onClick: () => openEmployee(employee),
+        },
+          avatar(employee),
+          h('span', { className: 'bc-co-row-main' }, h('strong', null, employee.name), h('span', { className: 'bc-co-sub' }, employeeDetailFor(projects, employee))),
+          h('span', { className: 'bc-co-row-go', 'aria-hidden': true }, '›'))))
+        : h('p', { className: 'bc-co-muted' }, t('This department has no employees yet.')))
+  }
+
+  const createPanel = () => {
+    if (!creating) return null
+    const departmentOptions = departments.map(item => h('option', { key: item.id, value: item.id }, item.name))
+    const bots = (roster?.bots ?? []).filter(bot => !employees.some(employee => employee.bot_id === bot.id && employee.status === 'active') && !bot.private)
+    return h('div', { className: 'bc-co-create', role: 'dialog', 'aria-label': creating === 'department' ? t('New department') : t('New employee') },
+      h('div', { className: 'bc-co-pop-head' },
+        h('strong', null, creating === 'department' ? t('New department') : t('New employee')),
+        h('button', { type: 'button', className: 'bc-co-pop-close', 'aria-label': t('Close'), onClick: props.onCloseCreate }, '×')),
+      creating === 'department'
+        ? h('label', { className: 'bc-field' }, t('Department name'),
+          h('input', { value: props.draftName, maxLength: 80, onChange: event => props.onDraftName(event.target.value), placeholder: t('Department name') }))
+        : h('div', { className: 'bc-co-create-fields' },
+          h('label', { className: 'bc-field' }, t('Bot'),
+            h('select', { value: props.draftBot, onChange: event => props.onDraftBot(event.target.value) },
+              h('option', { value: '' }, t('Choose a Bot')),
+              bots.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name)))),
+          h('label', { className: 'bc-field' }, t('Department'),
+            h('select', { value: props.draftDept, onChange: event => props.onDraftDept(event.target.value) },
+              h('option', { value: '' }, t('Choose a department')),
+              departmentOptions)),
+          h('label', { className: 'bc-field' }, t('Employee display name (optional)'),
+            h('input', { value: props.draftName, maxLength: 80, onChange: event => props.onDraftName(event.target.value), placeholder: t('Use Bot name') })),
+          h('label', { className: 'bc-field' }, t('Employee role'),
+            h('select', { value: props.draftRole, onChange: event => props.onDraftRole(event.target.value) },
+              h('option', { value: 'executor' }, t('Executor')),
+              h('option', { value: 'coordinator' }, t('Coordinator')),
+              h('option', { value: 'acceptor' }, t('Independent acceptor')),
+              h('option', { value: 'memory_keeper' }, t('Memory keeper'))))),
+      props.draftError ? h('p', { className: 'bc-exception', role: 'alert' }, props.draftError) : null,
+      h('div', { className: 'bc-co-create-actions' },
+        h('button', { type: 'button', className: 'bc-button', onClick: props.onCloseCreate }, t('Cancel')),
+        h('button', { type: 'button', className: 'bc-button bc-primary', disabled: props.draftBusy || !props.draftName.trim(), onClick: props.onCreate }, props.draftBusy ? t('Saving…') : t('Create'))))
   }
 
   let body
@@ -243,152 +225,206 @@ export function CompanyPageView(props) {
     body = h('div', { className: 'bc-co-loading', role: 'status', 'aria-label': t('Loading company information…') },
       [0, 1, 2].map(index => h('span', { key: index, className: 'bc-skel bc-skel-line' + (index === 2 ? ' short' : '') })))
   } else if (data.company === null) {
-    body = h('div', { className: 'bc-state bc-co-state' }, h('strong', null, t('No company information yet')))
-  } else if (tab === 'overview') {
-    body = overview
-  } else if (deptId !== null) {
-    body = departmentPage(department)
+    body = h('div', { className: 'bc-state bc-co-state' },
+      h('strong', null, t('No company information yet')),
+      h('p', null, t('Create the company before adding departments.')))
   } else {
-    body = organization
+    body = chart
   }
 
-  return h('section', { className: 'bc-co-page', 'aria-label': t('Company') }, tabs, body)
+  return h('section', { className: 'bc-co-page', 'aria-label': t('Company') },
+    data.company ? h('div', { className: 'bc-co-head' },
+      h('div', { className: 'bc-co-grow' },
+        h('h1', null, t('Company')),
+        h('p', null, companyLine(departments, employees, projects))),
+      props.canCreate ? h('div', { className: 'bc-co-actions' },
+        h('button', { type: 'button', className: 'bc-button', onClick: () => props.onCreateOpen('department') }, `＋ ${t('New department')}`),
+        h('button', { type: 'button', className: 'bc-button', onClick: () => props.onCreateOpen('employee') }, `＋ ${t('New employee')}`)) : null) : null,
+    h('div', { className: 'bc-co-stage' }, body,
+      department ? overview(department) : null,
+      createPanel()))
 }
 
 export function CompanyPage(props) {
   const { escapeGuard } = props
-  const [tab, setTab] = useState('overview')
-  const [deptId, setDeptId] = useState(null)
-  const [chain, setChain] = useState(null)
-  const [overflow, setOverflow] = useState(false)
-  const tabRefs = useRef(new Map())
-  const deptButtons = useRef(new Map())
-  const wrapRef = useRef(null)
-  const backRef = useRef(null)
-  const pendingFocus = useRef(null)
+  const [openDept, setOpenDept] = useState(null)
+  const [creating, setCreating] = useState(null)
+  const [draftName, setDraftName] = useState('')
+  const [draftBot, setDraftBot] = useState('')
+  const [draftDept, setDraftDept] = useState('')
+  const [draftRole, setDraftRole] = useState('executor')
+  const [draftBusy, setDraftBusy] = useState(false)
+  const [draftError, setDraftError] = useState('')
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [dragging, setDragging] = useState(false)
+  const canvasRef = useRef(null)
+  const drag = useRef(null)
 
-  const selectTab = next => { setTab(next); setDeptId(null); setChain(null) }
-  const showDept = id => { setDeptId(id); setChain(null) }
-  const backToOrg = () => { pendingFocus.current = deptId; setDeptId(null); setChain(null) }
-
-  // The surface owns Escape for the whole panel; while a department page is open it
-  // has to come back here first, so the guard runs before the panel closes.
+  const closeDraft = () => { setCreating(null); setDraftError(''); setDraftName(''); setDraftBot(''); setDraftDept('') }
+  const openCreate = kind => { closeDraft(); setCreating(kind) }
+  // The surface owns Escape for the whole panel; the overview and the create panel take
+  // one level each so the first Escape closes them instead of the page.
   if (escapeGuard) {
     escapeGuard.current = () => {
-      if (deptId === null) return false
-      backToOrg()
-      return true
+      if (creating) { closeDraft(); return true }
+      if (openDept !== null) { setOpenDept(null); return true }
+      return false
     }
   }
 
-  useEffect(() => {
-    if (deptId !== null) { backRef.current?.focus?.(); return }
-    const target = pendingFocus.current
-    if (target === null) return
-    pendingFocus.current = null
-    deptButtons.current.get(target)?.focus?.()
-  }, [deptId])
+  // Panning only starts on the canvas itself: a press that lands on a card, a button or
+  // the overview keeps its own meaning.
+  const onPanStart = event => {
+    if (event.button !== 0) return
+    const target = event.target
+    if (target instanceof Element && target.closest('button, input, select, a, .bc-co-pop, .bc-co-create, .bc-co-dept')) return
+    drag.current = { x: event.clientX, y: event.clientY, pan }
+    setDragging(true)
+    // A pointer that is already gone (a very fast click, a cancelled touch) cannot be
+    // captured; the drag still ends in the pointerup handler, so this is not an error.
+    try { event.currentTarget.setPointerCapture?.(event.pointerId) } catch { /* no active pointer */ }
+  }
+  const onPanMove = event => {
+    if (!drag.current) return
+    setPan({ x: drag.current.pan.x + (event.clientX - drag.current.x), y: drag.current.pan.y + (event.clientY - drag.current.y) })
+  }
+  const onPanEnd = () => { drag.current = null; setDragging(false) }
 
-  // The hint only shows when the chart really is wider than its container: the page
-  // itself never scrolls sideways.
-  useEffect(() => {
-    const measure = () => {
-      const element = wrapRef.current
-      if (!element) return
-      setOverflow(Number(element.scrollWidth ?? 0) > Number(element.clientWidth ?? 0) + 1)
-    }
-    measure()
-    const observer = typeof ResizeObserver === 'function' && wrapRef.current ? new ResizeObserver(measure) : null
-    if (observer) observer.observe(wrapRef.current)
-    if (typeof window !== 'undefined') window.addEventListener('resize', measure)
-    return () => {
-      if (observer) observer.disconnect()
-      if (typeof window !== 'undefined') window.removeEventListener('resize', measure)
-    }
-  }, [tab, deptId, props.data.departments, props.data.employees, props.loading, props.error])
+  const setLead = async (department, employeeId) => {
+    if (!props.onCommand) return
+    try { await props.onCommand('department.update', { department_id: department.id, lead_employee_id: employeeId || null }) }
+    catch (failure) { setDraftError(failure?.message ?? String(failure)) }
+  }
+
+  const create = async () => {
+    if (!props.onCommand || draftBusy) return
+    setDraftBusy(true)
+    setDraftError('')
+    try {
+      if (creating === 'department') {
+        await props.onCommand('department.create', { name: draftName.trim() })
+      } else {
+        const bot = props.roster?.byId?.[draftBot]
+        await props.onCommand('employee.create', {
+          bot_id: draftBot,
+          name: draftName.trim() || bot?.name || draftBot,
+          department_id: draftDept,
+          acceptance_role: draftRole,
+        })
+      }
+      closeDraft()
+    } catch (failure) { setDraftError(failure?.message ?? String(failure)) }
+    finally { setDraftBusy(false) }
+  }
 
   return CompanyPageView({
     ...props,
-    tab,
-    deptId,
-    chain,
-    overflow,
-    wrapRef,
-    tabRefs,
-    deptButtons,
-    backRef,
-    onSelectTab: selectTab,
-    onShowDept: showDept,
-    onBackToOrg: backToOrg,
-    onChain: setChain,
+    openDept,
+    creating,
+    pan,
+    dragging,
+    canvasRef,
+    draftName,
+    draftBot,
+    draftDept,
+    draftRole,
+    draftBusy,
+    draftError,
+    canCreate: Boolean(props.onCommand),
+    canEdit: Boolean(props.onCommand),
+    onOpenDept: setOpenDept,
+    onCloseDept: () => setOpenDept(null),
+    onCreateOpen: openCreate,
+    onCloseCreate: closeDraft,
+    onDraftName: setDraftName,
+    onDraftBot: setDraftBot,
+    onDraftDept: setDraftDept,
+    onDraftRole: setDraftRole,
+    onCreate: () => void create(),
+    onSetLead: (department, employeeId) => void setLead(department, employeeId),
+    onPanStart,
+    onPanMove,
+    onPanEnd,
   })
 }
 
 export const COMPANY_PAGE_CSS = `
-.bc-co-page{display:flex;flex-direction:column;min-height:0}
-.bc-co-tabs{display:flex;gap:4px;border-bottom:1px solid var(--bt-line);margin:0 0 20px}
-.bc-co-tab{position:relative;border:0;background:none;padding:9px 12px;min-height:36px;font:600 13px var(--bt-font);color:var(--bt-ink-2);cursor:pointer;border-radius:8px 8px 0 0}
-.bc-co-tab:hover{background:var(--bt-hover);color:var(--bt-ink)}
-.bc-co-tab[aria-selected="true"]{color:var(--bt-ink)}
-.bc-co-tab[aria-selected="true"]::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;height:2px;border-radius:999px;background:var(--bt-accent)}
-.bc-co-tab:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
-.bc-co-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-@media (max-width:720px){.bc-co-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.bc-co-stat{display:flex;flex-direction:column;gap:4px;min-height:96px;padding:14px 16px;text-align:left;background:var(--bt-card);border:1px solid var(--bt-line);border-radius:12px;box-shadow:var(--bc-shadow-raised)}
-.bc-co-stat:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
-.bc-co-stat-label{font-size:12px;line-height:16px;color:var(--bt-ink-2)}
-.bc-co-stat-value{font:600 26px/32px var(--bt-font);color:var(--bt-ink);font-variant-numeric:tabular-nums}
-.bc-co-stat.is-strong .bc-co-stat-value{color:var(--bt-accent)}
-.bc-co-stat-sub{font-size:12px;line-height:16px;color:var(--bt-ink-2)}
-.bc-co-stat-retry{margin-top:auto;align-self:flex-start;border:0;background:none;padding:0;min-height:28px;font:600 12px var(--bt-font);color:var(--bt-accent);cursor:pointer;border-radius:4px}
-.bc-co-stat-retry:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
-.bc-co-wrap{overflow-x:auto;overscroll-behavior-x:contain;padding:4px 2px 8px}
-.bc-co{display:flex;gap:24px;align-items:flex-start;min-width:720px}
-.bc-co-node{display:grid;grid-template-columns:14px 1fr;gap:8px;align-items:start;background:none;border:0;padding:6px 10px 6px 0;font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer;border-radius:8px;transition:opacity .12s ease}
-.bc-co-node::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--bt-accent);margin:7px auto 0}
-.bc-co-node:hover{background:var(--bt-hover)}
-.bc-co-node:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
-.bc-co-node-text{display:flex;flex-direction:column;gap:2px;min-width:0}
-.bc-co-node-text strong{font-size:14px;line-height:20px;font-weight:600}
-.bc-co-sub{font-size:12px;line-height:17px;color:var(--bt-ink-2)}
-.bc-co.is-dim .bc-co-node{opacity:.34}
-.bc-co.is-dim .bc-co-node.is-lit{opacity:1}
-.bc-co-company{flex:none;min-width:200px;cursor:default}
-.bc-co-company:hover{background:none}
-.bc-co.is-dim .bc-co-company{opacity:1}
-.bc-co-branches{display:flex;flex-direction:column;gap:14px;flex:1}
-.bc-co-branch{position:relative;display:flex;align-items:flex-start}
-.bc-co-branch::before{content:"";position:absolute;left:-24px;top:16px;width:24px;height:1px;background:var(--bt-line)}
-.bc-co-dept{width:200px;flex:none;margin-right:10px}
-.bc-co-emps{display:flex;flex-direction:column;gap:2px;min-width:240px;padding-left:18px;position:relative}
-.bc-co-emps::before{content:"";position:absolute;left:6px;top:10px;bottom:10px;width:1px;background:var(--bt-line)}
-.bc-co-emp{position:relative}
-.bc-co-emp::after{content:"";position:absolute;left:-12px;top:16px;width:12px;height:1px;background:var(--bt-line)}
-.bc-co-none{display:block;padding:6px 0 6px 2px;font-size:12px;line-height:17px;color:var(--bt-ink-3)}
-.bc-co-node.is-disabled{color:var(--bt-ink-2);cursor:default}
-.bc-co-node.is-disabled:hover{background:none}
-.bc-co-hint{margin:10px 0 0;font-size:12px;line-height:16px;color:var(--bt-ink-2)}
-.bc-co-deptpage{display:flex;flex-direction:column;gap:22px}
-.bc-co-depthead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.bc-co-back{flex:none;width:36px;height:36px;border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);font-size:18px;line-height:1;cursor:pointer}
-.bc-co-back:hover{background:var(--bt-hover)}
-.bc-co-back:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
-.bc-co-depttitle h2{margin:0;font-size:17px;line-height:24px;font-weight:600}
-.bc-co-depttitle p{margin:2px 0 0;font-size:12px;line-height:16px;color:var(--bt-ink-2)}
-.bc-co-block{display:flex;flex-direction:column;gap:8px;padding-top:16px;border-top:1px solid var(--bt-line)}
-.bc-co-block h3{margin:0;font-size:13px;line-height:18px;font-weight:600;color:var(--bt-ink-2)}
-.bc-co-line{margin:0;font-size:13px;line-height:18px}
+.bc-surface-company{overflow:hidden}
+.bc-surface-company .bc-shell{height:100vh}
+.bc-surface-company .bc-content{display:flex;flex:1;min-height:0;width:100%;max-width:none;padding:0}
+.bc-surface-company .bc-co-page{flex:1;min-height:0}
+.bc-co-page{display:flex;flex-direction:column;min-height:0;height:100%}
+.bc-co-head{flex:none;display:flex;align-items:flex-end;gap:16px;padding:18px 32px 14px;border-bottom:1px solid var(--bt-line)}
+.bc-co-grow{flex:1;min-width:0}
+.bc-co-head h1{margin:0;font:600 17px/24px var(--bt-font);color:var(--bt-ink)}
+.bc-co-head p{margin:3px 0 0;font-size:12px;line-height:18px;color:var(--bt-ink-2)}
+.bc-co-actions{display:flex;gap:8px;flex:none}
+.bc-co-stage{position:relative;flex:1;min-height:0}
+.bc-co-canvas{position:relative;height:100%;min-height:420px;overflow:hidden;cursor:grab;background-image:radial-gradient(circle,var(--bt-line-2) 1px,transparent 1px);background-size:26px 26px;overscroll-behavior:contain}
+.bc-co-canvas.is-panning{cursor:grabbing}
+.bc-co-band{position:absolute;left:0;top:0;width:100%;padding:26px 28px 72px;transform-origin:0 0;transition:transform .18s ease}
+.bc-co-canvas.is-panning .bc-co-band{transition:none}
+.bc-co-co{display:flex;flex-direction:column;align-items:center;gap:4px}
+.bc-co-co-card{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:230px;padding:10px 16px;border:1px solid var(--bt-line-2);border-radius:10px;background:var(--bt-card);box-shadow:var(--bc-shadow-raised)}
+.bc-co-co-card strong{font:600 14px/20px var(--bt-font);color:var(--bt-ink)}
+.bc-co-co-link{align-self:center;border:0;background:none;padding:2px 6px;min-height:24px;font:600 12px var(--bt-font);color:var(--bt-ink-2);cursor:pointer;border-radius:6px}
+.bc-co-co-link:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.bc-co-cols{position:relative;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:20px;margin-top:30px;padding-top:20px;border-top:1px solid var(--bt-line)}
+/* The tree: one stem from the company card down to the bus, then a short drop
+   into every department card. Decoration only, so it stays behind the cards. */
+.bc-co-cols::before{content:"";position:absolute;left:50%;top:-30px;width:1px;height:30px;background:var(--bt-line);pointer-events:none}
+.bc-co-cols::after{content:"";position:absolute;left:50%;top:-3px;width:5px;height:5px;border-radius:50%;border:1px solid var(--bt-line-2);background:var(--bt-card);transform:translateX(-50%);pointer-events:none}
+.bc-co-dept::before{content:"";position:absolute;left:50%;top:-20px;width:1px;height:20px;background:var(--bt-line);pointer-events:none}
+@media (max-width:1180px){.bc-co-cols{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:860px){.bc-co-cols{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.bc-co-dept{position:relative;display:flex;flex-direction:column;padding:11px 13px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-card);cursor:pointer;transition:border-color .12s ease,box-shadow .12s ease}
+.bc-co-dept:hover{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)}
+.bc-co-dept.is-open{border-color:var(--bt-accent);box-shadow:0 0 0 1px var(--bt-accent)}
+.bc-co-dept-head{display:flex;align-items:center;gap:6px;min-width:0}
+.bc-co-dept-name{flex:1;min-width:0;border:0;background:none;padding:0;font:600 13px/18px var(--bt-font);color:var(--bt-ink);text-align:left;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bc-co-dept-name:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px;border-radius:4px}
+.bc-co-tag{flex:none;padding:1px 6px;border-radius:4px;border:1px solid var(--bt-line-2);font-size:11px;line-height:16px;color:var(--bt-ink-2)}
+.bc-co-tag.is-ok{border-color:color-mix(in srgb,var(--bt-accent) 45%,transparent);color:var(--bt-accent)}
+.bc-co-dept-meta{margin:4px 0 0;font-size:12px;line-height:17px;color:var(--bt-ink-2)}
+.bc-co-dept-desc{margin:4px 0 0;font-size:12px;line-height:17px;color:var(--bt-ink-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.bc-co-emps{display:flex;flex-direction:column;gap:1px;margin-top:8px;padding-left:12px;border-left:1px solid var(--bt-line)}
+.bc-co-emp{display:flex;align-items:center;gap:9px;width:100%;padding:5px 6px;border:0;border-radius:8px;background:none;font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer}
+.bc-co-emp:hover{background:var(--bt-hover)}
+.bc-co-emp:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
+.bc-co-emp.is-disabled{color:var(--bt-ink-2);cursor:default}
+.bc-co-emp.is-disabled:hover{background:none}
+.bc-co-face{flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bt-main);border:1px solid var(--bt-line-2);color:var(--bt-ink-2);font:600 10px/1 var(--bt-font)}
+.bc-co-face-sm{width:22px;height:22px}
+.bc-co-emp-text{display:flex;flex:1;flex-direction:column;gap:0;min-width:0}
+.bc-co-emp-text strong{font-size:12px;line-height:16px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bc-co-emp-go{flex:none;font-size:13px;color:var(--bt-ink-3);opacity:0;transition:opacity .12s ease}
+.bc-co-emp:hover .bc-co-emp-go,.bc-co-emp:focus-visible .bc-co-emp-go{opacity:1}
+.bc-co-sub{font-size:11px;line-height:15px;color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bc-co-none{display:block;padding:4px 2px;font-size:11px;line-height:15px;color:var(--bt-ink-3)}
+.bc-co-hint{position:absolute;left:22px;bottom:16px;margin:0;font-size:12px;line-height:16px;color:var(--bt-ink-3)}
+.bc-co-pop,.bc-co-create{position:absolute;top:26px;right:32px;z-index:5;width:300px;max-height:calc(100% - 72px);overflow:auto;padding:14px;border:1px solid var(--bt-line-2);border-radius:12px;background:var(--bt-card);box-shadow:0 12px 32px -8px color-mix(in srgb,var(--bt-ink) 22%,transparent);animation:bc-co-pop-in .12s ease-out}
+@keyframes bc-co-pop-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.bc-co-pop,.bc-co-create{animation:none}}
+.bc-co-pop-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.bc-co-pop-head strong{font:600 13px/18px var(--bt-font)}
+.bc-co-pop-name{flex:1;min-width:0;font-size:12px;color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bc-co-pop-close{flex:none;width:26px;height:26px;border:0;border-radius:8px;background:none;color:var(--bt-ink-2);font-size:18px;line-height:1;cursor:pointer}
+.bc-co-pop-close:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.bc-co-kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0 0 10px;font-size:12px;line-height:17px}
+.bc-co-kv dt{color:var(--bt-ink-2)}
+.bc-co-kv dd{margin:0;color:var(--bt-ink);min-width:0}
+.bc-co-kv select{width:100%;min-height:28px;border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);font:inherit;padding:0 6px}
 .bc-co-muted{margin:0;font-size:12px;line-height:17px;color:var(--bt-ink-2)}
-.bc-co-rows{display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-card)}
-.bc-co-row{display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;border:0;border-bottom:1px solid var(--bt-line);background:var(--bt-card);font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer}
-.bc-co-row:last-child{border-bottom:0}
+.bc-co-pop-emps{display:flex;flex-direction:column;border-top:1px solid var(--bt-line);padding-top:8px}
+.bc-co-row{display:flex;align-items:center;gap:9px;width:100%;padding:7px 6px;border:0;border-radius:8px;background:none;font:inherit;color:var(--bt-ink);text-align:left;cursor:pointer}
 .bc-co-row:hover{background:var(--bt-hover)}
 .bc-co-row:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
-.bc-co-row.is-disabled{color:var(--bt-ink-2);cursor:default}
-.bc-co-row.is-disabled:hover{background:var(--bt-card)}
-.bc-co-row-main{display:flex;flex:1;flex-direction:column;gap:2px;min-width:0}
-.bc-co-row-main strong{font-size:13px;line-height:18px;font-weight:600}
-.bc-co-row-go{color:var(--bt-ink-3);font-size:14px}
-.bc-co-state{padding:28px 0}
-.bc-co-loading{display:flex;flex-direction:column;gap:8px;padding:20px 0}
+.bc-co-row.is-disabled{cursor:default;color:var(--bt-ink-2)}
+.bc-co-row.is-disabled:hover{background:none}
+.bc-co-row-main{display:flex;flex:1;flex-direction:column;gap:0;min-width:0}
+.bc-co-row-main strong{font-size:12px;line-height:16px;font-weight:600}
+.bc-co-row-go{font-size:13px;color:var(--bt-ink-3)}
+.bc-co-create-fields{display:flex;flex-direction:column;gap:10px}
+.bc-co-create-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.bc-co-loading{display:flex;flex-direction:column;gap:8px;padding:20px 32px}
 `

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   RAIL_WIDTH, RAIL_SNAP, SIDEBAR_MIN, SIDEBAR_MAX, MIN_CHAT, FALLBACK_SIDEBAR_WIDTH,
-  frameLayout, dragColumn, toggledPref, userSidebarToggle, readSidebar, writeSidebar,
+  frameLayout, dragColumn, toggledPref, reopenAsDrawer, userSidebarToggle, readSidebar, writeSidebar,
 } from '../src/client/frame-layout.js'
 import { createSource } from '../src/client/sources.js'
 import { teamActions } from '../src/client/team-actions.js'
@@ -49,6 +49,24 @@ test('without a panel the column stays open while the chat fits, then folds to t
   assert.equal(at(690, 280, { drawer: true }).left, 'drawer')
   // A drawer floats over the rail's place: the chat keeps the room it had beside the rail.
   assert.equal(at(690, 280, { drawer: true }).room, 690 - RAIL_WIDTH)
+})
+
+// 老板 11-18：窄窗收起左栏后点左上角展开，回来的必须是他原来那一栏（抽屉），
+// 不能只剩一条点不回去的 88px 图标轨。
+test('a hidden open column reopens as the drawer on a narrow window: the switch remembers the pref, not the rendered rail', () => {
+  const hide = pref => toggledPref(pref, 'open')
+  assert.equal(hide('open'), 'hidden')
+  assert.equal(reopenAsDrawer({ viewport: 606, sidebarWidth: 280 }), true)
+  const narrow = at(606, 280, { pref: 'open', drawer: reopenAsDrawer({ viewport: 606, sidebarWidth: 280 }) })
+  assert.equal(narrow.left, 'drawer')
+  // 700 is the last width that docks 280 + MIN_CHAT; 699 cannot.
+  assert.equal(reopenAsDrawer({ viewport: 700, sidebarWidth: 280 }), false)
+  assert.equal(at(700, 280, { pref: 'open' }).left, 'open')
+  assert.equal(reopenAsDrawer({ viewport: 699, sidebarWidth: 280 }), true)
+  assert.equal(at(699, 280, { pref: 'open', drawer: true }).left, 'drawer')
+  // 宽窗照旧直接回到停靠的开栏。
+  assert.equal(reopenAsDrawer({ viewport: 1440, sidebarWidth: 280 }), false)
+  assert.equal(at(1440, 280, { pref: 'open' }).left, 'open')
 })
 
 test('a rail preference keeps the rail beside a shown panel', () => {

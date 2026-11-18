@@ -186,6 +186,7 @@ html[data-bt-collapsing] [class*="_frame"]:has(>[class*="_sidebarCol"]){transiti
 .bt-pill:hover{background:color-mix(in srgb,var(--bt-main),#777 9%)}
 .bt-pill:active{transform:scale(.965)}
 .bt-pill-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.bt-pill-sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--bt-ink-3);font-size:12px;line-height:16px;padding-left:8px;border-left:.5px solid var(--bt-line-2)}
 .bt-pill-mem{flex:none;display:inline-flex;width:0;margin-left:-8px;overflow:hidden;transition:${spring(SPRING_SHAPE, 'width', 'margin-left')}}
 .bt-pill[data-memory=updated] .bt-pill-mem{width:var(--bt-mem-w);margin-left:0;transition:${spring(SPRING_STRETCH, 'width', 'margin-left')}}
 .bt-pill-mem-in{flex:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:var(--bt-ink-2);font-size:13px;font-weight:500;opacity:0;filter:blur(6px);transform:translateX(-8px);transition:opacity .14s ease,filter .18s ease,${spring(SPRING_SHAPE, 'transform')}}

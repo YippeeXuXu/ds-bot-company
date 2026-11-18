@@ -290,8 +290,10 @@ test('the drawer leaves out member, decision and activity sections without data'
   assert.doesNotMatch(body, /No members yet/)
   assert.doesNotMatch(body, /All clear/)
   assert.doesNotMatch(body, /No recent activity/)
+  // The overview keeps its heading; the goal is one row inside it, as in the
+  // prototype's 概况 section.
   const headings = collect(tree, node => node.type === 'h3').map(text)
-  assert.deepEqual(headings, ['目标'])
+  assert.deepEqual(headings, ['概览'])
 })
 
 test('the drawer renders real member rows, and decisions only when they exist', () => {
@@ -300,7 +302,7 @@ test('the drawer renders real member rows, and decisions only when they exist', 
     pending: [{ id: 't1', title: '同意发布', who: '官网改版' }], activity: [], onClose() {}, onOpenConfig() {},
   })
   assert.match(text(tree), /键盘/)
-  assert.match(text(tree), /coordinator/)
+  assert.match(text(tree), /协调员/)
   assert.match(text(tree), /同意发布/)
   assert.doesNotMatch(text(tree), /No recent activity/)
 })
@@ -366,7 +368,7 @@ test('the status bar and the pinned card show the project waiting read', async (
   const pin = collect(tree, node => node.props?.className === 'pc-pin')
   assert.equal(pin.length, 1, 'the pinned card is drawn from the waiting read')
   assert.match(text(pin[0]), /待我决定/)
-  assert.match(text(pin[0]), /已置顶 3/)
+  assert.match(text(pin[0]), /置顶 3/)
   // Neither the model's stale count (99) nor its stale pinned rows may leak in.
   assert.doesNotMatch(text(pin[0]), /99/)
   assert.doesNotMatch(text(pin[0]), /旧置顶/)
@@ -411,7 +413,8 @@ test('the drawer reads both sources once per opening and shows readable copy', a
   assert.match(body, /成员 提交了验收 · 10 分钟前/)
   assert.doesNotMatch(body, /project\.|evt_|operation_key|unknown/)
   // Seven mapped events were handed over; the drawer keeps the newest five (B-2, K-06).
-  assert.equal(collect(drawer, node => node.type === 'p').length, 6, 'one goal line plus five activity lines')
+  // The goal moved into the overview list, so the paragraphs are the five activity lines.
+  assert.equal(collect(drawer, node => node.type === 'p').length, 5, 'five activity lines')
   assert.doesNotMatch(body, /项目已启动|项目已创建/, 'the two oldest mapped events are cut')
   const todoReads = requests.filter(entry => entry.endpoint === 'company-todos')
   const eventReads = requests.filter(entry => entry.endpoint === 'company-events')

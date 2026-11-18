@@ -448,3 +448,35 @@ test('the routes are registered on the host carrier and disposed with the plugin
   assert.deepEqual(disposed, [COMMAND_PATH, MODEL_PATH, EVENTS_PATH, TODOS_PATH, TODOS_ANSWER_PATH])
   rmSync(home, { recursive: true, force: true })
 })
+
+// M1b-2.4 over HTTP: a conflict keeps 409 and a refused request keeps 422, with the same
+// code and field the configuration screen maps to an inline hint.
+test('a refused dismissal answers 409, and a dismissed employee answers 422', async () => {
+  const home = tempHome()
+  const { api, rooms } = open(home)
+  const seed_ = await seed(api, rooms)
+  const created = await command(api, 'project.create', draft(seed_))
+  assert.equal(created.status, 200)
+
+  const refused = await command(api, 'employee.update', { employee_id: seed_.alpha, status: 'disabled' })
+  assert.equal(refused.status, 409)
+  assert.equal(refused.body.code, 'employee/still-referenced')
+  assert.deepEqual(refused.body.details.projects[0].roles, ['coordinator'])
+  assert.match(refused.body.message, /coordinator on DS Bot Company M1/)
+
+  const delta = await command(api, 'employee.create', { bot_id: 'bot_d', department_id: seed_.department, name: '键盘' })
+  assert.equal(delta.status, 200)
+  const dismissed = await command(api, 'employee.update', { employee_id: delta.body.aggregate_id, status: 'disabled' })
+  assert.equal(dismissed.status, 200)
+  assert.equal(dismissed.body.body.employee.status, 'disabled')
+
+  const drafted = await command(api, 'project.create', draft(seed_, { name: '第二单', coordinator_employee_id: delta.body.aggregate_id }))
+  assert.equal(drafted.status, 422)
+  assert.equal(drafted.body.code, 'employee/inactive')
+  assert.equal(drafted.body.details.field, 'coordinator_employee_id')
+
+  const listed = await command(api, 'employee.list', { status: 'disabled' })
+  assert.equal(listed.status, 200)
+  assert.equal(listed.body.body.employees.length, 1)
+  rmSync(home, { recursive: true, force: true })
+})

@@ -61,6 +61,11 @@ export function dragColumn(x, viewport) {
 // The top-left switch hides the whole column and brings back the one it hid.
 export const toggledPref = (pref, shown) => (pref === 'hidden' ? shown : 'hidden')
 
+// Reopening brings back the column the switch hid. At a width that cannot dock
+// the open column the rail would come back instead — and the rail has no way
+// back to the column — so the switch reopens it as the floating drawer.
+export const reopenAsDrawer = ({ viewport, sidebarWidth }) => viewport < sidebarWidth + MIN_CHAT
+
 // The shell measures the window on its own frame, a beat apart from us, and
 // re-applies its own rule when it does: a flip this soon after a width change is
 // the shell settling, not a gesture.

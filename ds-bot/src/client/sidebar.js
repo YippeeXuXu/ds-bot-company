@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { FishLogo } from './dsh-primitives.js'
 import { isMainOf } from './sources.js'
 import { currentPart, previewOf, relativeShort } from './text.js'
-import { PlusIcon, SearchIcon, SidebarIcon, GaugeIcon, ClockIcon, GearIcon, PinMarkIcon, ConnectorIcon, SwitchIcon, CloudDownloadIcon, SignOutIcon } from './icons.js'
+import { PlusIcon, SearchIcon, SidebarIcon, GaugeIcon, ClockIcon, GearIcon, PinMarkIcon, ConnectorIcon, SwitchIcon, CloudDownloadIcon, SignOutIcon, ArrowDownIcon } from './icons.js'
 import { MAIN_LOOK } from './characters.js'
 import { botState, BotMark, BotAvatar, RoomAvatar } from './mark.js'
 import { reducedMotion } from './activity-row.js'
@@ -14,6 +14,7 @@ import { clientErrors } from './diagnostics.js'
 import { showsDshRow } from './dsh-offer.js'
 import { frameLayout, dragColumn, RAIL_WIDTH, FALLBACK_SIDEBAR_WIDTH, userSidebarToggle } from './frame-layout.js'
 import { chatRoom, dshCollapsed } from './frame-watch.js'
+import { call } from './api.js'
 
 // -------------------------------------------------------------------------
 // Sidebar
@@ -59,6 +60,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   const id = bot.id
   const part = currentPart(bot)
   const preview = useSessions(list => previewOf(list, part, roster.exchangeTurns[part]))
+  const stamp = useSessions(list => list.byId[part]?.updatedAt ?? 0)
   const running = useSessionStatus(map => map.get(part)?.running === true)
   const active = useSessionRetainInfo(part, info => (info?.retainedBy?.mainView ?? 0) > 0)
   const unread = useSessionStatus(map => map.get(part)?.completionUnread === true || map.get(part)?.pendingInteraction !== undefined) || (marked && !active)
@@ -100,7 +102,8 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   h(BotAvatar, { bot, size: wide ? 36 : 44, state, main }),
   pinned && !wide ? h(PinMark) : null,
   wide ? h('span', { className: 'bt-row-body' },
-    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, bot.name), pinned ? h(PinMark) : null),
+    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, bot.name), pinned ? h(PinMark) : null,
+      stamp ? h('span', { className: 'bt-row-time' }, relativeShort(stamp)) : null),
     runningLine ? h('span', { className: 'bt-row-preview' }, runningLine)
       : awayLine ? h('span', { className: 'bt-row-preview' }, awayLine)
         : waitsFor ? h('span', { className: 'bt-row-preview' }, waitsFor)
@@ -114,6 +117,7 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
   // The group's own Session is a chain of parts; the row shows the current one.
   const sessionId = room.sessionId ?? id
   const fallback = useSessions(list => previewOf(list, sessionId))
+  const stamp = useSessions(list => list.byId[sessionId]?.updatedAt ?? 0)
   const preview = room.preview?.replace(/\s+/g, ' ').trim() || fallback
   const active = useSessionRetainInfo(sessionId, info => (info?.retainedBy?.mainView ?? 0) > 0)
   const unread = useSessionStatus(map => map.get(sessionId)?.completionUnread === true) || (marked && !active)
@@ -133,7 +137,8 @@ function RoomRow({ room, roster, actions, useSessions, useSessionStatus, useSess
   h(RoomAvatar, { room, roster, size: wide ? 36 : 44 }),
   pinned && !wide ? h(PinMark) : null,
   wide ? h('span', { className: 'bt-row-body' },
-    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, room.name), pinned ? h(PinMark) : null),
+    h('span', { className: 'bt-row-name' }, h('span', { className: 'bt-row-title' }, room.name), pinned ? h(PinMark) : null,
+      stamp ? h('span', { className: 'bt-row-time' }, relativeShort(stamp)) : null),
     workingLine ? h('span', { className: 'bt-row-preview' }, workingLine) : preview ? h('span', { className: 'bt-row-preview' }, preview) : null) : null,
   wide && approval && !active ? h('span', { className: 'bt-unread bt-unread-wait', 'aria-hidden': true })
     : wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true })
@@ -279,7 +284,7 @@ function LeftColumn({ mode, width, onGrip, children }) {
 // Windows title bar it takes the shell's own place in the title band; elsewhere
 // it shows only while the column is hidden, since the column's own top row
 // carries it otherwise.
-function TitleToggle({ hidden, onToggle }) {
+export function TitleToggle({ hidden, onToggle }) {
   if (typeof document === 'undefined') return null
   const titlebar = document.documentElement.hasAttribute('data-windows-titlebar')
   if (!titlebar && !hidden) return null
@@ -300,12 +305,67 @@ const bootHint = () => {
     : t('The Bot team could not start. {error}. The engine’s startup output — its console, or the app’s startup error box — has the cause.', { error: last })
 }
 
+// The company model feeds the sidebar's company header and its context lists.
+// It is read through the same Bot API as the company pages, and the pages say
+// when they changed something so the column does not keep a stale name or count.
+function useCompanyModel(pageKey) {
+  const [model, setModel] = useState(null)
+  useEffect(() => {
+    let live = true
+    const load = () => {
+      call('company-model', {}, undefined).then(value => { if (live) setModel(value) }, () => {})
+    }
+    load()
+    const onChange = () => load()
+    window.addEventListener('bt-company-changed', onChange)
+    return () => { live = false; window.removeEventListener('bt-company-changed', onChange) }
+  }, [pageKey])
+  return model
+}
+
+// The project chat's column needs the same decision count the page shows.
+// A failure stays silent here: the column is navigation, not the source of truth.
+function useCompanyTodos(pageKey) {
+  const [data, setData] = useState(null)
+  useEffect(() => {
+    let live = true
+    const load = () => {
+      call('company-todos', {}, undefined).then(value => { if (live) setData(value) }, () => {})
+    }
+    load()
+    const onChange = () => load()
+    window.addEventListener('bt-company-changed', onChange)
+    return () => { live = false; window.removeEventListener('bt-company-changed', onChange) }
+  }, [pageKey])
+  return data
+}
+
+// The three marks the prototype uses: a building, a grid, a chat bubble.
+const NAV_PATHS = {
+  company: 'M4 20V6.5A2.5 2.5 0 0 1 6.5 4H14a2 2 0 0 1 2 2v14M16 10h2.5A1.5 1.5 0 0 1 20 11.5V20M2 20h20M7 8h4M7 12h4M7 16h4',
+  projects: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
+  chats: 'M20 12a8 8 0 0 1-8 8H7l-4 3v-6.5A8 8 0 0 1 11 4h1a8 8 0 0 1 8 8z',
+}
+const CoIcon = ({ name }) => h('svg', {
+  className: 'bt-co-ico', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
+  strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true,
+}, h('path', { d: NAV_PATHS[name] }))
+
+const projectStage = status => status === 'active' ? t('In progress') : status === 'archived' ? t('Archived') : status === 'paused' ? t('Paused') : t('Setup')
+
 export function TeamSidebar(props) {
   const { wide, useRoster, useUi, useSessions, actions } = props
   const listRef = useRef(null)
   const roster = useRoster(value => value)
   const markedUnread = useUi(value => value.unread)
   const uiNow = useUi(value => value)
+  const pageKey = uiNow.companyPage ? `${uiNow.companyPage.kind}:${uiNow.companyPage.id ?? ''}` : 'chat'
+  const company = useCompanyModel(pageKey)
+  const companyTodos = useCompanyTodos(pageKey)
+  const activeSession = useSessions(list => Object.values(list.byId ?? {}).find(session => (session?.retainedBy?.mainView ?? 0) > 0)?.id ?? null)
+  const [projectFilter, setProjectFilter] = useState('active')
+  const [projectsCollapsed, setProjectsCollapsed] = useState(false)
+  const [chatQuery, setChatQuery] = useState('')
   props.useRegistry(value => value)
   const frameSnap = props.useFrame ? props.useFrame(value => value) : { viewport: typeof window === 'undefined' ? 0 : window.innerWidth, sidebarWidth: FALLBACK_SIDEBAR_WIDTH, collapsedWidth: 0 }
   const pref = props.useSidebarPref ? props.useSidebarPref(value => value) : 'open'
@@ -346,8 +406,15 @@ export function TeamSidebar(props) {
   useLayoutEffect(() => {
     if (typeof document === 'undefined') return
     chatRoom.setLeft(Math.max(0, pushed - (frameSnap.collapsedWidth ?? 0)))
+    // The company pages stand beside the column rather than over it; this is the
+    // offset their fixed surface starts from.
+    document.documentElement.style.setProperty('--bt-company-left', `${pushed}px`)
   }, [pushed, frameSnap.collapsedWidth])
-  useEffect(() => () => { if (typeof document !== 'undefined') chatRoom.setLeft(null) }, [])
+  useEffect(() => () => {
+    if (typeof document === 'undefined') return
+    chatRoom.setLeft(null)
+    document.documentElement.style.removeProperty('--bt-company-left')
+  }, [])
 
   // The edge drag: live while the pointer moves, the column's new state on release.
   // Per frame the drag writes the column's own inline style and each conversation
@@ -552,40 +619,169 @@ export function TeamSidebar(props) {
     document.addEventListener('keydown', onKey, true)
     return () => document.removeEventListener('keydown', onKey, true)
   }, [])
+  const page = uiNow.companyPage
+  const companyData = company ?? {}
+  const companyInfo = companyData.company ?? null
+  const departments = companyData.departments ?? []
+  const employees = companyData.employees ?? []
+  const projects = companyData.projects ?? []
+  const activeProjects = projects.filter(item => item.status === 'active').length
+  // A project chat keeps the project column visible even though the page state is
+  // null: the room is bound to one project and that is the context the user needs.
+  const activeRoom = activeSession ? roster.roomsById?.[activeSession] : null
+  const activeProject = !page && activeRoom ? projects.find(item => item.group_chat_ref === activeSession) ?? null : null
+  const kind = activeProject ? 'projectchat' : page?.kind ?? 'chat'
+  const currentProject = activeProject ?? (kind === 'detail' ? projects.find(item => item.id === page?.id) : null)
+  const todoCount = companyTodos?.counts?.waiting_total ?? 0
+  const companyName = companyInfo?.name ?? 'DS Company'
+  const wantedChat = chatQuery.trim().toLowerCase()
+  const chatEntries = order.filter(entry => !wantedChat || String(entry.item.name ?? '').toLowerCase().includes(wantedChat))
+  const pinnedEntries = chatEntries.filter(entry => entry.item.pinned)
+  const otherEntries = chatEntries.filter(entry => !entry.item.pinned)
+  const mainEntry = main ? { kind: 'bot', item: main, at: 0 } : null
+  const allEntries = mainEntry ? [mainEntry, ...otherEntries.filter(entry => entry.item.id !== main.id)] : otherEntries
+  const renderEntry = entry => (entry.kind === 'bot'
+    ? h(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true })
+    : entry.kind === 'room'
+      ? h(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true })
+      : h(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true }))
+  const navButton = (mark, label, count, active, onClick) => h('button', {
+    type: 'button', className: active ? 'is-active' : '', 'aria-current': active ? 'page' : undefined, onClick,
+  },
+    h(CoIcon, { name: mark }),
+    h('span', { className: 'bt-co-nav-label' }, label),
+    count === null ? null : h('span', { className: 'bt-co-count' }, count))
+  const companyLink = (label, meta, active, onClick) => h(onClick ? 'button' : 'div', {
+    type: onClick ? 'button' : undefined, className: 'bt-co-link' + (active ? ' is-active' : ''), onClick,
+  },
+    h('span', { className: 'bt-co-link-label' }, label),
+    meta === null ? null : h('span', { className: 'bt-co-meta' }, meta))
+  const projectVisible = item => projectFilter === 'all' || (projectFilter === 'archived' ? item.status === 'archived' : projectFilter === 'active' ? item.status === 'active' : item.status === 'setup')
+  // A project's share of the decisions that wait: the column shows the same
+  // count the table and the project page do, and nothing when there is none.
+  const waitingOf = item => (companyTodos?.waiting ?? []).filter(todo => todo.project_id === item.id).length
+  const projectRow = item => {
+    const department = (item.source_department_ids ?? []).map(id => departments.find(entry => entry.id === id)?.name).filter(Boolean)[0] ?? ''
+    const coordinator = employees.find(entry => entry.id === item.acceptance_actor) ?? null
+    const waiting = waitingOf(item)
+    return h('button', {
+      type: 'button', key: item.id, className: 'bt-co-proj' + (currentProject?.id === item.id ? ' is-active' : ''),
+      title: item.goal || undefined,
+      onClick: () => {
+        if (item.group_binding?.status === 'bound' && item.group_chat_ref && roster.roomsById?.[item.group_chat_ref]) actions.openSession(item.group_chat_ref)
+        else actions.openCompanyPage('detail', item.id)
+      },
+    },
+      h('span', { className: 'bt-co-proj-top' },
+        h('strong', null, item.name),
+        waiting > 0 ? h('span', { className: 'bt-co-proj-badge' }, String(waiting)) : null,
+        h('span', { className: 'bt-co-proj-stage' }, projectStage(item.status))),
+      h('span', { className: 'bt-co-proj-sub' }, [t('Stage'), projectStage(item.status), department, coordinator?.name].filter(Boolean).join(' · ')))
+  }
+  // The section folds from its header, as the prototype's arrow does; the count
+  // and the list stay reachable from the Projects page either way.
+  const projectHead = () => h('header', { className: 'bt-co-sec-head' },
+    h('span', { className: 'bt-co-head-main' }, t('Projects'), h('span', { className: 'bt-co-count' }, String(projects.length))),
+    h('button', {
+      type: 'button', className: 'bt-co-linkbtn bt-co-toggle',
+      'aria-expanded': !projectsCollapsed, 'aria-label': projectsCollapsed ? t('Expand projects') : t('Collapse projects'),
+      onClick: () => setProjectsCollapsed(value => !value),
+    }, h(ArrowDownIcon)))
+  const companySection = h('section', { className: 'bt-co-sec', 'aria-label': t('Company overview') },
+    h('header', { className: 'bt-co-sec-head' }, h('span', null, t('Company overview'))),
+    h('div', { className: 'bt-co-summary' },
+      h('strong', null, companyName),
+      h('span', null, t('{departments} departments · {employees} employees · {projects} projects', { departments: departments.length, employees: employees.length, projects: projects.length }))),
+    h('div', { className: 'bt-co-links' },
+      companyLink(t('Org chart'), t('{count} departments', { count: departments.length }), true, () => actions.openCompanyPage('company')),
+      companyLink(t('Projects'), t('{count} projects', { count: projects.length }), false, () => actions.openCompanyPage('list')),
+      companyLink(t('Active projects'), String(activeProjects), false, () => actions.openCompanyPage('list')),
+      companyLink(t('Team'), t('{count} people', { count: employees.length }), false, null)))
+  const projectSection = h('section', { className: 'bt-co-sec', 'aria-label': t('Projects') },
+    projectHead(),
+    projectsCollapsed ? null : h(Fragment, null,
+      h('div', { className: 'bt-co-chips', role: 'group', 'aria-label': t('Project status') },
+        [['active', 'In progress'], ['setup', 'Setup'], ['archived', 'Archived'], ['all', 'All']].map(([value, label]) => h('button', {
+          type: 'button', key: value, className: 'bt-co-chip', 'aria-pressed': projectFilter === value,
+          onClick: () => { setProjectFilter(value); window.dispatchEvent(new CustomEvent('bt-company-filter', { detail: value })) },
+        }, t(label)))),
+      h('div', { className: 'bt-co-plist' },
+        projects.filter(projectVisible).length === 0
+          ? h('p', { className: 'bt-co-empty' }, t('No projects in this view.'))
+          : projects.filter(projectVisible).map(projectRow)),
+      currentProject ? h('div', { className: 'bt-co-current' },
+        h('span', { className: 'bt-co-group-label' }, t('This project')),
+        h('strong', null, currentProject.name),
+        h('button', { type: 'button', className: 'bt-co-linkbtn', onClick: () => actions.openCompanyPage('detail', currentProject.id) }, t('Project overview'), ' ›')) : null))
+  // A bound project chat is still the Projects area: the column keeps the list
+  // and adds the project's own overview links instead of the chat list.
+  const projectChatSection = h('section', { className: 'bt-co-sec', 'aria-label': t('Projects') },
+    projectHead(),
+    projectsCollapsed ? null : h(Fragment, null,
+      h('div', { className: 'bt-co-plist' }, projects.map(projectRow)),
+      activeProject ? h('div', { className: 'bt-co-current' },
+        h('span', { className: 'bt-co-group-label' }, t('This project')),
+        h('strong', null, activeProject.name),
+        h('div', { className: 'bt-co-links' },
+          companyLink(t('Project overview'), null, false, () => actions.openCompanyPage('detail', activeProject.id)),
+          companyLink(t('Waiting for you'), t('{count} cards', { count: todoCount }), false, () => actions.openCompanyPage('todos')),
+          companyLink(t('Last activity'), t('Today'), false, null))) : null))
+  const chatSection = h('section', { className: 'bt-co-sec bt-co-chatsec', 'aria-label': t('Chats') },
+    h('header', { className: 'bt-co-sec-head' },
+      h('span', null, t('Chats')),
+      h('button', { type: 'button', className: 'bt-co-linkbtn', onClick: () => actions.openNewChat('new') }, '+ ', t('New'))),
+    h('label', { className: 'bt-co-search' }, h(SearchIcon),
+      h('input', { type: 'search', value: chatQuery, onChange: event => setChatQuery(event.target.value), placeholder: t('Search chats'), 'aria-label': t('Search chats') })),
+    pinnedEntries.length > 0 ? h('div', { className: 'bt-co-group' },
+      h('span', { className: 'bt-co-group-label' }, t('Pinned')),
+      pinnedEntries.map(renderEntry)) : null,
+    h('div', { className: 'bt-co-group' },
+      h('span', { className: 'bt-co-group-label' }, t('All conversations')),
+      allEntries.length > 0 ? allEntries.map(renderEntry) : h('p', { className: 'bt-co-empty' }, t('No chats match this search.'))))
   const top = wideContent
-    ? h('div', { className: 'bt-side-top' },
-        h('span', { className: 'bt-brand' }, h(BrandMark, { size: 22 }), h(BrandName)),
-        h(UpdateButton, { useUpdate: props.useUpdate, actions }),
-        h('button', { type: 'button', className: 'bt-round', 'aria-label': t('Search'), title: t('Search'), onClick: () => actions.openPalette() }, h(SearchIcon)),
-        h('button', { type: 'button', className: 'bt-round', 'aria-label': t('New…'), title: t('New…'), onClick: () => actions.openNewChat('new') }, h(PlusIcon)),
+    ? h('div', { className: 'bt-co-brand' },
+        h('span', { className: 'bt-co-mark', 'aria-hidden': true }, companyName.slice(0, 1)),
+        h('span', { className: 'bt-co-brandtext' }, h('strong', null, companyName), h('small', null, t('Enterprise services · Intelligent workspace'))),
         h('button', { type: 'button', className: 'bt-round bt-side-collapse', 'aria-label': t('Collapse sidebar'), title: t('Collapse sidebar'), onClick: onToggle }, h(SidebarIcon)))
     : h('div', { className: 'bt-rail-top' },
         h(UpdateButton, { useUpdate: props.useUpdate, actions }),
         h('button', { type: 'button', className: 'bt-round bt-side-collapse', 'aria-label': t('Collapse sidebar'), title: t('Collapse sidebar'), onClick: onToggle }, h(SidebarIcon)),
         main ? h(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : h('div', { className: 'bt-hint' }, uiNow.bootFailed ? bootHint() : t('Setting up your Main Bot…')),
         h('span', { className: 'bt-rail-sep', 'aria-hidden': true }))
-  // The foot stands in for the shell's hidden footer: the account avatar, and on
-  // the rail the new-chat button above it.
+  // The foot stands in for the shell's hidden footer: the owner's own row — the
+  // account avatar, who they are, and the settings gear — and on the rail the
+  // new-chat button above it.
   const foot = wideContent
-    ? h('div', { className: 'bt-leftcol-foot' }, h(AccountLauncher, { seat: false, actions }))
+    ? h('div', { className: 'bt-leftcol-foot bt-co-foot' },
+        h(AccountLauncher, { seat: false, actions }),
+        h('span', { className: 'bt-co-foot-id' }, h('strong', null, t('Boss')), h('small', null, t('Chairman'))),
+        h('button', { type: 'button', className: 'bt-round bt-co-foot-gear', 'aria-label': t('Settings'), title: t('Settings'), onClick: () => actions.openSettings('general') }, h(GearIcon)))
     : h('div', { className: 'bt-leftcol-foot bt-leftcol-foot-rail' },
         h('button', { type: 'button', className: 'bt-round', 'aria-label': t('New…'), title: t('New…'), onClick: () => actions.openNewChat('new') }, h(PlusIcon)),
         h(AccountLauncher, { seat: false, actions }))
-  const content = h('div', { className: wideContent ? 'bt-side' : 'bt-side bt-rail', onKeyDown: typeToSearch },
+  const railNav = h('nav', { className: 'bt-company-nav bt-company-rail', 'aria-label': t('Workspace navigation') },
+    h('button', { type: 'button', 'aria-label': t('Company'), 'aria-current': kind === 'company' ? 'page' : undefined, title: t('Company'), onClick: () => actions.openCompanyPage('company') }, h('span', { 'aria-hidden': true }, '⌂')),
+    h('button', { type: 'button', 'aria-label': t('Projects'), 'aria-current': kind !== 'company' && kind !== 'chat' ? 'page' : undefined, title: t('Projects'), onClick: () => actions.openCompanyPage('list') }, h('span', { 'aria-hidden': true }, '▦')),
+    h('button', { type: 'button', 'aria-label': t('Chats'), 'aria-current': kind === 'chat' ? 'page' : undefined, title: t('Chats'), onClick: () => actions.closeCompanyPage() }, h('span', { 'aria-hidden': true }, '◉')))
+  const content = h('div', { className: wideContent ? 'bt-side bt-side-company' : 'bt-side bt-rail', onKeyDown: typeToSearch },
     top,
-    h('nav', { className: wideContent ? 'bt-company-nav' : 'bt-company-nav bt-company-rail', 'aria-label': t('Workspace navigation') },
-      h('button', { type: 'button', 'aria-label': t('Company'), 'aria-current': uiNow.companyPage?.kind === 'company' ? 'page' : undefined, title: wideContent ? undefined : t('Company'), onClick: () => actions.openCompanyPage('company') }, h('span', { 'aria-hidden': true }, '⌂'), wideContent ? t('Company') : null),
-      h('button', { type: 'button', 'aria-label': t('Projects'), 'aria-current': uiNow.companyPage && uiNow.companyPage.kind !== 'todos' && uiNow.companyPage.kind !== 'company' ? 'page' : undefined, title: wideContent ? undefined : t('Projects'), onClick: () => actions.openCompanyPage('list') }, h('span', { 'aria-hidden': true }, '▦'), wideContent ? t('Projects') : null),
-      h('button', { type: 'button', 'aria-label': t('Todos'), 'aria-current': uiNow.companyPage?.kind === 'todos' ? 'page' : undefined, title: wideContent ? undefined : t('Todos'), onClick: () => actions.openCompanyPage('todos') }, h('span', { 'aria-hidden': true }, '☑'), wideContent ? t('Todos') : null),
-      h('button', { type: 'button', 'aria-label': t('Chats'), 'aria-current': !uiNow.companyPage ? 'page' : undefined, title: wideContent ? undefined : t('Chats'), onClick: () => actions.closeCompanyPage() }, h('span', { 'aria-hidden': true }, '◉'), wideContent ? t('Chats') : null)),
+    wideContent
+      ? h('nav', { className: 'bt-co-nav', 'aria-label': t('Workspace navigation') },
+          navButton('company', t('Company'), null, kind === 'company', () => actions.openCompanyPage('company')),
+          navButton('projects', t('Projects'), projects.length, kind !== 'company' && kind !== 'chat', () => actions.openCompanyPage('list')),
+          navButton('chats', t('Chats'), order.length + (main ? 1 : 0), kind === 'chat', () => {
+            // A project chat keeps the Projects column; leaving it for Chats means
+            // landing on a conversation outside the project as well.
+            actions.closeCompanyPage()
+            if (activeProject && main?.id) actions.openSession(main.id)
+          }))
+      : railNav,
     wideContent && roster.readOnly ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
-    h('div', { ref: listRef, className: 'bt-list', role: 'region', 'aria-label': t('Bot list') },
-      wideContent ? (main ? h(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : h('div', { className: 'bt-hint' }, uiNow.bootFailed ? bootHint() : t('Setting up your Main Bot…'))) : null,
-      order.map(entry => (entry.kind === 'bot'
-        ? h(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true })
-        : entry.kind === 'room'
-          ? h(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true })
-          : h(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true })))),
+    h('div', { ref: listRef, className: wideContent ? 'bt-list bt-co-scroll' : 'bt-list', role: 'region', 'aria-label': t('Bot list') },
+      wideContent
+        ? (kind === 'company' ? companySection : kind === 'chat' ? chatSection : kind === 'projectchat' ? projectChatSection : projectSection)
+        : (main ? h(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : h('div', { className: 'bt-hint' }, uiNow.bootFailed ? bootHint() : t('Setting up your Main Bot…'))),
+      wideContent ? null : order.map(renderEntry)),
     foot)
   return h(Fragment, null,
     h(TitleToggle, { hidden: mode === 'hidden', onToggle }),
@@ -995,7 +1191,7 @@ export const SIDEBAR_CSS = `
 .bt-update-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:12px}
 .bt-update-notes{margin-right:auto;font-size:12.5px;color:var(--bt-ink-2);text-decoration:none}
 .bt-update-notes:hover{color:var(--bt-ink);text-decoration:underline}
-.bt-update-go{height:30px;padding:0 14px;border:0;border-radius:999px;background:var(--bt-accent,#4D6BFE);color:var(--bt-accent-ink,#fff);font:inherit;font-size:13px;font-weight:500;cursor:pointer;transition:opacity .12s ease,transform .12s ease}
+.bt-update-go{height:30px;padding:0 14px;border:0;border-radius:999px;background:var(--bt-accent,#4D6BFE);color:var(--bt-accent-ink,var(--bt-user-ink));font:inherit;font-size:13px;font-weight:500;cursor:pointer;transition:opacity .12s ease,transform .12s ease}
 .bt-update-go:hover:not(:disabled){opacity:.9}
 .bt-update-go:active:not(:disabled){transform:scale(.96)}
 .bt-update-go:disabled{opacity:.6;cursor:default}
@@ -1022,4 +1218,70 @@ export const SIDEBAR_CSS = `
 .bt-agent-sub[data-open] .bt-agent-sub-row{animation:bt-agent-row-in .24s ease both;animation-delay:calc(var(--i, 0)*30ms)}
 @keyframes bt-agent-row-in{from{opacity:0;filter:blur(4px)}to{opacity:1;filter:blur(0)}}
 @media (prefers-reduced-motion:reduce){.bt-agent-sub{transition:none}.bt-agent-sub .bt-agent-sub-row{animation:none}}
+
+/* The company shell: a quiet brand header, three primary destinations, and
+   one context section that follows the page the user is on. */
+.bt-side-company{padding:0 10px 8px 0}
+.bt-co-brand{display:flex;align-items:center;gap:10px;padding:14px 6px 12px 14px;flex:none}
+.bt-co-mark{flex:none;width:32px;height:32px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));font-size:14px;font-weight:600;line-height:1}
+.bt-co-brandtext{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.bt-co-brandtext strong{font-size:13.5px;line-height:18px;font-weight:600;color:var(--bt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-co-brandtext small{font-size:10.5px;line-height:14px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-co-brand .bt-side-collapse{width:28px;height:28px;flex:none}
+.bt-co-nav{display:flex;flex-direction:column;gap:1px;padding:0 6px 8px;flex:none}
+.bt-co-nav button{display:flex;align-items:center;gap:10px;width:100%;height:34px;padding:0 10px;border:0;border-radius:8px;background:none;color:var(--bt-ink-2);font:inherit;font-size:13px;line-height:18px;text-align:left;cursor:pointer}
+.bt-co-nav button:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.bt-co-nav button.is-active{background:var(--bt-active);color:var(--bt-ink);font-weight:500}
+.bt-co-ico{flex:none;width:16px;height:16px;opacity:.9}
+.bt-co-nav-label{flex:1;min-width:0}
+.bt-co-count{flex:none;font-size:11px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
+.bt-co-scroll{display:flex;flex-direction:column;min-height:0;padding:0 6px}
+.bt-co-sec{padding:10px 0 12px;border-top:.5px solid var(--bt-line)}
+.bt-co-sec:first-child{border-top:0;padding-top:2px}
+.bt-co-sec-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:24px;padding:2px 6px 6px;font-size:11px;line-height:16px;font-weight:600;color:var(--bt-ink-3)}
+.bt-co-linkbtn{border:0;background:none;padding:2px 0;color:var(--bt-ink-2);font:inherit;font-size:11px;line-height:16px;cursor:pointer;white-space:nowrap}
+.bt-co-linkbtn:hover{color:var(--bt-ink)}
+.bt-co-summary{display:flex;flex-direction:column;gap:2px;padding:0 6px 8px}
+.bt-co-summary strong{font-size:13px;line-height:18px;font-weight:600;color:var(--bt-ink)}
+.bt-co-summary span{font-size:11px;line-height:15px;color:var(--bt-ink-3)}
+.bt-co-links{display:flex;flex-direction:column;gap:1px}
+.bt-co-link{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:30px;padding:0 6px;border:0;border-radius:6px;background:none;color:var(--bt-ink-2);font:inherit;font-size:12.5px;line-height:18px;text-align:left;cursor:pointer}
+.bt-co-link:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.bt-co-link.is-active{color:var(--bt-ink);font-weight:500}
+.bt-co-link-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-co-meta{flex:none;font-size:11px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
+.bt-co-chips{display:flex;flex-wrap:wrap;gap:4px;padding:0 4px 8px}
+.bt-co-chip{height:24px;padding:0 9px;border:.5px solid var(--bt-line-2);border-radius:6px;background:none;color:var(--bt-ink-2);font:inherit;font-size:11px;line-height:16px;cursor:pointer}
+.bt-co-chip:hover{background:var(--bt-hover)}
+.bt-co-chip[aria-pressed=true]{background:var(--bt-accent);border-color:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink))}
+.bt-co-plist{display:flex;flex-direction:column;gap:1px}
+.bt-co-proj{display:flex;flex-direction:column;gap:1px;width:100%;padding:7px 8px;border:0;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer}
+.bt-co-proj:hover{background:var(--bt-hover)}
+.bt-co-proj.is-active{background:var(--bt-active)}
+.bt-co-proj-top{display:flex;align-items:center;gap:8px;min-width:0}
+.bt-co-proj-top strong{flex:1;min-width:0;font-size:12.5px;line-height:18px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-co-proj-stage{flex:none;font-size:10px;line-height:15px;color:var(--bt-ink-3)}
+.bt-co-proj-sub{font-size:10.5px;line-height:15px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-co-proj-badge{flex:none;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--bt-accent);color:var(--bt-accent-ink,var(--bt-user-ink));font-size:10px;line-height:16px;font-weight:500;text-align:center;font-variant-numeric:tabular-nums}
+.bt-row-time{flex:none;margin-left:auto;font-size:11px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
+.bt-co-head-main{display:flex;align-items:center;gap:6px;min-width:0}
+.bt-co-toggle{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;padding:0;color:var(--bt-ink-3)}
+.bt-co-toggle svg{width:12px;height:12px;transition:transform .16s ease}
+.bt-co-toggle[aria-expanded=false] svg{transform:rotate(-90deg)}
+.bt-co-foot{padding:8px 4px 6px;border-top:.5px solid var(--bt-line)}
+.bt-co-foot-id{flex:1;min-width:0;display:flex;flex-direction:column;gap:0}
+.bt-co-foot-id strong{font-size:12.5px;line-height:17px;font-weight:600;color:var(--bt-ink)}
+.bt-co-foot-id small{font-size:10.5px;line-height:14px;color:var(--bt-ink-3)}
+.bt-co-foot-gear{width:28px;height:28px;flex:none}
+@media (prefers-reduced-motion:reduce){.bt-co-toggle svg{transition:none}}
+.bt-co-current{display:flex;flex-direction:column;gap:2px;margin-top:6px;padding:8px 6px 0;border-top:.5px solid var(--bt-line)}
+.bt-co-current strong{font-size:12px;line-height:17px;font-weight:500;color:var(--bt-ink)}
+.bt-co-group{display:flex;flex-direction:column;gap:1px;margin:2px 0 6px}
+.bt-co-group-label{padding:4px 6px 4px;font-size:10.5px;line-height:15px;font-weight:600;color:var(--bt-ink-3)}
+.bt-co-search{display:flex;align-items:center;gap:7px;margin:0 2px 8px;padding:0 9px;height:30px;border:.5px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink-3)}
+.bt-co-search svg{flex:none;width:14px;height:14px}
+.bt-co-search input{flex:1;min-width:0;border:0;background:none;color:var(--bt-ink);font:inherit;font-size:12px;line-height:18px;outline:none}
+.bt-co-search input::placeholder{color:var(--bt-ink-3)}
+.bt-co-empty{margin:4px 6px;font-size:11px;line-height:16px;color:var(--bt-ink-3)}
 `
+
