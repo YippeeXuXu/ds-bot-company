@@ -100,7 +100,8 @@ test('the live feed tells a window about saves, new chat entries and the reply b
   t.after(stop)
   await call('state')
   const abort = new AbortController()
-  const response = await routes['/api/bot/feed'].fetch(new Request('http://localhost/api/bot/feed', { signal: abort.signal }))
+  const request = new Request('http://localhost/api/bot/feed', { signal: abort.signal })
+  const response = await routes['/api/bot/feed'].fetch(request)
   assert.equal(response.headers.get('content-type'), 'text/event-stream; charset=utf-8')
   const next = reader(response)
   assert.equal((await next('hello')).event, 'hello')
@@ -141,7 +142,13 @@ test('the live feed tells a window about saves, new chat entries and the reply b
   assert.deepEqual(await next('the live notice'), { event: 'live', data: {} })
 
   abort.abort()
-  assert.equal(await next('the end of the stream after abort'), undefined)
+  console.error('[feed-debug] after abort signal=', request.signal.aborted)
+  const outcome = await Promise.race([
+    next('the end of the stream after abort').then(value => value === undefined ? 'done' : 'value'),
+    new Promise(resolve => setTimeout(() => resolve('timeout-200ms'), 200)),
+  ])
+  console.error('[feed-debug] outcome=', outcome)
+  assert.equal(outcome, 'done')
 })
 
 test('a window that stops reading the feed is dropped', { timeout: 10_000 }, async (t) => {

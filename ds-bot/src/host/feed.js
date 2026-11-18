@@ -77,6 +77,7 @@ export function install(rt) {
   })
 
   const leave = (controller) => {
+    console.error('[feed-debug] leave clients=', clients.size)
     clients.delete(controller)
     if (clients.size === 0) writing.clear()
     try { controller.close() } catch { /* already closed or errored */ }
@@ -88,15 +89,16 @@ export function install(rt) {
     requestBody: 'buffered',
     fetch: async (request) => {
       let controller
+      console.error('[feed-debug] fetch signal aborted=', request.signal.aborted, 'type=', typeof request.signal)
       const body = new ReadableStream({
         start(own) {
           controller = own
           clients.add(own)
           send(own, encoder.encode(`event: hello\ndata: ${JSON.stringify({ revision: state.revision })}\n\n`))
         },
-        cancel() { leave(controller) },
+        cancel() { console.error('[feed-debug] stream cancel'); leave(controller) },
       })
-      request.signal.addEventListener('abort', () => leave(controller), { once: true })
+      request.signal.addEventListener('abort', () => { console.error('[feed-debug] abort listener fired'); leave(controller) }, { once: true })
       return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store' } })
     },
   }), 'ds-bot: live feed route')
