@@ -1,5 +1,6 @@
 import { createElement as h, useState } from 'react'
 import { t } from './i18n.js'
+import { TaskBoard } from './task-board.js'
 
 const label = value => ({ setup: t('Setup'), active: t('In progress'), paused: t('Paused'), archived: t('Archived') })[value] ?? t('Unknown status')
 const relation = (project, data) => (project?.source_department_ids ?? []).map(id => data.departments.find(item => item.id === id)?.name ?? id)
@@ -18,11 +19,15 @@ const memberError = failure => {
   return known ?? (failure?.message ? String(failure.message) : t('The change could not be saved.'))
 }
 
-export function ProjectPage({ project, data, preview, loading, error, onBack, onChat, onRetry, onCommand }) {
+export function ProjectPage({ project, data, tasks = [], tasksError = '', preview, loading, error, onBack, onChat, onRetry, onCommand, onTaskCommand }) {
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
   const [selectedEmployee, setSelectedEmployee] = useState('')
   const [pendingRemove, setPendingRemove] = useState(null)
+  const [archiveOpen, setArchiveOpen] = useState(false)
+  const [archiveBusy, setArchiveBusy] = useState(false)
+  const [archiveError, setArchiveError] = useState('')
+  const [archiveResult, setArchiveResult] = useState(null)
   const run = async (command, fields = {}) => {
     if (busy || preview || !project) return
     setBusy(true)
@@ -59,9 +64,27 @@ export function ProjectPage({ project, data, preview, loading, error, onBack, on
   const candidates = data.employees.filter(employee => employee.status === 'active' && (project.source_department_ids ?? []).includes(employee.department_id)
     && !members.some(member => member.employee_id === employee.id && ['active', 'invited', 'archived_readonly'].includes(member.membership_status))
     && !data.projects.some(item => item.id === employee.project_id && ['active', 'paused', 'delivering'].includes(item.status)))
+  const openTasks = tasks.filter(task => !['done', 'cancelled'].includes(task.stage ?? task.status))
+  const pendingAcceptances = tasks.reduce((total, task) => total + (Array.isArray(task.acceptances) ? task.acceptances : task.acceptance ? [task.acceptance] : []).filter(record => record.state === 'pending').length, 0)
+  const canArchive = ['setup', 'active', 'paused'].includes(project.status) && !preview
+  const archive = async () => {
+    if (archiveBusy) return
+    setArchiveBusy(true)
+    setArchiveError('')
+    try {
+      const result = await onCommand('project.archive', { project_id: project.id })
+      setArchiveResult(result?.body ?? { unresolved: [] })
+    } catch (failure) {
+      setArchiveError(failure?.message ? String(failure.message) : t('The project could not be archived.'))
+    } finally { setArchiveBusy(false) }
+  }
+  const unresolved = archiveResult?.unresolved ?? []
   return h('article', { className: 'bc-page' },
     h('button', { type: 'button', className: 'bc-back', onClick: onBack }, `← ${t('All projects')}`),
-    h('div', { className: 'bc-row' }, h('div', null, h('span', { className: 'bc-kicker' }, t('Workspace / Project')), h('h1', { className: 'bc-detail-title' }, project.name)), h('span', { className: `bc-status bc-${project.status}` }, label(project.status))),
+    h('div', { className: 'bc-row' }, h('div', null, h('span', { className: 'bc-kicker' }, t('Workspace / Project')), h('h1', { className: 'bc-detail-title' }, project.name)),
+      h('div', { className: 'bc-actions' },
+        h('span', { className: `bc-status bc-${project.status}` }, label(project.status)),
+        canArchive ? h('button', { type: 'button', className: 'bc-button bc-danger', disabled: busy || archiveBusy, onClick: () => { setArchiveError(''); setArchiveResult(null); setArchiveOpen(true) } }, t('Archive project')) : null)),
     h('div', { className: 'bc-section' },
       h('div', { className: 'bc-row' }, h('strong', null, t('Project chat')), h('button', { type: 'button', className: 'bc-button', onClick: onChat, disabled: pending || preview || project.status === 'archived', title: preview ? t('Sample chat is unavailable') : undefined }, t('Open chat'))),
       h('p', { className: 'bc-muted' }, unbound ? t('The project group is created when a member joins or the project starts.') : pending ? t('Group binding needs attention before chat can be opened.') : project.status === 'archived' ? t('Archived project. The group history remains available for reading.') : t('Project group is linked. Open the existing chat to continue.')),
@@ -104,5 +127,43 @@ export function ProjectPage({ project, data, preview, loading, error, onBack, on
       project.status === 'setup' ? h('div', null, h('div', { className: 'bc-actions' }, h('button', { type: 'button', className: 'bc-button bc-primary', disabled: busy || startBlockers.length > 0, onClick: () => void run('project.start') }, busy ? t('Saving…') : t('Start project'))),
         startBlockers.length ? h('p', { className: 'bc-start-reason', role: 'status' }, t('Before starting: {items}.', { items: startBlockers.join(', ') })) : null) : null,
       actionError ? h('p', { className: 'bc-exception', role: 'alert' }, actionError) : null,
-      h('p', { className: 'bc-muted' }, t('Tasks, documents and approvals will appear here as their services become available.'))))
+      h(TaskBoard, {
+        tasks,
+        employees: data.employees,
+        members,
+        projectId: project.id,
+        workspaceRef: project.workspace_ref ?? '',
+        preview,
+        error: tasksError,
+        onCommand: onTaskCommand,
+        onChat: () => onChat?.(),
+      })),
+    archiveOpen ? h('div', { className: 'bc-tb-modal' },
+      h('div', { className: 'bc-tb-modalcard', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('Archive project') },
+        h('header', { className: 'bc-co-pop-head' },
+          h('strong', null, t('Archive project')),
+          h('span', { className: 'bc-co-pop-name' }, project.name),
+          h('button', { type: 'button', className: 'bc-co-pop-close', 'aria-label': t('Close'), disabled: archiveBusy, onClick: () => setArchiveOpen(false) }, '×')),
+        h('div', { className: 'bc-co-create-fields' },
+          archiveResult
+            ? h('p', null, t('The project is archived. The group history stays available to read.'))
+            : h('p', null, t('This will close {tasks} unfinished tasks and {acceptances} pending acceptances.', { tasks: openTasks.length, acceptances: pendingAcceptances })),
+          archiveResult
+            ? h('p', { className: 'bc-muted' }, t('Closed {tasks} tasks and {acceptances} acceptances. This cannot be undone.', { tasks: archiveResult.closed_tasks?.length ?? openTasks.length, acceptances: pendingAcceptances }))
+            : h('p', { className: 'bc-muted' }, t('The project and its group history are kept. Nothing can be added after archiving, and this cannot be undone.')),
+          archiveResult && unresolved.length ? h('div', null,
+            h('p', { className: 'bc-detail-label' }, t('Closed on archive')),
+            h('ul', { className: 'bc-tb-list' }, unresolved.map((item, index) => h('li', { key: item.task_id ?? item.acceptance_id ?? index },
+              h('span', null, item.kind === 'acceptance' ? t('Acceptance: {title}', { title: item.title }) : item.title),
+              h('span', null, item.stage ?? ''))))) : null,
+          !archiveResult && openTasks.length ? h('div', null,
+            h('p', { className: 'bc-detail-label' }, t('Will be closed')),
+            h('ul', { className: 'bc-tb-list' }, openTasks.map(task => h('li', { key: task.id }, h('span', null, task.title), h('span', null, task.stage ?? task.status ?? ''))))) : null,
+          archiveError ? h('p', { className: 'bc-exception', role: 'alert' }, archiveError) : null),
+        h('div', { className: 'bc-co-create-actions' },
+          h('span', { className: 'bc-co-spacer' }),
+          archiveResult
+            ? h('button', { type: 'button', className: 'bc-button bc-primary', onClick: () => setArchiveOpen(false) }, t('Close'))
+            : h('button', { type: 'button', className: 'bc-button', disabled: archiveBusy, onClick: () => setArchiveOpen(false) }, t('Cancel')),
+          archiveResult ? null : h('button', { type: 'button', className: 'bc-button bc-danger', disabled: archiveBusy || busy, onClick: () => void archive() }, archiveBusy ? t('Archiving…') : t('Archive project'))))) : null)
 }

@@ -278,6 +278,10 @@ export const PROJECT_CHAT_CSS = `
 header[class*="_header"]:has(.pc-head){position:absolute;top:0;left:0;right:0;z-index:8;display:flex;justify-content:center;padding:0;background:transparent;pointer-events:none;height:auto!important;overflow:visible!important}
 header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inset:0 0 auto;height:calc(100% + 26px);background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
 .pc-frame{position:relative;display:flex;flex-direction:column;width:100%;pointer-events:none}
+.pc-archived{position:absolute;top:54px;left:50%;transform:translateX(-50%);z-index:9;pointer-events:auto;max-width:calc(100% - 24px);padding:6px 12px;border:.5px solid var(--bt-line-2);border-radius:999px;background:var(--bt-card);color:var(--bt-ink-2);font:500 12px/18px var(--bt-font);box-shadow:0 2px 8px -2px color-mix(in srgb,var(--bt-ink) 12%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.bc-project-archived [data-composer-card]{opacity:.6}
+body.bc-project-archived [data-composer-input]{pointer-events:none;user-select:none}
+body.bc-project-archived [data-composer-card] button{pointer-events:none}
 .pc-host-head{position:absolute;top:0;left:0;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .pc-page{--pc-main:var(--bt-main);--pc-ring:var(--bt-line-2);--pc-ink-3:var(--bt-ink-3);position:relative;display:flex;flex-direction:column;min-height:0;flex:1;background:var(--bt-main);color:var(--bt-ink);font-family:var(--bt-font)}
 .pc-page *{box-sizing:border-box}
@@ -427,6 +431,39 @@ const loadProjectEvents = async projectId => {
 }
 
 export function ProjectChatSurface({ props, project, members, pendingCount, pinned, pending, activity, open, onOpenDetails, onClose, onOpenConfig }) {
+  const archived = project?.status === 'archived'
+  useEffect(() => {
+    // The host has no room-level write lock, so an archived room is held by the client:
+    // the marker class lets the composer below stop taking input without changing host DOM.
+    if (!archived) return undefined
+    document.body.classList.add('bc-project-archived')
+    const input = document.querySelector('[data-composer-input]')
+    if (input) {
+      input.textContent = ''
+      input.setAttribute('contenteditable', 'false')
+      input.setAttribute('aria-disabled', 'true')
+    }
+    const guard = event => {
+      if (event.target?.closest?.('[data-composer-card], [data-composer-input], [data-lexical-editor], [data-composer-send]')) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+    }
+    document.addEventListener('beforeinput', guard, true)
+    document.addEventListener('keydown', guard, true)
+    document.addEventListener('paste', guard, true)
+    return () => {
+      document.body.classList.remove('bc-project-archived')
+      document.removeEventListener('beforeinput', guard, true)
+      document.removeEventListener('keydown', guard, true)
+      document.removeEventListener('paste', guard, true)
+      const current = document.querySelector('[data-composer-input]')
+      if (current) {
+        current.setAttribute('contenteditable', 'true')
+        current.removeAttribute('aria-disabled')
+      }
+    }
+  }, [archived])
   return h(Fragment, null,
     // The host pill stays mounted (hidden) for its effects: beginVisit/endVisit, the
     // room flag and CSS variables, and the new-message pills. It must not draw a second
@@ -444,6 +481,7 @@ export function ProjectChatSurface({ props, project, members, pendingCount, pinn
         onOpenConfig,
         expanded: open,
       }),
+      archived ? h('div', { className: 'pc-archived', role: 'status' }, t('Project archived. The group history stays available to read.')) : null,
       Number(pendingCount) > 0
         ? h('div', { className: 'pc-pin-layer' }, h(ProjectChatPinned, { count: pendingCount, items: Array.isArray(pinned) ? pinned : [] }))
         : null,
