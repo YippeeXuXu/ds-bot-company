@@ -379,6 +379,50 @@ test('archiving keeps the group, turns members read-only and suspends the memory
   rmSync(home, { recursive: true, force: true })
 })
 
+test('archiving keeps a shared memory keeper active while another live project names her', async () => {
+  const home = tempHome()
+  const { store, commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const first = await run(commands, 'project.create', { operation_key: key('create-shared-a'), ...draft(seed_) })
+  const second = await run(commands, 'project.create', { operation_key: key('create-shared-b'), ...draft(seed_, { name: '第二个项目' }) })
+  const archived = await run(commands, 'project.archive', { operation_key: key('archive-shared'), project_id: first.body.project.id })
+
+  assert.equal(archived.status, 'committed')
+  assert.deepEqual(archived.body.suspended_employees, [])
+  assert.equal(store.state.employees[seed_.keeper].status, 'active')
+  assert.equal(store.state.projects[second.body.project.id].memory_assignment_id, seed_.keeper)
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('archiving keeps an employee active when legacy data already bound her to a running project', async () => {
+  const home = tempHome()
+  const { store, commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const first = await run(commands, 'project.create', { operation_key: key('create-legacy-a'), ...draft(seed_) })
+  const second = await run(commands, 'project.create', {
+    operation_key: key('create-legacy-b'),
+    ...draft(seed_, { name: '第二个项目', memory_employee_id: undefined }),
+  })
+  // The cross-project guard (`project/member-busy`) refuses a second active binding through
+  // the API, so this state can only come from data written before that rule. Archiving the
+  // first project must not suspend an employee who still serves the second one.
+  const secondId = second.body.project.id
+  store.state.projects[secondId].status = 'active'
+  store.state.members.pmm_legacy = {
+    id: 'pmm_legacy',
+    project_id: secondId,
+    employee_id: seed_.keeper,
+    role: 'executor',
+    membership_status: 'active',
+    joined_at: Date.now(),
+  }
+  const archived = await run(commands, 'project.archive', { operation_key: key('archive-legacy'), project_id: first.body.project.id })
+  assert.equal(archived.status, 'committed')
+  assert.deepEqual(archived.body.suspended_employees, [])
+  assert.equal(store.state.employees[seed_.keeper].status, 'active')
+  rmSync(home, { recursive: true, force: true })
+})
+
 test('a group the roster refuses is saved as pending and reported as a warning', async () => {
   const home = tempHome()
   const { store, commands, rooms } = open(home, { failSetMembers: true })

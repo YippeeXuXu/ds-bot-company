@@ -32,6 +32,10 @@ export const ACCEPTANCE_REQUIREMENTS = ['daily_independent_bot', 'owner_only']
 // `project.member.add` with role `coordinator`.
 export const UPDATABLE_FIELDS = ['name', 'goal', 'deliverable', 'acceptance', 'workspace_ref', 'acceptance_actor', 'acceptance_requirement', 'memory_assignment_id']
 const OPEN = ['setup', 'active']
+// Every status in which a project still holds people. Archiving one project must not take an
+// employee out of another project she still serves, so these are the statuses checked before
+// a memory keeper is suspended.
+const LIVE = ['setup', 'active', 'paused', 'delivering']
 const MEMBER_ROLES = ['executor', 'coordinator', 'acceptor', 'memory_keeper']
 
 const activeMembers = (state, projectId) => Object.values(state.members)
@@ -378,7 +382,7 @@ export function projectHandlers({ groups = {} } = {}) {
       const already = Object.values(state.members).find(member => member.project_id === project.id && member.employee_id === employee.id && member.membership_status !== 'left')
       if (already !== undefined) throw companyFail('project/member-exists', `Employee ${employee.id} is already in this project.`, { project_id: project.id, employee_id: employee.id, membership_status: already.membership_status })
       if (busyMembership(state, employee.id) !== undefined) {
-        throw companyFail('project/member-busy', `Employee ${employee.id} is already in an active project.`, { project_id: project.id, employee_id: employee.id })
+        throw companyFail('project/member-busy', `Employee ${employee.id} is already in an active project.`, { field: 'employee_id', project_id: project.id, employee_id: employee.id })
       }
       // The coordinator post is one, and it is filled by the first member given that role
       // (a draft created without a coordinator is completed this way).
@@ -569,12 +573,13 @@ export function projectHandlers({ groups = {} } = {}) {
       const openTasks = tasks.filter(task => !TERMINAL.has(task.stage))
       const pendingAcceptances = acceptances.filter(acceptance => acceptance.state === 'pending')
 
-      // 4.5: the final delivery has to be accepted. A card only reaches Done through
-      // `acceptance.decide`, so a Done card without an accepted record means the project
-      // was written before 4.4 or by hand; archiving it would hide work that never passed.
-      // Open cards are not a refusal: they are closed below with a reason and listed first.
+      // 4.5: the final delivery has to be accepted, judged once for the project rather than
+      // card by card. A card only reaches Done through `acceptance.decide`, so Done cards
+      // with no accepted record at all mean the project was written before 4.4 or by hand;
+      // archiving it would hide work that never passed. Open cards are not a refusal: they
+      // are closed below with a reason and listed first.
       if (tasks.some(task => task.stage === 'done') && !acceptances.some(acceptance => acceptance.state === 'accepted')) {
-        throw companyFail('project/acceptance-required', 'A Done card of this project has no accepted record, so the project cannot be archived yet.', { project_id: project.id, tasks: tasks.length, acceptances: acceptances.length })
+        throw companyFail('project/acceptance-required', 'This project has Done cards but no accepted record, so it cannot be archived yet.', { project_id: project.id, tasks: tasks.length, acceptances: acceptances.length })
       }
 
       // 4.5: a dispatched Run on a Doing card means a Bot is still working; archiving
@@ -631,12 +636,19 @@ export function projectHandlers({ groups = {} } = {}) {
         }
         if (member.role === 'memory_keeper') suspended.add(member.employee_id)
       }
-      // A memory keeper is a dedicated post: once the project is archived the employee is
-      // suspended rather than carried into another project (spec 8 / archive linkage).
+      // A memory keeper is suspended only when this project was her post. Archiving must not
+      // take an employee out of another project she still serves: someone who keeps the
+      // memory of another live project (setup/active/paused/delivering), or who still holds
+      // an active membership in a running one (busyMembership, PRD D6), stays active and is
+      // left out of `suspended_employees`. Members of this project were moved to
+      // `archived_readonly` above, so they never keep themselves busy here.
+      const keepsOtherLiveProject = employeeId => Object.values(state.projects ?? {})
+        .some(entry => isRow(entry) && entry.id !== project.id && LIVE.includes(entry.status) && entry.memory_assignment_id === employeeId)
       const suspendedEmployees = []
       for (const employeeId of suspended) {
         const employee = state.employees[employeeId]
         if (employee === undefined || employee.status !== 'active') continue
+        if (keepsOtherLiveProject(employeeId) || busyMembership(state, employeeId) !== undefined) continue
         employee.status = 'suspended'
         employee.updated_at = closedAt
         employee.revision = (employee.revision ?? 1) + 1
