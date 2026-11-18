@@ -14,6 +14,7 @@
 // older rows stays a fallback (contract §3.5, §5.2, A14).
 import { newId } from './projects.js'
 import { companyFail } from './store.js'
+import { holdFor } from './tasks.js'
 
 // The commands whose `expected_revision` names the object's own revision, not the company's.
 // A to-do row carries the acceptance revision (contract A12/B-2) and `acceptance.decide`
@@ -70,6 +71,69 @@ const actorOf = (state, project, value) => {
   return employee.id
 }
 
+// One task has at most one open review: the pending record it was submitted with. The
+// check is shared by `task.submit` (which creates it) and the optional `acceptance.submit`
+// link, so a second delivery cannot queue behind the first.
+export const pendingAcceptanceOfTask = (state, taskId) =>
+  Object.values(state.acceptances ?? {}).find(row => row?.task_id === taskId && row?.state === 'pending') ?? null
+
+// The pending record `task.submit` creates in the same commit (contract §5.3.4). It lives
+// here rather than in tasks.js so the row shape, the owner_only rule and the one-pending
+// rule stay with acceptance.submit; the task command only moves the card.
+export function createPendingForTask(state, task, payload, project, now) {
+  const existing = pendingAcceptanceOfTask(state, task.id)
+  if (existing !== null) throw companyFail('acceptance/state-conflict', `Task ${task.id} already has a pending acceptance.`, { task_id: task.id, acceptance_id: existing.id })
+  const owner = task.owner_assignment_id === null ? undefined : state.members?.[task.owner_assignment_id]
+  if (owner === undefined || owner.membership_status !== 'active') throw companyFail('task/missing-input', 'The task has no active owner to submit for.', { task_id: task.id, missing: ['owner_assignment_id'] })
+  // The task's acceptor is the default; a caller may name another one, and the same
+  // membership and owner_only rules apply as in acceptance.submit.
+  const actor = payload.acceptance_actor === undefined || payload.acceptance_actor === null
+    ? task.acceptance_actor
+    : actorOf(state, project, payload.acceptance_actor)
+  const ownerOnly = task.acceptance_requirement === 'owner_only'
+  if (ownerOnly && actor !== 'user') {
+    throw companyFail('owner_only_requires_user', 'An owner_only acceptance belongs to the owner; set acceptance_actor to "user".', { project_id: project.id, acceptance_actor: actor })
+  }
+  const checks = task.acceptance_checks ?? []
+  const criteria = optionalText(payload.acceptance_criteria, 'acceptance_criteria', 2000) ?? (checks.join('\n') || null)
+  const acceptance = {
+    id: newId('acc'),
+    project_id: project.id,
+    task_id: task.id,
+    task_revision: task.task_revision,
+    title: text(payload.title === undefined ? task.title : payload.title, 'title', 200),
+    submitted_version: optionalText(payload.submitted_version, 'submitted_version', 120),
+    acceptance_criteria: criteria,
+    requester_employee_id: owner.employee_id,
+    acceptance_actor: actor,
+    owner_only: ownerOnly,
+    state: 'pending',
+    opinion: null,
+    decided_at: null,
+    close_reason: null,
+    created_at: now(),
+    updated_at: now(),
+    revision: 1,
+  }
+  state.acceptances[acceptance.id] = acceptance
+  return acceptance
+}
+
+// The same commit moves the card and creates its pending record (contract §5.3.4). Wrapped
+// around the task command rather than inside it, so tasks.js keeps its single subject and
+// the acceptance row shape still comes from this module.
+export const submitWithAcceptance = submit => (args) => {
+  const outcome = submit(args)
+  const task = args.state.tasks[outcome.aggregate_id]
+  const project = args.state.projects[task.project_id]
+  const acceptance = createPendingForTask(args.state, task, args.payload, project, args.now)
+  return {
+    ...outcome,
+    body: { ...outcome.body, acceptance },
+    events: [...(outcome.events ?? []), { type: 'acceptance.submitted', data: { acceptance_id: acceptance.id, project_id: project.id, employee_id: acceptance.requester_employee_id, task_id: task.id } }],
+  }
+}
+
 export function acceptanceHandlers() {
   return {
     // Submit one acceptance for the owner. Allowed again for the same project, title and
@@ -88,10 +152,28 @@ export function acceptanceHandlers() {
       if (ownerOnly && actor !== 'user') {
         throw companyFail('owner_only_requires_user', 'An owner_only acceptance belongs to the owner; set acceptance_actor to "user".', { project_id: project.id, acceptance_actor: actor })
       }
+      // v1.12 allows a task link on an independently submitted acceptance (§5 row 183).
+      // `task.submit` creates its record through createPendingForTask; this path is for a
+      // screen that already holds a review and attaches the delivery to it.
+      const taskId = payload.task_id === undefined || payload.task_id === null ? null : text(payload.task_id, 'task_id', 120)
+      let taskRevision = null
+      if (taskId !== null) {
+        const task = state.tasks?.[taskId]
+        if (task === undefined) throw companyFail('task/not-found', `No task ${taskId}.`, { task_id: taskId })
+        if (task.project_id !== project.id) throw companyFail('company/invalid', 'task_id belongs to another project.', { field: 'task_id', task_id: taskId, project_id: project.id })
+        if (task.stage !== 'review') throw companyFail('task/state-conflict', `Task ${taskId} is ${task.stage}, not review.`, { task_id: taskId, stage: task.stage, expected: 'review' })
+        if (!Number.isInteger(payload.task_revision) || payload.task_revision !== task.task_revision) {
+          throw companyFail('task/revision-conflict', `Task ${taskId} is at revision ${task.task_revision}, not ${payload.task_revision ?? null}.`, { task_id: taskId, expected_revision: payload.task_revision ?? null, revision: task.task_revision })
+        }
+        const pending = pendingAcceptanceOfTask(state, taskId)
+        if (pending !== null) throw companyFail('acceptance/state-conflict', `Task ${taskId} already has a pending acceptance.`, { task_id: taskId, acceptance_id: pending.id })
+        taskRevision = task.task_revision
+      }
       const acceptance = {
         id: newId('acc'),
         project_id: project.id,
-        task_id: null,
+        task_id: taskId,
+        task_revision: taskRevision,
         title: text(payload.title, 'title', 200),
         submitted_version: optionalText(payload.submitted_version, 'submitted_version', 120),
         acceptance_criteria: optionalText(payload.acceptance_criteria, 'acceptance_criteria', 2000),
@@ -115,7 +197,7 @@ export function acceptanceHandlers() {
         // The submitting employee travels with the event so the project page can name the
         // person without a second lookup. Older lines keep their text; readers fall back to
         // the generic member label when the field is absent.
-        events: [{ type: 'acceptance.submitted', data: { acceptance_id: acceptance.id, project_id: project.id, employee_id: acceptance.requester_employee_id } }],
+        events: [{ type: 'acceptance.submitted', data: { acceptance_id: acceptance.id, project_id: project.id, employee_id: acceptance.requester_employee_id, task_id: taskId } }],
       }
     },
 
@@ -139,11 +221,44 @@ export function acceptanceHandlers() {
       if (acceptance.state !== 'pending') {
         throw companyFail('acceptance/state-conflict', `Acceptance ${acceptanceId} is ${acceptance.state}.`, { acceptance_id: acceptanceId, state: acceptance.state })
       }
+      // A task-linked record decides the card too (contract §5.3.7). The checks run before
+      // either object is written: a stale or cancelled card leaves the acceptance pending.
+      const linked = acceptance.task_id ?? null
+      let task = null
+      if (linked !== null) {
+        task = state.tasks?.[linked]
+        if (task === undefined || task.project_id !== acceptance.project_id) {
+          throw companyFail('task/not-found', `No task ${linked} on project ${acceptance.project_id}.`, { task_id: linked, acceptance_id: acceptance.id })
+        }
+        if (task.stage !== 'review') throw companyFail('task/state-conflict', `Task ${linked} is ${task.stage}, not review.`, { task_id: linked, stage: task.stage, expected: 'review' })
+        const expectedTask = acceptance.task_revision
+        if (task.task_revision !== expectedTask) {
+          throw companyFail('task/revision-conflict', `Task ${linked} is at revision ${task.task_revision}, not ${expectedTask}.`, { task_id: linked, expected_revision: expectedTask, revision: task.task_revision })
+        }
+      }
       acceptance.state = decision === 'accept' ? 'accepted' : 'returned'
       acceptance.opinion = optionalText(payload.opinion, 'opinion', 500)
       acceptance.decided_at = now()
       acceptance.updated_at = now()
       acceptance.revision += 1
+      // The acceptance is the only writer of a reviewed card's exit: accept ends the task,
+      // return puts it back to ready with its dependencies recomputed (never `doing`).
+      const events = [{ type: 'acceptance.decided', data: { acceptance_id: acceptance.id, project_id: acceptance.project_id, decision, task_id: acceptance.task_id ?? null, task_stage: null } }]
+      if (task !== null) {
+        if (decision === 'accept') {
+          task.stage = 'done'
+          task.hold_reason = 'none'
+          task.completed_at = now()
+        } else {
+          task.stage = 'ready'
+          task.completed_at = null
+          task.hold_reason = holdFor(state, task)
+        }
+        task.task_revision += 1
+        task.updated_at = now()
+        events[0].data.task_stage = task.stage
+        events.push({ type: 'task.moved', data: { task_id: task.id, project_id: task.project_id, from: 'review', to: task.stage, task_revision: task.task_revision, acceptance_id: acceptance.id } })
+      }
       return {
         aggregate_id: acceptance.id,
         body: { acceptance },
@@ -151,8 +266,33 @@ export function acceptanceHandlers() {
         // business text and stays in the object (contract §5.2). The project id rides on
         // the event itself, so a project's activity is readable without walking every
         // acceptance; older decisions that lack it are resolved from the acceptance record.
-        events: [{ type: 'acceptance.decided', data: { acceptance_id: acceptance.id, project_id: acceptance.project_id, decision } }],
+        events,
       }
+    },
+
+    // The project page's decisions feed (contract §5.3.7): newest first, archived projects
+    // stay readable, and the command is a read so it writes no operation_log row.
+    'acceptance.list': ({ state, payload }) => {
+      const projectId = text(payload.project_id, 'project_id', 120)
+      const project = state.projects?.[projectId]
+      if (project === undefined) throw companyFail('project/not-found', `No project ${projectId}.`, { project_id: projectId })
+      const taskId = payload.task_id === undefined || payload.task_id === null ? null : text(payload.task_id, 'task_id', 120)
+      const wanted = payload.state === undefined ? null : text(payload.state, 'state', 20)
+      if (wanted !== null && !['pending', 'accepted', 'returned'].includes(wanted)) {
+        throw companyFail('company/invalid', 'state is one of pending, accepted, returned.', { field: 'state', allowed: ['pending', 'accepted', 'returned'] })
+      }
+      const limit = payload.limit === undefined ? 50 : payload.limit
+      if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+        throw companyFail('company/invalid', 'limit is an integer from 1 to 200.', { field: 'limit', min: 1, max: 200 })
+      }
+      const acceptances = Object.values(state.acceptances ?? {})
+        .filter(row => row.project_id === projectId)
+        .filter(row => taskId === null || (row.task_id ?? null) === taskId)
+        .filter(row => wanted === null || row.state === wanted)
+        .sort((left, right) => (right.created_at ?? 0) - (left.created_at ?? 0) || left.id.localeCompare(right.id))
+        .slice(0, limit)
+        .map(row => ({ ...row, task_id: row.task_id ?? null, task_revision: row.task_revision ?? null }))
+      return { aggregate_id: projectId, body: { acceptances }, mutates: false }
     },
   }
 }

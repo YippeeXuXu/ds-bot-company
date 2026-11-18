@@ -1301,6 +1301,12 @@ Object.assign(ZH, HOST_ZH, {
   'Use Bot name': '使用 Bot 名称', 'Add employee': '添加员工',
   'Employee role': '员工职责', 'Independent acceptor': '独立验收 Bot',
   'Keep the current role': '保留原角色（旧版）',
+  'Unsaved template changes': '模板有未保存的修改',
+  'Save the changes to this template?': '要保存这个模板的修改吗？',
+  'Leaving the editor now throws away what you typed. Save it, discard it, or keep editing.': '现在离开会丢掉你刚输入的内容。可以保存、放弃，或者继续编辑。',
+  'Keep editing': '继续编辑',
+  'Discard changes': '放弃修改',
+  'Save and leave': '保存并离开',
   // 3.3 / 3.4 employee templates: one spec sheet per reusable job.
   Templates: '模板', 'Employee templates': '员工模板', '{count} templates': '{count} 条模板',
   Builtin: '内置', 'Saved copies': '自建副本', 'Builtin template': '内置模板', 'Saved copy': '自建副本',

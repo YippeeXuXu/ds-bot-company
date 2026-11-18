@@ -18,6 +18,7 @@ import { BtwDock, BtwTurnTail } from './btw.js'
 import { SIDE_CSS, sideSource } from './side-chat.js'
 import { VOICE_BUNDLE, closingReplyText, requestPreparation } from './speech.js'
 import { sameVersion } from './dsh-offer.js'
+import { askLeave } from './leave-guard.js'
 import { QuestionCard, QuestionDock } from './questions.js'
 import { AnsweredReply, WidgetDock, WIDGET_CSS } from './widget-cell.js'
 import { HandoffDock, HANDOFF_CSS } from './handoff-card.js'
@@ -450,21 +451,35 @@ export function apply(ctx) {
       })
     }
   }
+  // Screens with unsaved edits register a leave guard; navigation asks it first
+  // so a dirty editor is never unmounted without a question.
+  const openCompanyPageNow = (kind = 'list', id = null) => ui.set(state => ({ ...state, companyPage: { kind, id }, newChat: null, palette: null, menu: null, settings: null, leftDrawer: false }))
+  const closeCompanyPageNow = () => ui.set(state => ({ ...state, companyPage: null }))
+  const openSessionNow = (id) => {
+    // A DSH Agent Session id lands on the plain surface, not the Bot skin.
+    if (isAgentSessionId(id)) return actions.openAgentSession(id)
+    ui.set(state => (state.newChat || state.exchange || state.menu || state.palette || state.companyPage ? { ...state, newChat: null, exchange: null, menu: null, palette: null, companyPage: null } : state))
+    setPlain(false)
+    const target = partFor(id)
+    show(target)
+  }
   const actions = {
     ...teamActions({ call, after, partFor, roster, ui, live, cards, heldCards, turnClock, panelFolded }),
     learningAnswer: (id, approve) => after(call('learning-answer', { id, approve })),
     // The full-pane overlays sit above the conversation, so opening one must dismiss them
     // or the click appears to do nothing.
     isAgentSession: id => isAgentSessionId(id),
-    openCompanyPage: (kind = 'list', id = null) => ui.set(state => ({ ...state, companyPage: { kind, id }, newChat: null, palette: null, menu: null, settings: null, leftDrawer: false })),
-    closeCompanyPage: () => ui.set(state => ({ ...state, companyPage: null })),
+    openCompanyPage: (kind = 'list', id = null) => {
+      if (askLeave(() => openCompanyPageNow(kind, id))) return
+      openCompanyPageNow(kind, id)
+    },
+    closeCompanyPage: () => {
+      if (askLeave(closeCompanyPageNow)) return
+      closeCompanyPageNow()
+    },
     openSession: (id) => {
-      // A DSH Agent Session id lands on the plain surface, not the Bot skin.
-      if (isAgentSessionId(id)) return actions.openAgentSession(id)
-      ui.set(state => (state.newChat || state.exchange || state.menu || state.palette || state.companyPage ? { ...state, newChat: null, exchange: null, menu: null, palette: null, companyPage: null } : state))
-      setPlain(false)
-      const target = partFor(id)
-      show(target)
+      if (askLeave(() => openSessionNow(id))) return
+      openSessionNow(id)
     },
     // The conversation replacements withdraw for a plain Session; set the surface
     // before the navigation so the Bot skin never flashes.

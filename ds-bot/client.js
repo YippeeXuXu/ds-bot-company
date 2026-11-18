@@ -1448,6 +1448,12 @@ Object.assign(ZH, HOST_ZH, {
   "Employee role": "员工职责",
   "Independent acceptor": "独立验收 Bot",
   "Keep the current role": "保留原角色（旧版）",
+  "Unsaved template changes": "模板有未保存的修改",
+  "Save the changes to this template?": "要保存这个模板的修改吗？",
+  "Leaving the editor now throws away what you typed. Save it, discard it, or keep editing.": "现在离开会丢掉你刚输入的内容。可以保存、放弃，或者继续编辑。",
+  "Keep editing": "继续编辑",
+  "Discard changes": "放弃修改",
+  "Save and leave": "保存并离开",
   // 3.3 / 3.4 employee templates: one spec sheet per reusable job.
   Templates: "模板",
   "Employee templates": "员工模板",
@@ -12253,6 +12259,16 @@ function ProjectWizard({ data, roster, preview, loading, error: loadError, mutat
   );
 }
 
+// src/client/leave-guard.js
+var guard = null;
+var installLeaveGuard = (check) => {
+  guard = check;
+  return () => {
+    if (guard === check) guard = null;
+  };
+};
+var askLeave = (proceed) => Boolean(guard?.(proceed));
+
 // src/client/templates-page.js
 var import_react23 = require("react");
 var ROLE_LABELS = () => [
@@ -12262,6 +12278,17 @@ var ROLE_LABELS = () => [
   ["memory_keeper", t("Memory keeper")]
 ];
 var STATUS_ORDER = (item) => item.source === "builtin" ? 0 : 1;
+var EDITED_FIELDS = ["name", "role", "instructions", "model", "effort"];
+var sameSkills = (left = [], right = []) => {
+  const a = [...left].sort();
+  const b = [...right].sort();
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+};
+var formDirty = (base, form) => {
+  if (!base || !form) return false;
+  if (EDITED_FIELDS.some((field2) => String(form[field2] ?? "").trim() !== String(base[field2] ?? "").trim())) return true;
+  return !sameSkills(base.skills, form.skills);
+};
 var sortedTemplates = (templates) => [...templates ?? []].filter((item) => item.status !== "archived").sort((left, right) => STATUS_ORDER(left) - STATUS_ORDER(right) || (left.created_at ?? 0) - (right.created_at ?? 0));
 var fieldLabels = () => ({
   role: t("Job title"),
@@ -12394,6 +12421,7 @@ function TemplatesPageView(props) {
     archiveArmed = false,
     busy = false,
     effortOptions = [],
+    leavePrompt = false,
     handlers = {}
   } = props;
   const title = template ? template.source === "builtin" ? t("Builtin template") : t("Saved copy") : "";
@@ -12680,8 +12708,38 @@ function TemplatesPageView(props) {
     ),
     flash ? (0, import_react23.createElement)("div", { className: "bc-notice bc-tpl-flash", role: "status" }, flash) : null,
     body(),
+    leavePrompt ? leaveModal() : null,
     botDialog ? botModal() : null
   );
+  function leaveModal() {
+    const canSave = !busy && Boolean(String(form?.name ?? "").trim());
+    return (0, import_react23.createElement)(
+      "div",
+      { className: "bc-tpl-modal", role: "presentation" },
+      (0, import_react23.createElement)(
+        "div",
+        { className: "bc-tpl-modal-card", role: "dialog", "aria-modal": "true", "aria-label": t("Unsaved template changes"), ref: modalCard },
+        (0, import_react23.createElement)(
+          "div",
+          { className: "bc-co-pop-head" },
+          (0, import_react23.createElement)("strong", null, t("Save the changes to this template?")),
+          (0, import_react23.createElement)("span", { className: "bc-co-pop-name" }, form?.name ?? "")
+        ),
+        (0, import_react23.createElement)("p", { className: "bc-co-note" }, t("Leaving the editor now throws away what you typed. Save it, discard it, or keep editing.")),
+        (0, import_react23.createElement)(
+          "div",
+          { className: "bc-co-create-actions" },
+          (0, import_react23.createElement)("button", { type: "button", className: "bc-button", onClick: () => handlers.onLeaveCancel?.() }, t("Keep editing")),
+          (0, import_react23.createElement)("button", { type: "button", className: "bc-button", onClick: () => handlers.onLeaveDiscard?.() }, t("Discard changes")),
+          (0, import_react23.createElement)(
+            "button",
+            { type: "button", className: "bc-button bc-primary", disabled: !canSave, onClick: () => handlers.onLeaveSave?.() },
+            busy ? t("Saving…") : t("Save and leave")
+          )
+        )
+      )
+    );
+  }
   function botModal() {
     const dialog = botDialog;
     const canMake = !busy && Boolean(dialog.departmentId) && Boolean(String(dialog.name ?? "").trim());
@@ -12758,6 +12816,9 @@ function TemplatesPage(props) {
   const [busy, setBusy] = (0, import_react23.useState)(false);
   const [failure, setFailure] = (0, import_react23.useState)("");
   const [flash, setFlash] = (0, import_react23.useState)("");
+  const [leavePrompt, setLeavePrompt] = (0, import_react23.useState)(null);
+  const [formBase, setFormBase] = (0, import_react23.useState)(null);
+  const dirtyRef = (0, import_react23.useRef)(false);
   const template = templates.find((item) => item.id === selectedId) ?? templates[0] ?? null;
   const effortRef = form ? form.model : template?.model;
   const reasoning = useEffortOptions(roster, effortRef ?? "", props.actions);
@@ -12769,18 +12830,36 @@ function TemplatesPage(props) {
   if (shownEffort && !effortOptions.some((option) => option.value === shownEffort)) {
     effortOptions.push({ value: shownEffort, label: t("{id} (not in this model)", { id: shownEffort }) });
   }
+  const dirty = formDirty(formBase, form);
+  dirtyRef.current = dirty;
+  const requestLeave = (proceed) => {
+    if (!dirtyRef.current) {
+      proceed();
+      return;
+    }
+    setLeavePrompt({ proceed });
+  };
+  const leaveNow = (proceed) => {
+    dirtyRef.current = false;
+    setLeavePrompt(null);
+    proceed();
+  };
   const closeForm = () => {
     setForm(null);
+    setFormBase(null);
     setFailure("");
   };
-  const select = (id) => {
+  const cancelEdit = () => requestLeave(closeForm);
+  const applySelect = (id) => {
     setSelectedId(id);
     setForm(null);
+    setFormBase(null);
     setCopyOpen(false);
     setArchiveArmed(false);
     setFailure("");
     setFlash("");
   };
+  const select = (id) => requestLeave(() => applySelect(id));
   const run2 = async (work, done) => {
     if (!onCommand) return;
     setBusy(true);
@@ -12799,14 +12878,16 @@ function TemplatesPage(props) {
     setFailure("");
     setCopyOpen(false);
     setArchiveArmed(false);
-    setForm({
+    const base = {
       name: template.name ?? "",
       role: template.role ?? "",
       instructions: template.instructions ?? "",
       model: template.model ?? "",
       effort: template.effort ?? "",
       skills: [...template.skills ?? []]
-    });
+    };
+    setForm(base);
+    setFormBase({ ...base, skills: [...base.skills] });
   };
   const saveEdit = () => run2(async () => {
     if (!form) return;
@@ -12866,6 +12947,34 @@ function TemplatesPage(props) {
       setBusy(false);
     }
   };
+  const leaveSaving = async () => {
+    const prompt = leavePrompt;
+    if (!prompt || !form || !onCommand) return;
+    setBusy(true);
+    setFailure("");
+    try {
+      await onCommand("template.update", templateUpdatePayload({
+        templateId: template.id,
+        name: form.name.trim(),
+        role: form.role,
+        instructions: form.instructions,
+        model: form.model,
+        effort: form.effort,
+        skills: form.skills
+      }));
+      setFlash(t("The template was saved."));
+      dirtyRef.current = false;
+      setForm(null);
+      setFormBase(null);
+      setLeavePrompt(null);
+      prompt.proceed();
+    } catch (error) {
+      setLeavePrompt(null);
+      setFailure(templateErrorText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
   const archive = () => run2(async () => {
     await onCommand("template.archive", { template_id: template.id });
     setArchiveArmed(false);
@@ -12874,12 +12983,16 @@ function TemplatesPage(props) {
   });
   if (escapeGuard) {
     escapeGuard.current = () => {
+      if (leavePrompt) {
+        setLeavePrompt(null);
+        return true;
+      }
       if (botDialog) {
         setBotDialog(null);
         return true;
       }
       if (form) {
-        closeForm();
+        cancelEdit();
         return true;
       }
       if (copyOpen) {
@@ -12893,6 +13006,23 @@ function TemplatesPage(props) {
       return false;
     };
   }
+  (0, import_react23.useEffect)(() => {
+    if (!form) return;
+    return installLeaveGuard((proceed) => {
+      if (!dirtyRef.current) return false;
+      setLeavePrompt({ proceed });
+      return true;
+    });
+  }, [form]);
+  (0, import_react23.useEffect)(() => {
+    if (!dirty) return;
+    const warn = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
   return (0, import_react23.createElement)(TemplatesPageView, {
     templates,
     template,
@@ -12910,11 +13040,12 @@ function TemplatesPage(props) {
     archiveArmed,
     busy,
     effortOptions,
+    leavePrompt: Boolean(leavePrompt),
     handlers: {
       onSelect: select,
       onRetry: props.onRetry,
       onStartEdit: startEdit,
-      onCancelEdit: closeForm,
+      onCancelEdit: cancelEdit,
       onForm: (field2, value) => setForm((current) => current ? { ...current, [field2]: value } : current),
       onToggleSkill: (name) => setForm((current) => {
         if (!current) return current;
@@ -12931,7 +13062,15 @@ function TemplatesPage(props) {
       onBotField: (field2, value) => setBotDialog((current) => current ? { ...current, [field2]: value } : current),
       onCreateBot: createBot,
       onArchiveArm: setArchiveArmed,
-      onArchive: archive
+      onArchive: archive,
+      onLeaveSave: leaveSaving,
+      onLeaveDiscard: () => {
+        const prompt = leavePrompt;
+        if (!prompt) return;
+        closeForm();
+        leaveNow(prompt.proceed);
+      },
+      onLeaveCancel: () => setLeavePrompt(null)
     }
   });
 }
@@ -25263,20 +25402,32 @@ function apply(ctx) {
       });
     }
   };
+  const openCompanyPageNow = (kind = "list", id = null) => ui2.set((state) => ({ ...state, companyPage: { kind, id }, newChat: null, palette: null, menu: null, settings: null, leftDrawer: false }));
+  const closeCompanyPageNow = () => ui2.set((state) => ({ ...state, companyPage: null }));
+  const openSessionNow = (id) => {
+    if (isAgentSessionId(id)) return actions.openAgentSession(id);
+    ui2.set((state) => state.newChat || state.exchange || state.menu || state.palette || state.companyPage ? { ...state, newChat: null, exchange: null, menu: null, palette: null, companyPage: null } : state);
+    setPlain(false);
+    const target = partFor(id);
+    show2(target);
+  };
   const actions = {
     ...teamActions({ call, after, partFor, roster, ui: ui2, live, cards, heldCards, turnClock, panelFolded }),
     learningAnswer: (id, approve) => after(call("learning-answer", { id, approve })),
     // The full-pane overlays sit above the conversation, so opening one must dismiss them
     // or the click appears to do nothing.
     isAgentSession: (id) => isAgentSessionId(id),
-    openCompanyPage: (kind = "list", id = null) => ui2.set((state) => ({ ...state, companyPage: { kind, id }, newChat: null, palette: null, menu: null, settings: null, leftDrawer: false })),
-    closeCompanyPage: () => ui2.set((state) => ({ ...state, companyPage: null })),
+    openCompanyPage: (kind = "list", id = null) => {
+      if (askLeave(() => openCompanyPageNow(kind, id))) return;
+      openCompanyPageNow(kind, id);
+    },
+    closeCompanyPage: () => {
+      if (askLeave(closeCompanyPageNow)) return;
+      closeCompanyPageNow();
+    },
     openSession: (id) => {
-      if (isAgentSessionId(id)) return actions.openAgentSession(id);
-      ui2.set((state) => state.newChat || state.exchange || state.menu || state.palette || state.companyPage ? { ...state, newChat: null, exchange: null, menu: null, palette: null, companyPage: null } : state);
-      setPlain(false);
-      const target = partFor(id);
-      show2(target);
+      if (askLeave(() => openSessionNow(id))) return;
+      openSessionNow(id);
     },
     // The conversation replacements withdraw for a plain Session; set the surface
     // before the navigation so the Bot skin never flashes.

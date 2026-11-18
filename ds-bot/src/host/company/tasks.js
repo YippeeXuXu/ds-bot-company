@@ -206,7 +206,9 @@ const assertReady = (state, task) => {
   throw companyFail('task/missing-input', `Ready needs ${problems.map(problem => problem.field).join(', ')}.`, { task_id: task.id, missing: problems.map(problem => problem.field), problems })
 }
 
-const holdFor = (state, task) => {
+// Exported for the acceptance side (4.4): returning a reviewed card recomputes its hold
+// with the same dependency rule the board uses.
+export const holdFor = (state, task) => {
   if (task.stage !== 'ready') return 'none'
   const unmet = (task.dependencies ?? []).some(id => state.tasks?.[id]?.stage !== 'done')
   return unmet ? 'dependency' : 'none'
