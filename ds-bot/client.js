@@ -1425,6 +1425,8 @@ Object.assign(ZH, HOST_ZH, {
   Employees: "员工",
   Project: "项目",
   "Create the company before adding departments.": "请先创建公司，再添加部门。",
+  "Create company": "创建公司",
+  "Name your company first; departments and employees come after.": "先给公司起个名字；创建后就能添加部门和员工。",
   "Company name": "公司名称",
   Continue: "继续",
   "Saving…": "保存中…",
@@ -11738,9 +11740,36 @@ function CompanyPageView(props) {
   } else if (data.company === null) {
     body = (0, import_react20.createElement)(
       "div",
-      { className: "bc-state bc-co-state" },
-      (0, import_react20.createElement)("strong", null, t("No company information yet")),
-      (0, import_react20.createElement)("p", null, t("Create the company before adding departments."))
+      { className: "bc-state bc-co-state bc-co-setup" },
+      (0, import_react20.createElement)("strong", null, t("Create company")),
+      (0, import_react20.createElement)("p", null, t("Name your company first; departments and employees come after.")),
+      (0, import_react20.createElement)(
+        "div",
+        { className: "bc-co-setup-row" },
+        (0, import_react20.createElement)(
+          "label",
+          { className: "bc-field" },
+          (0, import_react20.createElement)("span", null, t("Company name")),
+          (0, import_react20.createElement)("input", {
+            type: "text",
+            value: props.companyName ?? "",
+            maxLength: 80,
+            autoFocus: true,
+            placeholder: t("Company name"),
+            onChange: (event) => props.onCompanyName?.(event.target.value),
+            onKeyDown: (event) => {
+              if (event.key === "Enter") props.onCreateCompany?.();
+            }
+          })
+        ),
+        (0, import_react20.createElement)("button", {
+          type: "button",
+          className: "bc-button bc-primary",
+          disabled: props.companyBusy || !(props.companyName ?? "").trim() || !props.canCreate,
+          onClick: props.onCreateCompany
+        }, props.companyBusy ? t("Creating…") : t("Create company"))
+      ),
+      props.companyError ? (0, import_react20.createElement)("p", { className: "bc-exception", role: "alert" }, props.companyError) : null
     );
   } else {
     body = chart;
@@ -11748,22 +11777,22 @@ function CompanyPageView(props) {
   return (0, import_react20.createElement)(
     "section",
     { className: "bc-co-page", "aria-label": t("Company") },
-    data.company ? (0, import_react20.createElement)(
+    (0, import_react20.createElement)(
       "div",
       { className: "bc-co-head" },
       (0, import_react20.createElement)(
         "div",
         { className: "bc-co-grow" },
         (0, import_react20.createElement)("h1", null, t("Company")),
-        (0, import_react20.createElement)("p", null, companyLine(departments, employees, projects))
+        (0, import_react20.createElement)("p", null, data.company ? companyLine(departments, employees, projects) : t("No company information yet"))
       ),
-      props.canCreate ? (0, import_react20.createElement)(
+      data.company && props.canCreate ? (0, import_react20.createElement)(
         "div",
         { className: "bc-co-actions" },
         (0, import_react20.createElement)("button", { type: "button", className: "bc-button", onClick: () => props.onCreateOpen("department") }, `＋ ${t("New department")}`),
         (0, import_react20.createElement)("button", { type: "button", className: "bc-button", onClick: () => props.onCreateOpen("employee") }, `＋ ${t("New employee")}`)
       ) : null
-    ) : null,
+    ),
     props.chatHint ? (0, import_react20.createElement)(
       "div",
       { className: "bc-co-hintbar", role: "status" },
@@ -11798,6 +11827,9 @@ function CompanyPage(props) {
   const [editBusy, setEditBusy] = (0, import_react20.useState)(false);
   const [editError, setEditError] = (0, import_react20.useState)("");
   const [editRefusal, setEditRefusal] = (0, import_react20.useState)(null);
+  const [companyName, setCompanyName] = (0, import_react20.useState)("");
+  const [companyBusy, setCompanyBusy] = (0, import_react20.useState)(false);
+  const [companyError, setCompanyError] = (0, import_react20.useState)("");
   const [pan, setPan] = (0, import_react20.useState)({ x: 0, y: 0 });
   const [dragging, setDragging] = (0, import_react20.useState)(false);
   const canvasRef = (0, import_react20.useRef)(null);
@@ -11881,6 +11913,19 @@ function CompanyPage(props) {
       setDraftBusy(false);
     }
   };
+  const createCompany = async () => {
+    if (!props.onCommand || companyBusy || !companyName.trim()) return;
+    setCompanyBusy(true);
+    setCompanyError("");
+    try {
+      await props.onCommand("company.init", { name: companyName.trim() });
+      setCompanyName("");
+    } catch (failure) {
+      setCompanyError(companyErrorText(failure));
+    } finally {
+      setCompanyBusy(false);
+    }
+  };
   const openEdit = (employee) => {
     closeDraft();
     setEditing(employee.id);
@@ -11948,6 +11993,11 @@ function CompanyPage(props) {
     editBusy,
     editError,
     editRefusal,
+    companyName,
+    companyBusy,
+    companyError,
+    onCompanyName: setCompanyName,
+    onCreateCompany: () => void createCompany(),
     onEditOpen: openEdit,
     onEditClose: closeEdit,
     onEditName: setEditName,
@@ -12083,6 +12133,10 @@ var COMPANY_PAGE_CSS = `
 .bc-co-row-edit:hover{background:var(--bt-hover);color:var(--bt-ink)}
 .bc-co-row-edit:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
 @media (hover:none){.bc-co-row-edit{opacity:1}}
+.bc-co-setup{max-width:460px;margin:0 auto;padding:30px 24px;text-align:left}
+.bc-co-setup-row{display:flex;align-items:flex-end;gap:8px;margin-top:14px}
+.bc-co-setup-row .bc-field{flex:1;min-width:0}
+.bc-co-setup-row .bc-button{flex:none}
 .bc-co-loading{display:flex;flex-direction:column;gap:8px;padding:20px 32px}
 `;
 
