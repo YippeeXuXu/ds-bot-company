@@ -65,7 +65,7 @@ export function apply(ctx) {
   let seenAt = seenStore.read()
   // `details` is the panel's subject (a Session id); `view` picks details or the
   // subject Bot's browser inside it.
-  const ui = createSource({ details: null, view: 'details', renaming: false, tab: null, side: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, memory: null, companyPage: null, toast: null, signIn: null, renameAgent: null, unread: unreadStore.read(), reactions: reactionStore.read(), visits: {}, panelYield: false, leftDrawer: false, bootFailed: false })
+  const ui = createSource({ details: null, view: 'details', renaming: false, tab: null, side: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, memory: null, companyPage: null, sessionSource: 'chats', toast: null, signIn: null, renameAgent: null, unread: unreadStore.read(), reactions: reactionStore.read(), visits: {}, panelYield: false, leftDrawer: false, bootFailed: false })
   // The left column's kept preference, and the frame geometry the layout rules
   // in frame-layout.js read: the window and the shell's collapsed track come from
   // installFrameWatch, the open column's width is the user's own.
@@ -455,10 +455,14 @@ export function apply(ctx) {
   // so a dirty editor is never unmounted without a question.
   const openCompanyPageNow = (kind = 'list', id = null) => ui.set(state => ({ ...state, companyPage: { kind, id }, newChat: null, palette: null, menu: null, settings: null, leftDrawer: false }))
   const closeCompanyPageNow = () => ui.set(state => ({ ...state, companyPage: null }))
-  const openSessionNow = (id) => {
+  const openSessionNow = (id, source = 'chats') => {
     // A DSH Agent Session id lands on the plain surface, not the Bot skin.
     if (isAgentSessionId(id)) return actions.openAgentSession(id)
-    ui.set(state => (state.newChat || state.exchange || state.menu || state.palette || state.companyPage ? { ...state, newChat: null, exchange: null, menu: null, palette: null, companyPage: null } : state))
+    ui.set(state => {
+      const patch = { sessionSource: source }
+      if (state.newChat || state.exchange || state.menu || state.palette || state.companyPage) Object.assign(patch, { newChat: null, exchange: null, menu: null, palette: null, companyPage: null })
+      return { ...state, ...patch }
+    })
     setPlain(false)
     const target = partFor(id)
     show(target)
@@ -477,14 +481,14 @@ export function apply(ctx) {
       if (askLeave(closeCompanyPageNow)) return
       closeCompanyPageNow()
     },
-    openSession: (id) => {
-      if (askLeave(() => openSessionNow(id))) return
-      openSessionNow(id)
+    openSession: (id, source = 'chats') => {
+      if (askLeave(() => openSessionNow(id, source))) return
+      openSessionNow(id, source)
     },
     // The conversation replacements withdraw for a plain Session; set the surface
     // before the navigation so the Bot skin never flashes.
     openAgentSession: (sessionId) => {
-      ui.set(state => ({ ...state, newChat: null, exchange: null, menu: null, palette: null, companyPage: null, details: null, view: 'details', renaming: false, tab: null }))
+      ui.set(state => ({ ...state, newChat: null, exchange: null, menu: null, palette: null, companyPage: null, details: null, view: 'details', renaming: false, tab: null, sessionSource: 'chats' }))
       setPlain(true)
       show(sessionId)
     },

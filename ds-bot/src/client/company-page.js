@@ -590,7 +590,7 @@ export function CompanyPage(props) {
 export const COMPANY_PAGE_CSS = `
 .bc-surface-company{overflow:hidden}
 .bc-surface-company .bc-shell{height:100vh}
-.bc-surface-company .bc-content{display:flex;flex:1;min-height:0;width:100%;max-width:none;padding:0}
+.bc-surface-company .bc-content-company{display:flex;flex:1;min-height:0;width:100%;max-width:none;padding:0}
 .bc-surface-company .bc-co-page{flex:1;min-height:0}
 .bc-co-page{display:flex;flex-direction:column;min-height:0;height:100%}
 .bc-co-head{flex:none;display:flex;align-items:flex-end;gap:16px;padding:18px 32px 14px;border-bottom:1px solid var(--bt-line)}

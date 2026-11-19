@@ -286,7 +286,7 @@ export function CompanySurface({ page, actions, roster }) {
       setNotice(t('The project group is not ready. Check its binding before opening chat.'))
       return
     }
-    actions.openSession(project.group_chat_ref)
+    actions.openSession(project.group_chat_ref, 'projects')
     close()
   }
   const project = data.projects.find(item => item.id === selected)
@@ -424,6 +424,8 @@ export function CompanySurface({ page, actions, roster }) {
               error,
               escapeGuard,
               actions,
+              selectedId: page?.id ?? null,
+              onSelectTemplate: id => actions.openCompanyPage('templates', id),
               onRetry: () => void load(),
               onCommand: mutate,
             })
