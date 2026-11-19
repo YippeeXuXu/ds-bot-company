@@ -189,36 +189,6 @@ export function TemplatesPageView(props) {
   const title = template ? template.source === 'builtin' ? t('Builtin template') : t('Saved copy') : ''
   const modalCard = useModalFocus(Boolean(botDialog))
 
-  const list = () => {
-    if (loading) {
-      return h('div', { className: 'bc-tpl-index', role: 'status', 'aria-label': t('Loading templates…') },
-        [0, 1, 2, 3].map(index => h('div', { key: index, className: 'bc-tpl-row bc-skeleton' },
-          h('span', { className: 'bc-skel bc-skel-line' }),
-          h('span', { className: 'bc-skel bc-skel-line short' }))))
-    }
-    if (templates.length === 0) return null
-    const groups = [['builtin', t('Builtin')], ['custom', t('Saved copies')]]
-    return h('nav', { className: 'bc-tpl-index', 'aria-label': t('Templates') },
-      groups.map(([source, label]) => {
-        const items = templates.filter(item => (source === 'builtin' ? item.source === 'builtin' : item.source !== 'builtin'))
-        if (items.length === 0) return null
-        return h('div', { key: source, className: 'bc-tpl-group-block' },
-          h('div', { className: 'bc-tpl-group' }, h('span', null, label), h('span', { className: 'bc-tpl-count' }, String(items.length))),
-          items.map(item => {
-            const skills = (item.skills ?? []).length
-            const current = template?.id === item.id
-            return h('button', {
-              key: item.id, type: 'button', className: 'bc-tpl-item', 'aria-current': current ? 'true' : undefined,
-              onClick: () => handlers.onSelect?.(item.id),
-            },
-              h('span', { className: 'bc-tpl-item-main' },
-                h('strong', null, item.name),
-                h('small', null, [item.role || t('No job title'), skills === 0 ? t('No skills') : t('{count} skills', { count: skills })].join(' · '))),
-              h('span', { className: 'bc-tpl-item-mark' }, source === 'builtin' ? t('Builtin') : t('Copy')))
-          }))
-      }))
-  }
-
   const skillsBlock = () => {
     const names = skillNames(roster)
     const skills = template?.skills ?? []
@@ -353,7 +323,7 @@ export function TemplatesPageView(props) {
         h('strong', null, t('No templates here yet')),
         h('p', null, t('Builtin templates come with the company; save a copy to keep one of your own.')))
     }
-    return h('div', { className: 'bc-tpl-body' }, list(), sheet())
+    return h('div', { className: 'bc-tpl-body' }, sheet())
   }
 
   return h('section', { className: 'bc-page bc-tpl-page', 'aria-label': t('Employee templates') },
@@ -436,7 +406,7 @@ export function TemplatesPage(props) {
   const [formBase, setFormBase] = useState(null)
   const dirtyRef = useRef(false)
 
-  const template = templates.find(item => item.id === selectedId) ?? templates[0] ?? null
+  const template = templates.find(item => item.id === (props.selectedId ?? selectedId)) ?? templates[0] ?? null
   const effortRef = form ? form.model : template?.model
   const reasoning = useEffortOptions(roster, effortRef ?? '', props.actions)
   const effortOptions = [
@@ -475,7 +445,10 @@ export function TemplatesPage(props) {
     setFailure('')
     setFlash('')
   }
-  const select = id => requestLeave(() => applySelect(id))
+  const select = id => requestLeave(() => {
+    applySelect(id)
+    props.onSelectTemplate?.(id)
+  })
 
   const run = async (work, done) => {
     if (!onCommand) return
@@ -687,7 +660,7 @@ export const TEMPLATES_CSS = `
 .bc-tpl-head h1{font-size:17px;line-height:24px;font-weight:600;margin:4px 0 0}
 .bc-tpl-count{font-size:12px;line-height:18px;color:var(--bt-ink-3);white-space:nowrap;padding-bottom:2px}
 .bc-tpl-flash{margin:10px 0 4px;border:1px solid var(--bt-line);border-radius:8px;justify-content:flex-start;padding:9px 12px}
-.bc-tpl-body{display:grid;grid-template-columns:minmax(240px,300px) minmax(0,1fr);gap:18px;align-items:start;margin-top:12px}
+.bc-tpl-body{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;align-items:start;margin-top:12px}
 .bc-tpl-index{border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-card);overflow:hidden;min-height:120px}
 .bc-tpl-group-block+.bc-tpl-group-block{border-top:1px solid var(--bt-line)}
 .bc-tpl-group{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:13px 14px 5px;font-size:11px;line-height:16px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--bt-ink-3)}
