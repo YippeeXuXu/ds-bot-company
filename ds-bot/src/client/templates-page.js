@@ -706,7 +706,7 @@ export const TEMPLATES_CSS = `
 .bc-tpl-sheet-title{flex:1;min-width:240px}
 .bc-tpl-sheet-title h2{font-size:20px;line-height:27px;font-weight:600;margin:3px 0 0;letter-spacing:-.012em;overflow-wrap:anywhere}
 .bc-tpl-note{margin:5px 0 0;font-size:12px;line-height:17px;color:var(--bt-ink-2)}
-.bc-tpl-inline-error{margin-top:5px;font-size:12px;line-height:17px;color:var(--bt-danger, #b42318)}
+.bc-tpl-inline-error{margin-top:5px;font-size:12px;line-height:17px;color:var(--bt-danger)}
 .bc-tpl-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;padding-top:2px}
 .bc-tpl-spec{margin:0 0 18px;border-top:1px solid var(--bt-line);border-bottom:1px solid var(--bt-line);display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
 .bc-tpl-spec>div{min-width:0;padding:9px 14px 11px 0}
