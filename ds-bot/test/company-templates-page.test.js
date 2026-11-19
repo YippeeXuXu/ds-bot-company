@@ -156,23 +156,14 @@ test('the head counts what the index holds', () => {
   assert.match(text(byClass(tree, 'bc-tpl-head')[0]), /A template is a reusable job description/)
 })
 
-test('the index groups builtin templates apart from saved copies', () => {
-  const tree = TemplatesPageView(props())
-  const groups = byClass(tree, 'bc-tpl-group').map(item => text(item))
-  assert.deepEqual(plain(groups), ['Builtin1', 'Saved copies1'])
-  const items = byClass(tree, 'bc-tpl-item')
-  assert.equal(items.length, 2)
-  assert.equal(items[0].props['aria-current'], 'true')
-  assert.match(text(items[1]), /No job title · No skills|项目统筹/)
-  click(items[1])
-})
-
-test('choosing an entry asks for it by id', () => {
-  const picked = []
-  TemplatesPageView(props({ handlers: { onSelect: id => picked.push(id) } }))
-  const tree = TemplatesPageView(props({ handlers: { onSelect: id => picked.push(id) } }))
-  click(byClass(tree, 'bc-tpl-item')[1])
-  assert.deepEqual(picked, ['tpl_copy'])
+test('the page shows the chosen template and leaves the list to the sidebar', () => {
+  const templates = sortedTemplates([builtin(), copy()])
+  const tree = TemplatesPageView(props({ templates, template: templates[1] }))
+  assert.equal(byClass(tree, 'bc-tpl-index').length, 0)
+  assert.equal(byClass(tree, 'bc-tpl-item').length, 0)
+  const sheet = byClass(tree, 'bc-tpl-sheet')
+  assert.equal(sheet.length, 1)
+  assert.match(text(sheet[0]), /项目统筹（前端）/)
 })
 
 test('a builtin sheet is readable and offers only a copy', () => {

@@ -91,7 +91,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
       type: 'button', className: 'bt-tile', 'aria-label': label, 'aria-current': active ? 'page' : undefined,
       'data-bot-id': id, title: preview || bot.name, onClick: () => actions.openSession(id), onContextMenu,
     },
-    h(BotAvatar, { bot, size: 60, state, main: true }),
+    h(BotAvatar, { bot, size: 56, state, main: true }),
     h('span', { className: 'bt-tile-name' }, bot.name),
     bot.role ? h('span', { className: 'bt-chip' }, bot.role) : null))
   }
@@ -632,8 +632,8 @@ export function TeamSidebar(props) {
   // null: the room is bound to one project and that is the context the user needs.
   const activeRoom = activeSession ? roster.roomsById?.[activeSession] : null
   const activeProject = !page && activeRoom ? projects.find(item => item.group_chat_ref === activeSession) ?? null : null
-  const kind = activeProject ? 'projectchat' : page?.kind ?? 'chat'
-  const currentProject = activeProject ?? (kind === 'detail' ? projects.find(item => item.id === page?.id) : null)
+  const kind = activeProject && uiNow.sessionSource === 'projects' ? 'projectchat' : page?.kind ?? 'chat'
+  const currentProject = (kind === 'projectchat' ? activeProject : null) ?? (kind === 'detail' ? projects.find(item => item.id === page?.id) : null)
   const todoCount = companyTodos?.counts?.waiting_total ?? 0
   const companyName = companyInfo?.name ?? 'DS Company'
   const wantedChat = chatQuery.trim().toLowerCase()
@@ -670,7 +670,7 @@ export function TeamSidebar(props) {
       type: 'button', key: item.id, className: 'bt-co-proj' + (currentProject?.id === item.id ? ' is-active' : ''),
       title: item.goal || undefined,
       onClick: () => {
-        if (item.group_binding?.status === 'bound' && item.group_chat_ref && roster.roomsById?.[item.group_chat_ref]) actions.openSession(item.group_chat_ref)
+        if (item.group_binding?.status === 'bound' && item.group_chat_ref && roster.roomsById?.[item.group_chat_ref]) actions.openSession(item.group_chat_ref, 'projects')
         else actions.openCompanyPage('detail', item.id)
       },
     },
@@ -715,6 +715,22 @@ export function TeamSidebar(props) {
         h('span', { className: 'bt-co-group-label' }, t('This project')),
         h('strong', null, currentProject.name),
         h('button', { type: 'button', className: 'bt-co-linkbtn', onClick: () => actions.openCompanyPage('detail', currentProject.id) }, t('Project overview'), ' ›')) : null))
+  // The templates page keeps its list here, in the column that already names the
+  // workspace: the page itself only shows the chosen template.
+  const templateChosen = page?.kind === 'templates' ? page?.id ?? templates[0]?.id ?? null : null
+  const templateSection = h('section', { className: 'bt-co-sec', 'aria-label': t('Templates') },
+    h('header', { className: 'bt-co-sec-head' },
+      h('span', null, t('Templates'), h('span', { className: 'bt-co-count' }, String(templates.length)))),
+    templates.length === 0
+      ? h('p', { className: 'bt-co-empty' }, t('No templates here yet'))
+      : h('div', { className: 'bt-co-plist' }, templates.map(item => h('button', {
+        key: item.id, type: 'button', className: 'bt-co-proj' + (templateChosen === item.id ? ' is-active' : ''),
+        'aria-current': templateChosen === item.id ? 'page' : undefined,
+        onClick: () => actions.openCompanyPage('templates', item.id),
+      },
+        h('span', { className: 'bt-co-proj-top' },
+          h('strong', null, item.name),
+          h('span', { className: 'bt-co-proj-stage' }, item.source === 'builtin' ? t('Builtin') : t('Copy')))))))
   // A bound project chat is still the Projects area: the column keeps the list
   // and adds the project's own overview links instead of the chat list.
   const projectChatSection = h('section', { className: 'bt-co-sec', 'aria-label': t('Projects') },
@@ -777,13 +793,13 @@ export function TeamSidebar(props) {
             // A project chat keeps the Projects column; leaving it for Chats means
             // landing on a conversation outside the project as well.
             actions.closeCompanyPage()
-            if (activeProject && main?.id) actions.openSession(main.id)
+            if (activeProject && main?.id) actions.openSession(main.id, 'chats')
           }))
       : railNav,
     wideContent && roster.readOnly ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
     h('div', { ref: listRef, className: wideContent ? 'bt-list bt-co-scroll' : 'bt-list', role: 'region', 'aria-label': t('Bot list') },
       wideContent
-        ? (kind === 'company' ? companySection : kind === 'chat' ? chatSection : kind === 'projectchat' ? projectChatSection : projectSection)
+        ? (kind === 'company' ? companySection : kind === 'chat' ? chatSection : kind === 'templates' ? templateSection : kind === 'projectchat' ? projectChatSection : projectSection)
         : (main ? h(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : h('div', { className: 'bt-hint' }, uiNow.bootFailed ? bootHint() : t('Setting up your Main Bot…'))),
       wideContent ? null : order.map(renderEntry)),
     foot)

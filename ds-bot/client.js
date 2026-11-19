@@ -3083,11 +3083,11 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-side:not(.bt-rail)>.bt-list::-webkit-scrollbar-thumb{border:4px solid transparent;border-radius:6px;background:color-mix(in srgb,var(--bt-ink) 16%,transparent) padding-box}
 .bt-side:not(.bt-rail)>.bt-list:hover::-webkit-scrollbar-thumb{background-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)}
 .bt-tile-wrap{display:flex;justify-content:center;padding:20px 0 15px}
-.bt-tile{display:flex;flex-direction:column;align-items:center;gap:4px;width:95px;padding:6px 8px 4px;border-radius:12px;border:0;background:transparent;color:var(--bt-ink);cursor:pointer;font-family:inherit;transition:background-color .12s ease}
+.bt-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:112px;height:112px;box-sizing:border-box;padding:8px 6px;border-radius:12px;border:0;background:transparent;color:var(--bt-ink);cursor:pointer;font-family:inherit;transition:background-color .12s ease}
 .bt-tile:hover{background:var(--bt-hover)}
 .bt-tile[aria-current=page]{background:var(--bt-active)}
-.bt-tile-name{font-size:13px;line-height:18px;font-weight:400;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bt-chip{font-size:11px;line-height:16px;padding:1px 4px;border-radius:4px;background:var(--bt-hover);border:1px solid var(--bt-line);color:var(--bt-ink-2);white-space:nowrap;max-width:84px;overflow:hidden;text-overflow:ellipsis}
+.bt-tile-name{font-size:13px;line-height:18px;font-weight:400;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-chip{font-size:11px;line-height:16px;padding:1px 4px;border-radius:4px;background:var(--bt-hover);border:1px solid var(--bt-line);color:var(--bt-ink-2);white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis}
 .bt-row{display:flex;align-items:center;gap:8px;min-height:54px;padding:8px;border:0;border-radius:10px;background:transparent;color:var(--bt-ink);text-align:left;cursor:pointer;width:100%;box-sizing:border-box;font-family:inherit;transition:background-color .12s ease}
 .bt-row:hover{background:var(--bt-hover)}
 .bt-row[aria-current=page]{background:var(--bt-active)}
@@ -9963,7 +9963,7 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
         onClick: () => actions.openSession(id),
         onContextMenu
       },
-      (0, import_react19.createElement)(BotAvatar, { bot, size: 60, state, main: true }),
+      (0, import_react19.createElement)(BotAvatar, { bot, size: 56, state, main: true }),
       (0, import_react19.createElement)("span", { className: "bt-tile-name" }, bot.name),
       bot.role ? (0, import_react19.createElement)("span", { className: "bt-chip" }, bot.role) : null
     ));
@@ -10543,8 +10543,8 @@ function TeamSidebar(props) {
   const activeProjects = projects.filter((item) => item.status === "active").length;
   const activeRoom = activeSession ? roster.roomsById?.[activeSession] : null;
   const activeProject = !page && activeRoom ? projects.find((item) => item.group_chat_ref === activeSession) ?? null : null;
-  const kind = activeProject ? "projectchat" : page?.kind ?? "chat";
-  const currentProject = activeProject ?? (kind === "detail" ? projects.find((item) => item.id === page?.id) : null);
+  const kind = activeProject && uiNow.sessionSource === "projects" ? "projectchat" : page?.kind ?? "chat";
+  const currentProject = (kind === "projectchat" ? activeProject : null) ?? (kind === "detail" ? projects.find((item) => item.id === page?.id) : null);
   const todoCount = companyTodos?.counts?.waiting_total ?? 0;
   const companyName = companyInfo?.name ?? "DS Company";
   const wantedChat = chatQuery.trim().toLowerCase();
@@ -10590,7 +10590,7 @@ function TeamSidebar(props) {
         className: "bt-co-proj" + (currentProject?.id === item.id ? " is-active" : ""),
         title: item.goal || void 0,
         onClick: () => {
-          if (item.group_binding?.status === "bound" && item.group_chat_ref && roster.roomsById?.[item.group_chat_ref]) actions.openSession(item.group_chat_ref);
+          if (item.group_binding?.status === "bound" && item.group_chat_ref && roster.roomsById?.[item.group_chat_ref]) actions.openSession(item.group_chat_ref, "projects");
           else actions.openCompanyPage("detail", item.id);
         }
       },
@@ -10669,6 +10669,32 @@ function TeamSidebar(props) {
         (0, import_react19.createElement)("button", { type: "button", className: "bt-co-linkbtn", onClick: () => actions.openCompanyPage("detail", currentProject.id) }, t("Project overview"), " ›")
       ) : null
     )
+  );
+  const templateChosen = page?.kind === "templates" ? page?.id ?? templates[0]?.id ?? null : null;
+  const templateSection = (0, import_react19.createElement)(
+    "section",
+    { className: "bt-co-sec", "aria-label": t("Templates") },
+    (0, import_react19.createElement)(
+      "header",
+      { className: "bt-co-sec-head" },
+      (0, import_react19.createElement)("span", null, t("Templates"), (0, import_react19.createElement)("span", { className: "bt-co-count" }, String(templates.length)))
+    ),
+    templates.length === 0 ? (0, import_react19.createElement)("p", { className: "bt-co-empty" }, t("No templates here yet")) : (0, import_react19.createElement)("div", { className: "bt-co-plist" }, templates.map((item) => (0, import_react19.createElement)(
+      "button",
+      {
+        key: item.id,
+        type: "button",
+        className: "bt-co-proj" + (templateChosen === item.id ? " is-active" : ""),
+        "aria-current": templateChosen === item.id ? "page" : void 0,
+        onClick: () => actions.openCompanyPage("templates", item.id)
+      },
+      (0, import_react19.createElement)(
+        "span",
+        { className: "bt-co-proj-top" },
+        (0, import_react19.createElement)("strong", null, item.name),
+        (0, import_react19.createElement)("span", { className: "bt-co-proj-stage" }, item.source === "builtin" ? t("Builtin") : t("Copy"))
+      )
+    )))
   );
   const projectChatSection = (0, import_react19.createElement)(
     "section",
@@ -10767,14 +10793,14 @@ function TeamSidebar(props) {
       navButton("projects", t("Projects"), projects.length, kind !== "company" && kind !== "chat" && kind !== "templates", () => actions.openCompanyPage("list")),
       navButton("chats", t("Chats"), order.length + (main ? 1 : 0), kind === "chat", () => {
         actions.closeCompanyPage();
-        if (activeProject && main?.id) actions.openSession(main.id);
+        if (activeProject && main?.id) actions.openSession(main.id, "chats");
       })
     ) : railNav,
     wideContent && roster.readOnly ? (0, import_react19.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
     (0, import_react19.createElement)(
       "div",
       { ref: listRef, className: wideContent ? "bt-list bt-co-scroll" : "bt-list", role: "region", "aria-label": t("Bot list") },
-      wideContent ? kind === "company" ? companySection : kind === "chat" ? chatSection : kind === "projectchat" ? projectChatSection : projectSection : main ? (0, import_react19.createElement)(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : (0, import_react19.createElement)("div", { className: "bt-hint" }, uiNow.bootFailed ? bootHint() : t("Setting up your Main Bot…")),
+      wideContent ? kind === "company" ? companySection : kind === "chat" ? chatSection : kind === "templates" ? templateSection : kind === "projectchat" ? projectChatSection : projectSection : main ? (0, import_react19.createElement)(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : (0, import_react19.createElement)("div", { className: "bt-hint" }, uiNow.bootFailed ? bootHint() : t("Setting up your Main Bot…")),
       wideContent ? null : order.map(renderEntry)
     ),
     foot
@@ -12037,7 +12063,7 @@ function CompanyPage(props) {
 var COMPANY_PAGE_CSS = `
 .bc-surface-company{overflow:hidden}
 .bc-surface-company .bc-shell{height:100vh}
-.bc-surface-company .bc-content{display:flex;flex:1;min-height:0;width:100%;max-width:none;padding:0}
+.bc-surface-company .bc-content-company{display:flex;flex:1;min-height:0;width:100%;max-width:none;padding:0}
 .bc-surface-company .bc-co-page{flex:1;min-height:0}
 .bc-co-page{display:flex;flex-direction:column;min-height:0;height:100%}
 .bc-co-head{flex:none;display:flex;align-items:flex-end;gap:16px;padding:18px 32px 14px;border-bottom:1px solid var(--bt-line)}
@@ -13652,56 +13678,6 @@ function TemplatesPageView(props) {
   } = props;
   const title = template ? template.source === "builtin" ? t("Builtin template") : t("Saved copy") : "";
   const modalCard = useModalFocus(Boolean(botDialog));
-  const list = () => {
-    if (loading) {
-      return (0, import_react24.createElement)(
-        "div",
-        { className: "bc-tpl-index", role: "status", "aria-label": t("Loading templates…") },
-        [0, 1, 2, 3].map((index) => (0, import_react24.createElement)(
-          "div",
-          { key: index, className: "bc-tpl-row bc-skeleton" },
-          (0, import_react24.createElement)("span", { className: "bc-skel bc-skel-line" }),
-          (0, import_react24.createElement)("span", { className: "bc-skel bc-skel-line short" })
-        ))
-      );
-    }
-    if (templates.length === 0) return null;
-    const groups = [["builtin", t("Builtin")], ["custom", t("Saved copies")]];
-    return (0, import_react24.createElement)(
-      "nav",
-      { className: "bc-tpl-index", "aria-label": t("Templates") },
-      groups.map(([source, label2]) => {
-        const items = templates.filter((item) => source === "builtin" ? item.source === "builtin" : item.source !== "builtin");
-        if (items.length === 0) return null;
-        return (0, import_react24.createElement)(
-          "div",
-          { key: source, className: "bc-tpl-group-block" },
-          (0, import_react24.createElement)("div", { className: "bc-tpl-group" }, (0, import_react24.createElement)("span", null, label2), (0, import_react24.createElement)("span", { className: "bc-tpl-count" }, String(items.length))),
-          items.map((item) => {
-            const skills = (item.skills ?? []).length;
-            const current = template?.id === item.id;
-            return (0, import_react24.createElement)(
-              "button",
-              {
-                key: item.id,
-                type: "button",
-                className: "bc-tpl-item",
-                "aria-current": current ? "true" : void 0,
-                onClick: () => handlers.onSelect?.(item.id)
-              },
-              (0, import_react24.createElement)(
-                "span",
-                { className: "bc-tpl-item-main" },
-                (0, import_react24.createElement)("strong", null, item.name),
-                (0, import_react24.createElement)("small", null, [item.role || t("No job title"), skills === 0 ? t("No skills") : t("{count} skills", { count: skills })].join(" · "))
-              ),
-              (0, import_react24.createElement)("span", { className: "bc-tpl-item-mark" }, source === "builtin" ? t("Builtin") : t("Copy"))
-            );
-          })
-        );
-      })
-    );
-  };
   const skillsBlock = () => {
     const names = skillNames(roster);
     const skills = template?.skills ?? [];
@@ -13915,7 +13891,7 @@ function TemplatesPageView(props) {
         (0, import_react24.createElement)("p", null, t("Builtin templates come with the company; save a copy to keep one of your own."))
       );
     }
-    return (0, import_react24.createElement)("div", { className: "bc-tpl-body" }, list(), sheet());
+    return (0, import_react24.createElement)("div", { className: "bc-tpl-body" }, sheet());
   };
   return (0, import_react24.createElement)(
     "section",
@@ -14046,7 +14022,7 @@ function TemplatesPage(props) {
   const [leavePrompt, setLeavePrompt] = (0, import_react24.useState)(null);
   const [formBase, setFormBase] = (0, import_react24.useState)(null);
   const dirtyRef = (0, import_react24.useRef)(false);
-  const template = templates.find((item) => item.id === selectedId) ?? templates[0] ?? null;
+  const template = templates.find((item) => item.id === (props.selectedId ?? selectedId)) ?? templates[0] ?? null;
   const effortRef = form ? form.model : template?.model;
   const reasoning = useEffortOptions(roster, effortRef ?? "", props.actions);
   const effortOptions = [
@@ -14086,7 +14062,10 @@ function TemplatesPage(props) {
     setFailure("");
     setFlash("");
   };
-  const select = (id) => requestLeave(() => applySelect(id));
+  const select = (id) => requestLeave(() => {
+    applySelect(id);
+    props.onSelectTemplate?.(id);
+  });
   const run2 = async (work, done) => {
     if (!onCommand) return;
     setBusy(true);
@@ -14310,7 +14289,7 @@ var TEMPLATES_CSS = `
 .bc-tpl-head h1{font-size:17px;line-height:24px;font-weight:600;margin:4px 0 0}
 .bc-tpl-count{font-size:12px;line-height:18px;color:var(--bt-ink-3);white-space:nowrap;padding-bottom:2px}
 .bc-tpl-flash{margin:10px 0 4px;border:1px solid var(--bt-line);border-radius:8px;justify-content:flex-start;padding:9px 12px}
-.bc-tpl-body{display:grid;grid-template-columns:minmax(240px,300px) minmax(0,1fr);gap:18px;align-items:start;margin-top:12px}
+.bc-tpl-body{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;align-items:start;margin-top:12px}
 .bc-tpl-index{border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-card);overflow:hidden;min-height:120px}
 .bc-tpl-group-block+.bc-tpl-group-block{border-top:1px solid var(--bt-line)}
 .bc-tpl-group{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:13px 14px 5px;font-size:11px;line-height:16px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--bt-ink-3)}
@@ -14987,7 +14966,7 @@ function CompanySurface({ page, actions, roster }) {
       setNotice(t("The project group is not ready. Check its binding before opening chat."));
       return;
     }
-    actions.openSession(project2.group_chat_ref);
+    actions.openSession(project2.group_chat_ref, "projects");
     close();
   };
   const project = data.projects.find((item) => item.id === selected);
@@ -15112,6 +15091,8 @@ function CompanySurface({ page, actions, roster }) {
           error,
           escapeGuard,
           actions,
+          selectedId: page?.id ?? null,
+          onSelectTemplate: (id) => actions.openCompanyPage("templates", id),
           onRetry: () => void load(),
           onCommand: mutate
         }) : onCompany ? (0, import_react26.createElement)(CompanyPage, {
@@ -16044,7 +16025,7 @@ var PROJECT_CHAT_CSS = `
 header[class*="_header"]:has(.pc-head){position:absolute;top:0;left:0;right:0;z-index:1200;display:flex;justify-content:center;padding:0;background:transparent;pointer-events:none;height:auto!important;overflow:visible!important}
 header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inset:0 0 auto;height:calc(100% + 26px);background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
 .pc-frame{position:relative;display:flex;flex-direction:column;width:100%;pointer-events:none}
-.pc-archived{position:absolute;top:54px;left:50%;transform:translateX(-50%);z-index:1201;pointer-events:auto;max-width:calc(100% - 24px);padding:6px 12px;border:.5px solid var(--bt-line-2);border-radius:999px;background:var(--bt-card);color:var(--bt-ink-2);font:500 12px/18px var(--bt-font);box-shadow:0 2px 8px -2px color-mix(in srgb,var(--bt-ink) 12%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-archived{align-self:center;flex:none;margin:6px auto 0;z-index:1201;max-width:calc(100% - 24px);padding:6px 12px;border:.5px solid var(--bt-line-2);border-radius:999px;background:var(--bt-card);color:var(--bt-ink-2);font:500 12px/18px var(--bt-font);box-shadow:0 2px 8px -2px color-mix(in srgb,var(--bt-ink) 12%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:auto}
 body.bc-project-archived [data-composer-card]{opacity:.6}
 body.bc-project-archived [data-composer-input]{pointer-events:none;user-select:none}
 body.bc-project-archived [data-composer-card] button{pointer-events:none}
@@ -26379,7 +26360,7 @@ function apply(ctx) {
   const reactionStore = sharedMap(STORAGE.reactions);
   const seenStore = sharedMap(STORAGE.seen);
   let seenAt = seenStore.read();
-  const ui2 = createSource({ details: null, view: "details", renaming: false, tab: null, side: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, memory: null, companyPage: null, toast: null, signIn: null, renameAgent: null, unread: unreadStore.read(), reactions: reactionStore.read(), visits: {}, panelYield: false, leftDrawer: false, bootFailed: false });
+  const ui2 = createSource({ details: null, view: "details", renaming: false, tab: null, side: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, memory: null, companyPage: null, sessionSource: "chats", toast: null, signIn: null, renameAgent: null, unread: unreadStore.read(), reactions: reactionStore.read(), visits: {}, panelYield: false, leftDrawer: false, bootFailed: false });
   let sidebarSaved = readSidebar();
   const sidebarPref = createSource(sidebarSaved.pref);
   const frame = createSource({ viewport: typeof window === "undefined" ? 0 : window.innerWidth, sidebarWidth: sidebarSaved.width, collapsedWidth: 0, collapsed: false });
@@ -26768,9 +26749,13 @@ function apply(ctx) {
   };
   const openCompanyPageNow = (kind = "list", id = null) => ui2.set((state) => ({ ...state, companyPage: { kind, id }, newChat: null, palette: null, menu: null, settings: null, leftDrawer: false }));
   const closeCompanyPageNow = () => ui2.set((state) => ({ ...state, companyPage: null }));
-  const openSessionNow = (id) => {
+  const openSessionNow = (id, source = "chats") => {
     if (isAgentSessionId(id)) return actions.openAgentSession(id);
-    ui2.set((state) => state.newChat || state.exchange || state.menu || state.palette || state.companyPage ? { ...state, newChat: null, exchange: null, menu: null, palette: null, companyPage: null } : state);
+    ui2.set((state) => {
+      const patch = { sessionSource: source };
+      if (state.newChat || state.exchange || state.menu || state.palette || state.companyPage) Object.assign(patch, { newChat: null, exchange: null, menu: null, palette: null, companyPage: null });
+      return { ...state, ...patch };
+    });
     setPlain(false);
     const target = partFor(id);
     show2(target);
@@ -26789,14 +26774,14 @@ function apply(ctx) {
       if (askLeave(closeCompanyPageNow)) return;
       closeCompanyPageNow();
     },
-    openSession: (id) => {
-      if (askLeave(() => openSessionNow(id))) return;
-      openSessionNow(id);
+    openSession: (id, source = "chats") => {
+      if (askLeave(() => openSessionNow(id, source))) return;
+      openSessionNow(id, source);
     },
     // The conversation replacements withdraw for a plain Session; set the surface
     // before the navigation so the Bot skin never flashes.
     openAgentSession: (sessionId) => {
-      ui2.set((state) => ({ ...state, newChat: null, exchange: null, menu: null, palette: null, companyPage: null, details: null, view: "details", renaming: false, tab: null }));
+      ui2.set((state) => ({ ...state, newChat: null, exchange: null, menu: null, palette: null, companyPage: null, details: null, view: "details", renaming: false, tab: null, sessionSource: "chats" }));
       setPlain(true);
       show2(sessionId);
     },
