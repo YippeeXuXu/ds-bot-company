@@ -277,6 +277,7 @@ export function ProjectChatPage({ project, stage: stageProp, faces, goal, nextSt
 export const PROJECT_CHAT_CSS = `
 header[class*="_header"]:has(.pc-head){position:absolute;top:0;left:0;right:0;z-index:1200;display:flex;justify-content:center;padding:0;background:transparent;pointer-events:none;height:auto!important;overflow:visible!important}
 header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inset:0 0 auto;height:calc(100% + 26px);background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
+header[class*="_header"]:has(.pc-head):has(.pc-drawer){z-index:1201!important}
 .pc-frame{position:relative;display:flex;flex-direction:column;width:100%;pointer-events:none}
 .pc-archived{align-self:center;flex:none;margin:6px auto 0;z-index:1201;max-width:calc(100% - 24px);padding:6px 12px;border:.5px solid var(--bt-line-2);border-radius:999px;background:var(--bt-card);color:var(--bt-ink-2);font:500 12px/18px var(--bt-font);box-shadow:0 2px 8px -2px color-mix(in srgb,var(--bt-ink) 12%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:auto}
 body.bc-project-archived [data-composer-card]{opacity:.6}
@@ -344,7 +345,7 @@ body.bc-project-archived [data-composer-card] button{pointer-events:none}
 .pc-dock-in{display:inline-flex;align-items:center;gap:8px;flex:none;padding:0 13px 0 6px;white-space:nowrap}
 .pc-dock-label{font:400 13px/18px var(--bt-font);max-width:min(420px,58vw);overflow:hidden;text-overflow:ellipsis}
 .pc-dock-pill.is-wait{color:var(--bt-ink-2)}
-.pc-drawer{position:fixed;top:0;right:0;bottom:0;z-index:40;width:380px;max-width:calc(100% - 56px);display:flex;flex-direction:column;background:var(--bt-main);border-left:.5px solid var(--pc-ring);color:var(--bt-ink);animation:pc-pane-in .3s cubic-bezier(.2,0,0,1)}
+.pc-drawer{position:fixed;top:0;right:0;bottom:0;z-index:1201;pointer-events:auto;width:380px;max-width:calc(100% - 56px);display:flex;flex-direction:column;background:var(--bt-main);border-left:.5px solid var(--pc-ring);color:var(--bt-ink);animation:pc-pane-in .3s cubic-bezier(.2,0,0,1)}
 .pc-drawer-top{display:flex;justify-content:flex-end;gap:8px;padding:12px 17px 6px 12px}
 .pc-round{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:0;border-radius:999px;background:transparent;color:var(--bt-ink);font-size:20px;line-height:1;cursor:pointer}
 .pc-round:hover{background:var(--bt-hover)}
