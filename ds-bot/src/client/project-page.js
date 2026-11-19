@@ -67,6 +67,9 @@ export function ProjectPage({ project, data, tasks = [], tasksError = '', previe
   const pending = binding?.status !== 'bound' || (!preview && data.group?.drifted === true)
   const members = preview ? (data.members ?? []).filter(member => member.project_id === project.id) : data.members ?? []
   const activeMembers = members.filter(member => (member.membership_status ?? member.status) === 'active')
+  // A project with no active member has no group to open: the host has no room to load,
+  // so opening the chat lands on the default session instead of this project.
+  const noMember = !preview && project.status !== 'archived' && activeMembers.length === 0
   const coordinator = members.find(member => member.id === project.coordinator_assignment_id || member.role === 'coordinator')
   const employeeName = id => data.employees.find(employee => employee.id === id)?.name ?? id
   const invalidMember = members.some(member => {
@@ -137,12 +140,12 @@ export function ProjectPage({ project, data, tasks = [], tasksError = '', previe
         h('span', { className: `bc-status bc-${project.status}` }, label(project.status)),
         canArchive ? h('button', { type: 'button', className: 'bc-button bc-danger', disabled: busy || archiveBusy, onClick: openArchive }, t('Archive project')) : null)),
     h('div', { className: 'bc-section' },
-      h('div', { className: 'bc-row' }, h('strong', null, t('Project chat')), h('button', { type: 'button', className: 'bc-button', onClick: onChat, disabled: pending || preview || project.status === 'archived', title: preview ? t('Sample chat is unavailable') : undefined }, t('Open chat'))),
+      h('div', { className: 'bc-row' }, h('strong', null, t('Project chat')), h('button', { type: 'button', className: 'bc-button', onClick: onChat, disabled: pending || noMember || preview || project.status === 'archived', title: preview ? t('Sample chat is unavailable') : noMember ? t('Add an active member before creating the project group.') : undefined }, t('Open chat'))),
       h('p', { className: 'bc-muted' }, unbound ? t('The project group is created when a member joins or the project starts.') : pending ? t('Group binding needs attention before chat can be opened.') : project.status === 'archived' ? t('Archived project. The group history remains available for reading.') : t('Project group is linked. Open the existing chat to continue.')),
       // A group that failed to bind, or was never created, used to leave only one muted
       // sentence here. Say what is wrong and give the same explicit repair the pending
       // state has, so a failed creation is not a dead end.
-      unbound ? h('div', { className: 'bc-exception', role: 'status' }, h('strong', null, t('The project group has not been created.')),
+      unbound || noMember ? h('div', { className: 'bc-exception', role: 'status' }, h('strong', null, t(unbound ? 'The project group has not been created.' : 'This project has no active member yet.')),
         h('p', null, activeMembers.length ? t('Create it now, or it is created automatically when a member joins or the project starts.') : t('Add an active member before creating the project group.')),
         groupError ? h('p', { role: 'alert' }, groupError) : null,
         activeMembers.length && project.status !== 'archived' && !preview ? h('button', { type: 'button', className: 'bc-button', disabled: busy, onClick: () => void retryGroup() }, busy ? t('Creating…') : t('Create project group')) : null) : pending ? h('div', { className: 'bc-exception', role: 'status' }, h('strong', null, t('Group needs reconciliation')), t('Group changes are not synced. An authorized operator must reconcile the group before starting work.'), binding?.error && !preview ? h('p', null, binding.error) : null,

@@ -1270,6 +1270,7 @@ Object.assign(ZH, HOST_ZH, {
   'The project group has not been created.': '项目群还没有建立。',
   'Create it now, or it is created automatically when a member joins or the project starts.': '可以现在建立；加入成员或启动项目时也会自动创建。',
   'Add an active member before creating the project group.': '先在项目里加入在岗成员，才能建立项目群。',
+  'This project has no active member yet.': '这个项目还没有在岗成员。',
   'Create project group': '建立项目群',
   'The project has no active member, so it has no group to create.': '项目没有在岗成员，暂时无法建立项目群。',
   'The project group could not be created.': '项目群没能建立，可以再试一次。',
