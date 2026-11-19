@@ -1386,6 +1386,7 @@ Object.assign(ZH, HOST_ZH, {
   "The project group has not been created.": "项目群还没有建立。",
   "Create it now, or it is created automatically when a member joins or the project starts.": "可以现在建立；加入成员或启动项目时也会自动创建。",
   "Add an active member before creating the project group.": "先在项目里加入在岗成员，才能建立项目群。",
+  "This project has no active member yet.": "这个项目还没有在岗成员。",
   "Create project group": "建立项目群",
   "The project has no active member, so it has no group to create.": "项目没有在岗成员，暂时无法建立项目群。",
   "The project group could not be created.": "项目群没能建立，可以再试一次。",
@@ -13114,6 +13115,7 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
   const pending = binding?.status !== "bound" || !preview && data.group?.drifted === true;
   const members = preview ? (data.members ?? []).filter((member) => member.project_id === project.id) : data.members ?? [];
   const activeMembers = members.filter((member) => (member.membership_status ?? member.status) === "active");
+  const noMember = !preview && project.status !== "archived" && activeMembers.length === 0;
   const coordinator = members.find((member) => member.id === project.coordinator_assignment_id || member.role === "coordinator");
   const employeeName = (id) => data.employees.find((employee) => employee.id === id)?.name ?? id;
   const invalidMember = members.some((member) => {
@@ -13196,15 +13198,15 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
     (0, import_react22.createElement)(
       "div",
       { className: "bc-section" },
-      (0, import_react22.createElement)("div", { className: "bc-row" }, (0, import_react22.createElement)("strong", null, t("Project chat")), (0, import_react22.createElement)("button", { type: "button", className: "bc-button", onClick: onChat, disabled: pending || preview || project.status === "archived", title: preview ? t("Sample chat is unavailable") : void 0 }, t("Open chat"))),
+      (0, import_react22.createElement)("div", { className: "bc-row" }, (0, import_react22.createElement)("strong", null, t("Project chat")), (0, import_react22.createElement)("button", { type: "button", className: "bc-button", onClick: onChat, disabled: pending || noMember || preview || project.status === "archived", title: preview ? t("Sample chat is unavailable") : noMember ? t("Add an active member before creating the project group.") : void 0 }, t("Open chat"))),
       (0, import_react22.createElement)("p", { className: "bc-muted" }, unbound ? t("The project group is created when a member joins or the project starts.") : pending ? t("Group binding needs attention before chat can be opened.") : project.status === "archived" ? t("Archived project. The group history remains available for reading.") : t("Project group is linked. Open the existing chat to continue.")),
       // A group that failed to bind, or was never created, used to leave only one muted
       // sentence here. Say what is wrong and give the same explicit repair the pending
       // state has, so a failed creation is not a dead end.
-      unbound ? (0, import_react22.createElement)(
+      unbound || noMember ? (0, import_react22.createElement)(
         "div",
         { className: "bc-exception", role: "status" },
-        (0, import_react22.createElement)("strong", null, t("The project group has not been created.")),
+        (0, import_react22.createElement)("strong", null, t(unbound ? "The project group has not been created." : "This project has no active member yet.")),
         (0, import_react22.createElement)("p", null, activeMembers.length ? t("Create it now, or it is created automatically when a member joins or the project starts.") : t("Add an active member before creating the project group.")),
         groupError ? (0, import_react22.createElement)("p", { role: "alert" }, groupError) : null,
         activeMembers.length && project.status !== "archived" && !preview ? (0, import_react22.createElement)("button", { type: "button", className: "bc-button", disabled: busy, onClick: () => void retryGroup() }, busy ? t("Creating…") : t("Create project group")) : null
