@@ -18,10 +18,19 @@ const memberError = failure => {
   }[failure?.code]
   return known ?? (failure?.message ? String(failure.message) : t('The change could not be saved.'))
 }
+const groupErrorText = failure => {
+  const known = {
+    'project/missing-input': t('The project has no active member, so it has no group to create.'),
+    'project/group-failed': t('The project group could not be created. Try again after the roster is available.'),
+    'project/state-conflict': t('This project state cannot change its group.'),
+  }[failure?.code]
+  return known ?? (failure?.message ? String(failure.message) : t('The project group could not be created.'))
+}
 
 export function ProjectPage({ project, data, tasks = [], tasksError = '', preview, loading, error, onBack, onChat, onRetry, onCommand, onTaskCommand, onArchiveData }) {
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
+  const [groupError, setGroupError] = useState('')
   const [selectedEmployee, setSelectedEmployee] = useState('')
   const [pendingRemove, setPendingRemove] = useState(null)
   const [archiveOpen, setArchiveOpen] = useState(false)
@@ -39,6 +48,17 @@ export function ProjectPage({ project, data, tasks = [], tasksError = '', previe
     catch (failure) { setActionError(memberError(failure)); return false }
     finally { setBusy(false) }
   }
+  // Group repair keeps its own error next to the button that failed; the current-state
+  // action error is too far down to explain why the group is still missing.
+  const retryGroup = async () => {
+    if (busy || preview || !project) return
+    setBusy(true)
+    setGroupError('')
+    setActionError('')
+    try { await onCommand('project.group.reconcile', { project_id: project.id }) }
+    catch (failure) { setGroupError(groupErrorText(failure)) }
+    finally { setBusy(false) }
+  }
   if (loading && !project) return h('section', { className: 'bc-state', role: 'status' }, t('Loading project…'))
   if (error) return h('section', { className: 'bc-state bc-error', role: 'alert' }, h('strong', null, t('Project could not be loaded.')), h('p', null, error), h('button', { type: 'button', className: 'bc-button', onClick: onRetry }, t('Try again')), h('button', { type: 'button', className: 'bc-button', onClick: onBack }, t('Back to projects')))
   if (!project) return h('section', { className: 'bc-state' }, h('strong', null, t('Project not found')), h('p', null, t('Its record may have changed. Return to the project list.')), h('button', { type: 'button', className: 'bc-button', onClick: onBack }, t('Back to projects')))
@@ -46,6 +66,7 @@ export function ProjectPage({ project, data, tasks = [], tasksError = '', previe
   const unbound = binding?.status === 'unbound' && !project.group_chat_ref
   const pending = binding?.status !== 'bound' || (!preview && data.group?.drifted === true)
   const members = preview ? (data.members ?? []).filter(member => member.project_id === project.id) : data.members ?? []
+  const activeMembers = members.filter(member => (member.membership_status ?? member.status) === 'active')
   const coordinator = members.find(member => member.id === project.coordinator_assignment_id || member.role === 'coordinator')
   const employeeName = id => data.employees.find(employee => employee.id === id)?.name ?? id
   const invalidMember = members.some(member => {
@@ -118,8 +139,15 @@ export function ProjectPage({ project, data, tasks = [], tasksError = '', previe
     h('div', { className: 'bc-section' },
       h('div', { className: 'bc-row' }, h('strong', null, t('Project chat')), h('button', { type: 'button', className: 'bc-button', onClick: onChat, disabled: pending || preview || project.status === 'archived', title: preview ? t('Sample chat is unavailable') : undefined }, t('Open chat'))),
       h('p', { className: 'bc-muted' }, unbound ? t('The project group is created when a member joins or the project starts.') : pending ? t('Group binding needs attention before chat can be opened.') : project.status === 'archived' ? t('Archived project. The group history remains available for reading.') : t('Project group is linked. Open the existing chat to continue.')),
-      pending && !unbound ? h('div', { className: 'bc-exception', role: 'status' }, h('strong', null, t('Group needs reconciliation')), t('Group changes are not synced. An authorized operator must reconcile the group before starting work.'), binding?.error && !preview ? h('p', null, binding.error) : null,
-        project.status !== 'archived' ? h('button', { type: 'button', className: 'bc-button', disabled: busy || preview, onClick: () => void run('project.group.reconcile') }, t('Reconcile group')) : null) : null),
+      // A group that failed to bind, or was never created, used to leave only one muted
+      // sentence here. Say what is wrong and give the same explicit repair the pending
+      // state has, so a failed creation is not a dead end.
+      unbound ? h('div', { className: 'bc-exception', role: 'status' }, h('strong', null, t('The project group has not been created.')),
+        h('p', null, activeMembers.length ? t('Create it now, or it is created automatically when a member joins or the project starts.') : t('Add an active member before creating the project group.')),
+        groupError ? h('p', { role: 'alert' }, groupError) : null,
+        activeMembers.length && project.status !== 'archived' && !preview ? h('button', { type: 'button', className: 'bc-button', disabled: busy, onClick: () => void retryGroup() }, busy ? t('Creating…') : t('Create project group')) : null) : pending ? h('div', { className: 'bc-exception', role: 'status' }, h('strong', null, t('Group needs reconciliation')), t('Group changes are not synced. An authorized operator must reconcile the group before starting work.'), binding?.error && !preview ? h('p', null, binding.error) : null,
+        groupError ? h('p', { role: 'alert' }, groupError) : null,
+        project.status !== 'archived' ? h('button', { type: 'button', className: 'bc-button', disabled: busy || preview, onClick: () => void retryGroup() }, t('Reconcile group')) : null) : null),
     h('div', { className: 'bc-grid' },
       h('section', { className: 'bc-section' }, h('h2', null, t('Purpose and delivery')), h('div', { className: 'bc-detail-label' }, t('Goal')), h('p', { className: 'bc-detail-value' }, project.goal || '—'), h('div', { className: 'bc-detail-label' }, t('Deliverable')), h('p', { className: 'bc-detail-value' }, project.deliverable || '—'), h('div', { className: 'bc-detail-label' }, t('Acceptance')), h('p', { className: 'bc-detail-value' }, project.acceptance || '—')),
       h('section', { className: 'bc-section' }, h('h2', null, t('People and departments')), h('div', { className: 'bc-detail-label' }, t('Source departments')), h('p', { className: 'bc-detail-value' }, relation(project, data).join(' · ') || '—'), h('div', { className: 'bc-detail-label' }, t('Coordinator')), h('p', { className: 'bc-detail-value' }, coordinator ? employeeName(coordinator.employee_id) : t('Not assigned')),

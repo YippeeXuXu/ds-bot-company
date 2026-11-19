@@ -1383,6 +1383,14 @@ Object.assign(ZH, HOST_ZH, {
   "Archived project. The group history remains available for reading.": "项目已归档，群历史保留。",
   "Project group is linked. Open the existing chat to continue.": "项目群已绑定，可打开现有群聊继续。",
   "Group needs reconciliation": "项目群待对账",
+  "The project group has not been created.": "项目群还没有建立。",
+  "Create it now, or it is created automatically when a member joins or the project starts.": "可以现在建立；加入成员或启动项目时也会自动创建。",
+  "Add an active member before creating the project group.": "先在项目里加入在岗成员，才能建立项目群。",
+  "Create project group": "建立项目群",
+  "The project has no active member, so it has no group to create.": "项目没有在岗成员，暂时无法建立项目群。",
+  "The project group could not be created.": "项目群没能建立，可以再试一次。",
+  "The project group could not be created. Try again after the roster is available.": "项目群没能建立，请等成员服务可用后再试。",
+  "This project state cannot change its group.": "项目当前状态不能变更项目群。",
   "Group changes are not synced. An authorized operator must reconcile the group before starting work.": "群成员变更尚未同步，须由有权限的人员对账后才能启动工作。",
   "Purpose and delivery": "目标与交付",
   Goal: "目标",
@@ -12970,9 +12978,18 @@ var memberError = (failure) => {
   }[failure?.code];
   return known ?? (failure?.message ? String(failure.message) : t("The change could not be saved."));
 };
+var groupErrorText = (failure) => {
+  const known = {
+    "project/missing-input": t("The project has no active member, so it has no group to create."),
+    "project/group-failed": t("The project group could not be created. Try again after the roster is available."),
+    "project/state-conflict": t("This project state cannot change its group.")
+  }[failure?.code];
+  return known ?? (failure?.message ? String(failure.message) : t("The project group could not be created."));
+};
 function ProjectPage({ project, data, tasks = [], tasksError = "", preview, loading, error, onBack, onChat, onRetry, onCommand, onTaskCommand, onArchiveData }) {
   const [busy, setBusy] = (0, import_react22.useState)(false);
   const [actionError, setActionError] = (0, import_react22.useState)("");
+  const [groupError, setGroupError] = (0, import_react22.useState)("");
   const [selectedEmployee, setSelectedEmployee] = (0, import_react22.useState)("");
   const [pendingRemove, setPendingRemove] = (0, import_react22.useState)(null);
   const [archiveOpen, setArchiveOpen] = (0, import_react22.useState)(false);
@@ -12996,6 +13013,19 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
       setBusy(false);
     }
   };
+  const retryGroup = async () => {
+    if (busy || preview || !project) return;
+    setBusy(true);
+    setGroupError("");
+    setActionError("");
+    try {
+      await onCommand("project.group.reconcile", { project_id: project.id });
+    } catch (failure) {
+      setGroupError(groupErrorText(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
   if (loading && !project) return (0, import_react22.createElement)("section", { className: "bc-state", role: "status" }, t("Loading project…"));
   if (error) return (0, import_react22.createElement)("section", { className: "bc-state bc-error", role: "alert" }, (0, import_react22.createElement)("strong", null, t("Project could not be loaded.")), (0, import_react22.createElement)("p", null, error), (0, import_react22.createElement)("button", { type: "button", className: "bc-button", onClick: onRetry }, t("Try again")), (0, import_react22.createElement)("button", { type: "button", className: "bc-button", onClick: onBack }, t("Back to projects")));
   if (!project) return (0, import_react22.createElement)("section", { className: "bc-state" }, (0, import_react22.createElement)("strong", null, t("Project not found")), (0, import_react22.createElement)("p", null, t("Its record may have changed. Return to the project list.")), (0, import_react22.createElement)("button", { type: "button", className: "bc-button", onClick: onBack }, t("Back to projects")));
@@ -13003,6 +13033,7 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
   const unbound = binding?.status === "unbound" && !project.group_chat_ref;
   const pending = binding?.status !== "bound" || !preview && data.group?.drifted === true;
   const members = preview ? (data.members ?? []).filter((member) => member.project_id === project.id) : data.members ?? [];
+  const activeMembers = members.filter((member) => (member.membership_status ?? member.status) === "active");
   const coordinator = members.find((member) => member.id === project.coordinator_assignment_id || member.role === "coordinator");
   const employeeName = (id) => data.employees.find((employee) => employee.id === id)?.name ?? id;
   const invalidMember = members.some((member) => {
@@ -13087,13 +13118,24 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
       { className: "bc-section" },
       (0, import_react22.createElement)("div", { className: "bc-row" }, (0, import_react22.createElement)("strong", null, t("Project chat")), (0, import_react22.createElement)("button", { type: "button", className: "bc-button", onClick: onChat, disabled: pending || preview || project.status === "archived", title: preview ? t("Sample chat is unavailable") : void 0 }, t("Open chat"))),
       (0, import_react22.createElement)("p", { className: "bc-muted" }, unbound ? t("The project group is created when a member joins or the project starts.") : pending ? t("Group binding needs attention before chat can be opened.") : project.status === "archived" ? t("Archived project. The group history remains available for reading.") : t("Project group is linked. Open the existing chat to continue.")),
-      pending && !unbound ? (0, import_react22.createElement)(
+      // A group that failed to bind, or was never created, used to leave only one muted
+      // sentence here. Say what is wrong and give the same explicit repair the pending
+      // state has, so a failed creation is not a dead end.
+      unbound ? (0, import_react22.createElement)(
+        "div",
+        { className: "bc-exception", role: "status" },
+        (0, import_react22.createElement)("strong", null, t("The project group has not been created.")),
+        (0, import_react22.createElement)("p", null, activeMembers.length ? t("Create it now, or it is created automatically when a member joins or the project starts.") : t("Add an active member before creating the project group.")),
+        groupError ? (0, import_react22.createElement)("p", { role: "alert" }, groupError) : null,
+        activeMembers.length && project.status !== "archived" && !preview ? (0, import_react22.createElement)("button", { type: "button", className: "bc-button", disabled: busy, onClick: () => void retryGroup() }, busy ? t("Creating…") : t("Create project group")) : null
+      ) : pending ? (0, import_react22.createElement)(
         "div",
         { className: "bc-exception", role: "status" },
         (0, import_react22.createElement)("strong", null, t("Group needs reconciliation")),
         t("Group changes are not synced. An authorized operator must reconcile the group before starting work."),
         binding?.error && !preview ? (0, import_react22.createElement)("p", null, binding.error) : null,
-        project.status !== "archived" ? (0, import_react22.createElement)("button", { type: "button", className: "bc-button", disabled: busy || preview, onClick: () => void run2("project.group.reconcile") }, t("Reconcile group")) : null
+        groupError ? (0, import_react22.createElement)("p", { role: "alert" }, groupError) : null,
+        project.status !== "archived" ? (0, import_react22.createElement)("button", { type: "button", className: "bc-button", disabled: busy || preview, onClick: () => void retryGroup() }, t("Reconcile group")) : null
       ) : null
     ),
     (0, import_react22.createElement)(
@@ -14893,8 +14935,7 @@ function CompanySurface({ page, actions, roster }) {
   const project = data.projects.find((item) => item.id === selected);
   const coordinatorOf = (item) => data.employees.find((employee) => employee.project_id === item.id && employee.acceptance_role === "coordinator") ?? data.employees.find((employee) => employee.id === data.members.find((member) => member.id === item.coordinator_assignment_id)?.employee_id);
   const departmentOf = (item) => (item.source_department_ids ?? []).map((id) => data.departments.find((department) => department.id === id)?.name).filter(Boolean)[0] ?? "";
-  const groupReady = (item) => !preview && item.group_binding?.status === "bound" && Boolean(item.group_chat_ref) && Boolean(roster.roomsById?.[item.group_chat_ref]);
-  const openProject = (item) => groupReady(item) ? openChat(item) : actions.openCompanyPage("detail", item.id);
+  const openProject = (item) => actions.openCompanyPage("detail", item.id);
   const markStale = (item) => setTodosData((current) => current ? { ...current, todos: current.todos.map((row) => row.id === item.id ? { ...row, stale: true, ready: false, reason: null, reason_code: null } : row) } : current);
   const applyDecided = (item, action, opinion) => setTodosData((current) => {
     if (!current) return current;
