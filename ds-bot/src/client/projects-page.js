@@ -292,8 +292,10 @@ export function CompanySurface({ page, actions, roster }) {
   const project = data.projects.find(item => item.id === selected)
   const coordinatorOf = item => data.employees.find(employee => employee.project_id === item.id && employee.acceptance_role === 'coordinator') ?? data.employees.find(employee => employee.id === data.members.find(member => member.id === item.coordinator_assignment_id)?.employee_id)
   const departmentOf = item => (item.source_department_ids ?? []).map(id => data.departments.find(department => department.id === id)?.name).filter(Boolean)[0] ?? ''
-  const groupReady = item => !preview && item.group_binding?.status === 'bound' && Boolean(item.group_chat_ref) && Boolean(roster.roomsById?.[item.group_chat_ref])
-  const openProject = item => (groupReady(item) ? openChat(item) : actions.openCompanyPage('detail', item.id))
+  // A project row opens the project detail in both cases: its chat is one action inside
+  // the detail, not the only way in. A bound group used to send the row straight to chat,
+  // which left no path to the task board from the project list.
+  const openProject = item => actions.openCompanyPage('detail', item.id)
   // A decision row answered elsewhere turns read-only instead of staying clickable.
   const markStale = item => setTodosData(current => (current
     ? { ...current, todos: current.todos.map(row => (row.id === item.id ? { ...row, stale: true, ready: false, reason: null, reason_code: null } : row)) }
