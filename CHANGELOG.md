@@ -4,6 +4,23 @@ All notable changes to DS Bot are listed here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-19
+
+### Added
+
+- **Companies, departments and employees.** A team is organized into a company, its departments and the Bots that work in them. An employee profile carries a name, a role, an acceptance role and a conversation mode; a department can lead with one of its own and holds a group chat of its Bots.
+- **Project groups.** A project has a goal, deliverables, an acceptance standard, members and its own group chat, and moves from setup to active to archived. An acceptance mode can name a separate acceptance Bot.
+- **Task board.** Cards live in draft, ready, doing, review, done or cancelled; each has an owner, acceptance checks and an authorization scope. Moving a card to done by hand is refused — only an acceptance decision closes it.
+- **Dispatch to a Bot.** `task.dispatch` writes the brief into the owner Bot's session, `run.list` shows the runs and `run.fail` records a failed one. Runs are execution history; the card's own stage is what a screen reads.
+- **Acceptance records.** A card is submitted with a summary, artifacts and a note per check; the acceptance can then be accepted or returned, with its opinion kept on the card.
+- **Employee templates.** A role definition (role, instructions, model, thinking level, skills) can be saved, started from when hiring, and exported or imported as a file.
+- **Archive.** Archiving a project closes its open cards and acceptance records in one step, keeps the group history, and cannot be undone.
+
+### Changed
+
+- An employee profile can be opened before its Bot is chosen (`bot_id: null`). A department group is made from the Bots the department has, and reports the profiles it skipped; a profile whose Bot has gone is still named and refused.
+- A coordinator without a Bot is refused with `project/coordinator-without-bot` before any room is made, instead of failing on the group itself.
+
 ## [0.2.5] - 2026-11-01
 
 ### Changed
