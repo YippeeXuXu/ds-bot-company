@@ -209,6 +209,16 @@ export function CompanySurface({ page, actions, roster }) {
 
   // Task commands take the task's own revision (already in the payload); the company
   // revision a member command sends would be the wrong number here.
+  // Archive is irreversible, so its check is a fresh pair of reads rather than the
+  // board cache. Acceptance rows can exist without a task, and either read failing must
+  // leave the confirmation unavailable instead of showing a confident 0/0.
+  const loadArchiveData = async projectId => {
+    const [taskResult, acceptanceResult] = await Promise.all([
+      call('company-command', { command: 'task.list', payload: { project_id: projectId, operation_key: `archive-task-list-${freshKey()}` } }),
+      call('company-command', { command: 'acceptance.list', payload: { project_id: projectId, limit: 200, operation_key: `archive-acceptance-list-${freshKey()}` } }),
+    ])
+    return { tasks: taskResult?.body?.tasks ?? [], acceptances: acceptanceResult?.body?.acceptances ?? [] }
+  }
   const sendTask = async (command, fields = {}) => {
     if (preview) throw Object.assign(new Error(t('Preview')), { code: 'preview' })
     const result = await call('company-command', { command, payload: { ...fields, operation_key: freshKey() } })
@@ -282,8 +292,10 @@ export function CompanySurface({ page, actions, roster }) {
   const project = data.projects.find(item => item.id === selected)
   const coordinatorOf = item => data.employees.find(employee => employee.project_id === item.id && employee.acceptance_role === 'coordinator') ?? data.employees.find(employee => employee.id === data.members.find(member => member.id === item.coordinator_assignment_id)?.employee_id)
   const departmentOf = item => (item.source_department_ids ?? []).map(id => data.departments.find(department => department.id === id)?.name).filter(Boolean)[0] ?? ''
-  const groupReady = item => !preview && item.group_binding?.status === 'bound' && Boolean(item.group_chat_ref) && Boolean(roster.roomsById?.[item.group_chat_ref])
-  const openProject = item => (groupReady(item) ? openChat(item) : actions.openCompanyPage('detail', item.id))
+  // A project row opens the project detail in both cases: its chat is one action inside
+  // the detail, not the only way in. A bound group used to send the row straight to chat,
+  // which left no path to the task board from the project list.
+  const openProject = item => actions.openCompanyPage('detail', item.id)
   // A decision row answered elsewhere turns read-only instead of staying clickable.
   const markStale = item => setTodosData(current => (current
     ? { ...current, todos: current.todos.map(row => (row.id === item.id ? { ...row, stale: true, ready: false, reason: null, reason_code: null } : row)) }
@@ -403,7 +415,7 @@ export function CompanySurface({ page, actions, roster }) {
       notice ? h('div', { className: 'bc-notice', role: 'status' }, notice, h('button', { type: 'button', 'aria-label': t('Dismiss notice'), onClick: () => setNotice('') }, '×')) : null,
       h('main', { className: 'bc-content' + (onCompany ? ' bc-content-company' : '') },
         kind === 'wizard' ? h(ProjectWizard, { data, roster, preview, loading, error, mutate, onBack: () => actions.openCompanyPage('list'), onCreated: result => actions.openCompanyPage('detail', result.body?.project?.id) })
-          : kind === 'detail' ? h(ProjectPage, { project, data, tasks, tasksError, preview, loading: loading || detailLoading, error: detailError || error, onBack: () => actions.openCompanyPage('list'), onChat: () => project && openChat(project), onRetry: () => setDetailAttempt(value => value + 1), onTaskCommand: sendTask, onCommand: async (command, fields) => { const result = await mutate(command, fields); setDetailAttempt(value => value + 1); return result } })
+          : kind === 'detail' ? h(ProjectPage, { project, data, tasks, tasksError, preview, loading: loading || detailLoading, error: detailError || error, onBack: () => actions.openCompanyPage('list'), onChat: () => project && openChat(project), onRetry: () => setDetailAttempt(value => value + 1), onTaskCommand: sendTask, onArchiveData: loadArchiveData, onCommand: async (command, fields) => { const result = await mutate(command, fields); setDetailAttempt(value => value + 1); return result } })
             : onTemplates ? h(TemplatesPage, {
               data,
               roster,

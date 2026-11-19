@@ -149,7 +149,10 @@ test('confirming archive reports what the service closed', async () => {
     tasks: [{ id: 't1', title: '画草图', stage: 'doing' }],
     onCommand: (command, fields) => {
       commands.push([command, fields])
-      return Promise.resolve({ body: { unresolved: [{ kind: 'task', task_id: 't1', title: '画草图', stage: 'doing' }], closed_tasks: [{ task_id: 't1' }] } })
+      return Promise.resolve({ body: {
+        unresolved: [{ kind: 'task', task_id: 't1', title: '画草图', stage: 'doing' }, { kind: 'acceptance', acceptance_id: 'acc_1', title: '独立验收', task_id: null }],
+        closed_tasks: [{ task_id: 't1' }],
+      } })
     },
   })
   click(button(tree, 'Archive project'))
@@ -158,6 +161,31 @@ test('confirming archive reports what the service closed', async () => {
   await new Promise(resolve => setImmediate(resolve))
   assert.deepEqual(JSON.parse(JSON.stringify(commands)), [['project.archive', { project_id: 'prj_1' }]])
   assert.match(text(tree), /The project is archived/)
-  assert.match(text(tree), /Closed 1 tasks/)
+  assert.match(text(tree), /Closed 1 tasks and 1 acceptances/)
   assert.match(text(tree), /画草图/)
+})
+
+test('the archive check counts a pending acceptance that has no task', async () => {
+  mount({
+    tasks: [],
+    onArchiveData: () => Promise.resolve({ tasks: [], acceptances: [{ id: 'acc_1', title: '独立验收', state: 'pending', task_id: null }] }),
+  })
+  click(button(tree, 'Archive project'))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.match(text(tree), /0 unfinished tasks and 1 pending acceptances/)
+  assert.match(text(tree), /独立验收/)
+})
+
+test('the archive check blocks confirmation when a fresh read fails', async () => {
+  mount({
+    tasks: [{ id: 't1', title: '画草图', stage: 'doing' }],
+    onArchiveData: () => Promise.reject(new Error('task.list failed')),
+  })
+  click(button(tree, 'Archive project'))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.match(text(tree), /The archive check could not be loaded/)
+  assert.match(text(tree), /task.list failed/)
+  const confirm = buttons(tree).filter(item => text(item).includes('Archive project')).pop()
+  assert.equal(confirm.props.disabled, true)
+  assert.doesNotMatch(text(tree), /0 unfinished tasks/)
 })

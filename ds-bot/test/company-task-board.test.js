@@ -164,6 +164,8 @@ test('actions and drops map to the contract commands', () => {
   assert.deepEqual(plain(taskActionCommand('to-ready', { id: 't1', task_revision: 2 })), ['task.move', { task_id: 't1', expected_revision: 2, to: 'ready' }])
   assert.deepEqual(plain(taskActionCommand('submit', { id: 't1', task_revision: 3 })), ['task.submit', { task_id: 't1', expected_revision: 3 }])
   assert.deepEqual(plain(taskActionCommand('reopen', { id: 't1', task_revision: 5 })), ['task.reopen', { task_id: 't1', expected_revision: 5 }])
+  assert.equal(taskActionCommand('accept', { id: 't1', task_revision: 3 }), null)
+  assert.equal(taskActionCommand('return', { id: 't1', task_revision: 3 }), null)
   assert.equal(taskActionCommand('retry', { id: 't1' }), null)
   assert.equal(taskActionCommand('nope', { id: 't1' }), null)
   assert.equal(taskRevision({ task_revision: 7 }), 7)

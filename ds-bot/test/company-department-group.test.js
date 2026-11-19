@@ -199,3 +199,38 @@ test('department.update takes room_id as the same binding and answers both names
   assert.equal(cleared.body.department.room_id, null)
   rmSync(home, { recursive: true, force: true })
 })
+
+// A profile can be opened before its Bot is chosen. It is a slot, not a hole: the group
+// is made from the Bots that exist and the slot is reported back, so a roster filled in
+// ahead of its Bots does not strand the department.
+test('unbound profiles are skipped, not refused', async () => {
+  const home = tempHome()
+  const { commands, rooms } = open(home)
+  await run(commands, 'company.init', { name: 'DS Bot Company' })
+  const department = await run(commands, 'department.create', { name: '产品部' })
+  const id = department.aggregate_id
+  await run(commands, 'employee.create', { bot_id: 'bot_a', department_id: id, name: '小蓝' })
+  await run(commands, 'employee.create', { bot_id: 'bot_b', department_id: id, name: '小兰' })
+  const slot = await run(commands, 'employee.create', { department_id: id, name: '木木' })
+  assert.equal(slot.body.employee.bot_id, null)
+  const created = await run(commands, 'department.group.create', { department_id: id })
+  assert.equal(created.body.room.members.length, 2)
+  assert.deepEqual(created.body.skipped.map(item => item.name), ['木木'])
+  assert.equal(rooms.size, 1)
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('a slot takes a Bot once and keeps it', async () => {
+  const home = tempHome()
+  const { commands } = open(home)
+  await run(commands, 'company.init', { name: 'DS Bot Company' })
+  const department = await run(commands, 'department.create', { name: '产品部' })
+  const slot = await run(commands, 'employee.create', { department_id: department.aggregate_id, name: '木木' })
+  const bound = await run(commands, 'employee.update', { employee_id: slot.aggregate_id, bot_id: 'bot_a' })
+  assert.equal(bound.body.employee.bot_id, 'bot_a')
+  await assert.rejects(
+    run(commands, 'employee.update', { employee_id: slot.aggregate_id, bot_id: 'bot_b' }),
+    error => error.code === 'employee/immutable-field',
+  )
+  rmSync(home, { recursive: true, force: true })
+})

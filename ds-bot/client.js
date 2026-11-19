@@ -1383,6 +1383,14 @@ Object.assign(ZH, HOST_ZH, {
   "Archived project. The group history remains available for reading.": "项目已归档，群历史保留。",
   "Project group is linked. Open the existing chat to continue.": "项目群已绑定，可打开现有群聊继续。",
   "Group needs reconciliation": "项目群待对账",
+  "The project group has not been created.": "项目群还没有建立。",
+  "Create it now, or it is created automatically when a member joins or the project starts.": "可以现在建立；加入成员或启动项目时也会自动创建。",
+  "Add an active member before creating the project group.": "先在项目里加入在岗成员，才能建立项目群。",
+  "Create project group": "建立项目群",
+  "The project has no active member, so it has no group to create.": "项目没有在岗成员，暂时无法建立项目群。",
+  "The project group could not be created.": "项目群没能建立，可以再试一次。",
+  "The project group could not be created. Try again after the roster is available.": "项目群没能建立，请等成员服务可用后再试。",
+  "This project state cannot change its group.": "项目当前状态不能变更项目群。",
   "Group changes are not synced. An authorized operator must reconcile the group before starting work.": "群成员变更尚未同步，须由有权限的人员对账后才能启动工作。",
   "Purpose and delivery": "目标与交付",
   Goal: "目标",
@@ -1417,6 +1425,8 @@ Object.assign(ZH, HOST_ZH, {
   Employees: "员工",
   Project: "项目",
   "Create the company before adding departments.": "请先创建公司，再添加部门。",
+  "Create company": "创建公司",
+  "Name your company first; departments and employees come after.": "先给公司起个名字；创建后就能添加部门和员工。",
   "Company name": "公司名称",
   Continue: "继续",
   "Saving…": "保存中…",
@@ -1522,6 +1532,8 @@ Object.assign(ZH, HOST_ZH, {
   "Closed on archive": "归档时关闭",
   "Acceptance: {title}": "验收：{title}",
   "Will be closed": "将被关闭",
+  "Checking tasks and acceptances…": "正在核对任务与验收…",
+  "The archive check could not be loaded.": "无法读取归档清单。",
   "dependency": "项依赖",
   "dependencies": "项依赖",
   "Details": "详情",
@@ -11728,9 +11740,36 @@ function CompanyPageView(props) {
   } else if (data.company === null) {
     body = (0, import_react20.createElement)(
       "div",
-      { className: "bc-state bc-co-state" },
-      (0, import_react20.createElement)("strong", null, t("No company information yet")),
-      (0, import_react20.createElement)("p", null, t("Create the company before adding departments."))
+      { className: "bc-state bc-co-state bc-co-setup" },
+      (0, import_react20.createElement)("strong", null, t("Create company")),
+      (0, import_react20.createElement)("p", null, t("Name your company first; departments and employees come after.")),
+      (0, import_react20.createElement)(
+        "div",
+        { className: "bc-co-setup-row" },
+        (0, import_react20.createElement)(
+          "label",
+          { className: "bc-field" },
+          (0, import_react20.createElement)("span", null, t("Company name")),
+          (0, import_react20.createElement)("input", {
+            type: "text",
+            value: props.companyName ?? "",
+            maxLength: 80,
+            autoFocus: true,
+            placeholder: t("Company name"),
+            onChange: (event) => props.onCompanyName?.(event.target.value),
+            onKeyDown: (event) => {
+              if (event.key === "Enter") props.onCreateCompany?.();
+            }
+          })
+        ),
+        (0, import_react20.createElement)("button", {
+          type: "button",
+          className: "bc-button bc-primary",
+          disabled: props.companyBusy || !(props.companyName ?? "").trim() || !props.canCreate,
+          onClick: props.onCreateCompany
+        }, props.companyBusy ? t("Creating…") : t("Create company"))
+      ),
+      props.companyError ? (0, import_react20.createElement)("p", { className: "bc-exception", role: "alert" }, props.companyError) : null
     );
   } else {
     body = chart;
@@ -11738,22 +11777,22 @@ function CompanyPageView(props) {
   return (0, import_react20.createElement)(
     "section",
     { className: "bc-co-page", "aria-label": t("Company") },
-    data.company ? (0, import_react20.createElement)(
+    (0, import_react20.createElement)(
       "div",
       { className: "bc-co-head" },
       (0, import_react20.createElement)(
         "div",
         { className: "bc-co-grow" },
         (0, import_react20.createElement)("h1", null, t("Company")),
-        (0, import_react20.createElement)("p", null, companyLine(departments, employees, projects))
+        (0, import_react20.createElement)("p", null, data.company ? companyLine(departments, employees, projects) : t("No company information yet"))
       ),
-      props.canCreate ? (0, import_react20.createElement)(
+      data.company && props.canCreate ? (0, import_react20.createElement)(
         "div",
         { className: "bc-co-actions" },
         (0, import_react20.createElement)("button", { type: "button", className: "bc-button", onClick: () => props.onCreateOpen("department") }, `＋ ${t("New department")}`),
         (0, import_react20.createElement)("button", { type: "button", className: "bc-button", onClick: () => props.onCreateOpen("employee") }, `＋ ${t("New employee")}`)
       ) : null
-    ) : null,
+    ),
     props.chatHint ? (0, import_react20.createElement)(
       "div",
       { className: "bc-co-hintbar", role: "status" },
@@ -11788,6 +11827,9 @@ function CompanyPage(props) {
   const [editBusy, setEditBusy] = (0, import_react20.useState)(false);
   const [editError, setEditError] = (0, import_react20.useState)("");
   const [editRefusal, setEditRefusal] = (0, import_react20.useState)(null);
+  const [companyName, setCompanyName] = (0, import_react20.useState)("");
+  const [companyBusy, setCompanyBusy] = (0, import_react20.useState)(false);
+  const [companyError, setCompanyError] = (0, import_react20.useState)("");
   const [pan, setPan] = (0, import_react20.useState)({ x: 0, y: 0 });
   const [dragging, setDragging] = (0, import_react20.useState)(false);
   const canvasRef = (0, import_react20.useRef)(null);
@@ -11871,6 +11913,19 @@ function CompanyPage(props) {
       setDraftBusy(false);
     }
   };
+  const createCompany = async () => {
+    if (!props.onCommand || companyBusy || !companyName.trim()) return;
+    setCompanyBusy(true);
+    setCompanyError("");
+    try {
+      await props.onCommand("company.init", { name: companyName.trim() });
+      setCompanyName("");
+    } catch (failure) {
+      setCompanyError(companyErrorText(failure));
+    } finally {
+      setCompanyBusy(false);
+    }
+  };
   const openEdit = (employee) => {
     closeDraft();
     setEditing(employee.id);
@@ -11938,6 +11993,11 @@ function CompanyPage(props) {
     editBusy,
     editError,
     editRefusal,
+    companyName,
+    companyBusy,
+    companyError,
+    onCompanyName: setCompanyName,
+    onCreateCompany: () => void createCompany(),
     onEditOpen: openEdit,
     onEditClose: closeEdit,
     onEditName: setEditName,
@@ -12073,6 +12133,10 @@ var COMPANY_PAGE_CSS = `
 .bc-co-row-edit:hover{background:var(--bt-hover);color:var(--bt-ink)}
 .bc-co-row-edit:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
 @media (hover:none){.bc-co-row-edit{opacity:1}}
+.bc-co-setup{max-width:460px;margin:0 auto;padding:30px 24px;text-align:left}
+.bc-co-setup-row{display:flex;align-items:flex-end;gap:8px;margin-top:14px}
+.bc-co-setup-row .bc-field{flex:1;min-width:0}
+.bc-co-setup-row .bc-button{flex:none}
 .bc-co-loading{display:flex;flex-direction:column;gap:8px;padding:20px 32px}
 `;
 
@@ -12167,8 +12231,6 @@ var taskActionCommand = (action, task) => {
     start: ["task.dispatch", base],
     "to-ready": ["task.move", { ...base, to: "ready" }],
     submit: ["task.submit", base],
-    accept: ["acceptance.decide", base],
-    return: ["acceptance.decide", base],
     reopen: ["task.reopen", base]
   }[action] ?? null;
 };
@@ -12970,15 +13032,27 @@ var memberError = (failure) => {
   }[failure?.code];
   return known ?? (failure?.message ? String(failure.message) : t("The change could not be saved."));
 };
-function ProjectPage({ project, data, tasks = [], tasksError = "", preview, loading, error, onBack, onChat, onRetry, onCommand, onTaskCommand }) {
+var groupErrorText = (failure) => {
+  const known = {
+    "project/missing-input": t("The project has no active member, so it has no group to create."),
+    "project/group-failed": t("The project group could not be created. Try again after the roster is available."),
+    "project/state-conflict": t("This project state cannot change its group.")
+  }[failure?.code];
+  return known ?? (failure?.message ? String(failure.message) : t("The project group could not be created."));
+};
+function ProjectPage({ project, data, tasks = [], tasksError = "", preview, loading, error, onBack, onChat, onRetry, onCommand, onTaskCommand, onArchiveData }) {
   const [busy, setBusy] = (0, import_react22.useState)(false);
   const [actionError, setActionError] = (0, import_react22.useState)("");
+  const [groupError, setGroupError] = (0, import_react22.useState)("");
   const [selectedEmployee, setSelectedEmployee] = (0, import_react22.useState)("");
   const [pendingRemove, setPendingRemove] = (0, import_react22.useState)(null);
   const [archiveOpen, setArchiveOpen] = (0, import_react22.useState)(false);
   const [archiveBusy, setArchiveBusy] = (0, import_react22.useState)(false);
   const [archiveError, setArchiveError] = (0, import_react22.useState)("");
   const [archiveResult, setArchiveResult] = (0, import_react22.useState)(null);
+  const [archiveCheck, setArchiveCheck] = (0, import_react22.useState)(null);
+  const [archiveChecking, setArchiveChecking] = (0, import_react22.useState)(false);
+  const [archiveCheckError, setArchiveCheckError] = (0, import_react22.useState)("");
   const run2 = async (command, fields = {}) => {
     if (busy || preview || !project) return;
     setBusy(true);
@@ -12993,6 +13067,19 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
       setBusy(false);
     }
   };
+  const retryGroup = async () => {
+    if (busy || preview || !project) return;
+    setBusy(true);
+    setGroupError("");
+    setActionError("");
+    try {
+      await onCommand("project.group.reconcile", { project_id: project.id });
+    } catch (failure) {
+      setGroupError(groupErrorText(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
   if (loading && !project) return (0, import_react22.createElement)("section", { className: "bc-state", role: "status" }, t("Loading project…"));
   if (error) return (0, import_react22.createElement)("section", { className: "bc-state bc-error", role: "alert" }, (0, import_react22.createElement)("strong", null, t("Project could not be loaded.")), (0, import_react22.createElement)("p", null, error), (0, import_react22.createElement)("button", { type: "button", className: "bc-button", onClick: onRetry }, t("Try again")), (0, import_react22.createElement)("button", { type: "button", className: "bc-button", onClick: onBack }, t("Back to projects")));
   if (!project) return (0, import_react22.createElement)("section", { className: "bc-state" }, (0, import_react22.createElement)("strong", null, t("Project not found")), (0, import_react22.createElement)("p", null, t("Its record may have changed. Return to the project list.")), (0, import_react22.createElement)("button", { type: "button", className: "bc-button", onClick: onBack }, t("Back to projects")));
@@ -13000,6 +13087,7 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
   const unbound = binding?.status === "unbound" && !project.group_chat_ref;
   const pending = binding?.status !== "bound" || !preview && data.group?.drifted === true;
   const members = preview ? (data.members ?? []).filter((member) => member.project_id === project.id) : data.members ?? [];
+  const activeMembers = members.filter((member) => (member.membership_status ?? member.status) === "active");
   const coordinator = members.find((member) => member.id === project.coordinator_assignment_id || member.role === "coordinator");
   const employeeName = (id) => data.employees.find((employee) => employee.id === id)?.name ?? id;
   const invalidMember = members.some((member) => {
@@ -13022,11 +13110,36 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
     !project.workspace_ref ? t("set a workspace folder") : null
   ].filter(Boolean);
   const candidates = data.employees.filter((employee) => employee.status === "active" && (project.source_department_ids ?? []).includes(employee.department_id) && !members.some((member) => member.employee_id === employee.id && ["active", "invited", "archived_readonly"].includes(member.membership_status)) && !data.projects.some((item) => item.id === employee.project_id && ["active", "paused", "delivering"].includes(item.status)));
-  const openTasks = tasks.filter((task) => !["done", "cancelled"].includes(task.stage ?? task.status));
-  const pendingAcceptances = tasks.reduce((total, task) => total + (Array.isArray(task.acceptances) ? task.acceptances : task.acceptance ? [task.acceptance] : []).filter((record) => record.state === "pending").length, 0);
+  const checkTasks = archiveCheck?.tasks ?? [];
+  const checkAcceptances = archiveCheck?.acceptances ?? [];
+  const openTasks = checkTasks.filter((task) => !["done", "cancelled"].includes(task.stage ?? task.status));
+  const pendingAcceptanceRecords = checkAcceptances.filter((record) => (record.state ?? "pending") === "pending");
+  const pendingAcceptances = pendingAcceptanceRecords.length;
+  const independentPending = pendingAcceptanceRecords.filter((record) => !record.task_id);
+  const archiveChecked = Boolean(archiveCheck) && !archiveChecking && !archiveCheckError;
   const canArchive = ["setup", "active", "paused"].includes(project.status) && !preview;
+  const openArchive = () => {
+    setArchiveOpen(true);
+    setArchiveError("");
+    setArchiveResult(null);
+    setArchiveCheck(null);
+    setArchiveCheckError("");
+    if (!onArchiveData) {
+      if (tasksError) {
+        setArchiveCheckError(tasksError);
+        return;
+      }
+      setArchiveCheck({ tasks, acceptances: tasks.flatMap((task) => Array.isArray(task.acceptances) ? task.acceptances : task.acceptance ? [task.acceptance] : []) });
+      return;
+    }
+    setArchiveChecking(true);
+    void onArchiveData(project.id).then((snapshot) => {
+      if (!snapshot) throw new Error(t("The archive check could not be loaded."));
+      setArchiveCheck({ tasks: snapshot.tasks ?? [], acceptances: snapshot.acceptances ?? [] });
+    }).catch((failure) => setArchiveCheckError(failure?.message ? String(failure.message) : t("The archive check could not be loaded."))).finally(() => setArchiveChecking(false));
+  };
   const archive = async () => {
-    if (archiveBusy) return;
+    if (archiveBusy || !archiveChecked) return;
     setArchiveBusy(true);
     setArchiveError("");
     try {
@@ -13051,11 +13164,7 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
         "div",
         { className: "bc-actions" },
         (0, import_react22.createElement)("span", { className: `bc-status bc-${project.status}` }, label(project.status)),
-        canArchive ? (0, import_react22.createElement)("button", { type: "button", className: "bc-button bc-danger", disabled: busy || archiveBusy, onClick: () => {
-          setArchiveError("");
-          setArchiveResult(null);
-          setArchiveOpen(true);
-        } }, t("Archive project")) : null
+        canArchive ? (0, import_react22.createElement)("button", { type: "button", className: "bc-button bc-danger", disabled: busy || archiveBusy, onClick: openArchive }, t("Archive project")) : null
       )
     ),
     (0, import_react22.createElement)(
@@ -13063,13 +13172,24 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
       { className: "bc-section" },
       (0, import_react22.createElement)("div", { className: "bc-row" }, (0, import_react22.createElement)("strong", null, t("Project chat")), (0, import_react22.createElement)("button", { type: "button", className: "bc-button", onClick: onChat, disabled: pending || preview || project.status === "archived", title: preview ? t("Sample chat is unavailable") : void 0 }, t("Open chat"))),
       (0, import_react22.createElement)("p", { className: "bc-muted" }, unbound ? t("The project group is created when a member joins or the project starts.") : pending ? t("Group binding needs attention before chat can be opened.") : project.status === "archived" ? t("Archived project. The group history remains available for reading.") : t("Project group is linked. Open the existing chat to continue.")),
-      pending && !unbound ? (0, import_react22.createElement)(
+      // A group that failed to bind, or was never created, used to leave only one muted
+      // sentence here. Say what is wrong and give the same explicit repair the pending
+      // state has, so a failed creation is not a dead end.
+      unbound ? (0, import_react22.createElement)(
+        "div",
+        { className: "bc-exception", role: "status" },
+        (0, import_react22.createElement)("strong", null, t("The project group has not been created.")),
+        (0, import_react22.createElement)("p", null, activeMembers.length ? t("Create it now, or it is created automatically when a member joins or the project starts.") : t("Add an active member before creating the project group.")),
+        groupError ? (0, import_react22.createElement)("p", { role: "alert" }, groupError) : null,
+        activeMembers.length && project.status !== "archived" && !preview ? (0, import_react22.createElement)("button", { type: "button", className: "bc-button", disabled: busy, onClick: () => void retryGroup() }, busy ? t("Creating…") : t("Create project group")) : null
+      ) : pending ? (0, import_react22.createElement)(
         "div",
         { className: "bc-exception", role: "status" },
         (0, import_react22.createElement)("strong", null, t("Group needs reconciliation")),
         t("Group changes are not synced. An authorized operator must reconcile the group before starting work."),
         binding?.error && !preview ? (0, import_react22.createElement)("p", null, binding.error) : null,
-        project.status !== "archived" ? (0, import_react22.createElement)("button", { type: "button", className: "bc-button", disabled: busy || preview, onClick: () => void run2("project.group.reconcile") }, t("Reconcile group")) : null
+        groupError ? (0, import_react22.createElement)("p", { role: "alert" }, groupError) : null,
+        project.status !== "archived" ? (0, import_react22.createElement)("button", { type: "button", className: "bc-button", disabled: busy || preview, onClick: () => void retryGroup() }, t("Reconcile group")) : null
       ) : null
     ),
     (0, import_react22.createElement)(
@@ -13165,8 +13285,8 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
         (0, import_react22.createElement)(
           "div",
           { className: "bc-co-create-fields" },
-          archiveResult ? (0, import_react22.createElement)("p", null, t("The project is archived. The group history stays available to read.")) : (0, import_react22.createElement)("p", null, t("This will close {tasks} unfinished tasks and {acceptances} pending acceptances.", { tasks: openTasks.length, acceptances: pendingAcceptances })),
-          archiveResult ? (0, import_react22.createElement)("p", { className: "bc-muted" }, t("Closed {tasks} tasks and {acceptances} acceptances. This cannot be undone.", { tasks: archiveResult.closed_tasks?.length ?? openTasks.length, acceptances: pendingAcceptances })) : (0, import_react22.createElement)("p", { className: "bc-muted" }, t("The project and its group history are kept. Nothing can be added after archiving, and this cannot be undone.")),
+          archiveResult ? (0, import_react22.createElement)("p", null, t("The project is archived. The group history stays available to read.")) : archiveChecking ? (0, import_react22.createElement)("p", { className: "bc-muted", role: "status" }, t("Checking tasks and acceptances…")) : archiveCheckError ? (0, import_react22.createElement)("div", { className: "bc-exception", role: "alert" }, (0, import_react22.createElement)("strong", null, t("The archive check could not be loaded.")), (0, import_react22.createElement)("p", null, archiveCheckError), (0, import_react22.createElement)("button", { type: "button", className: "bc-button", onClick: openArchive }, t("Try again"))) : (0, import_react22.createElement)("p", null, t("This will close {tasks} unfinished tasks and {acceptances} pending acceptances.", { tasks: openTasks.length, acceptances: pendingAcceptances })),
+          archiveResult ? (0, import_react22.createElement)("p", { className: "bc-muted" }, t("Closed {tasks} tasks and {acceptances} acceptances. This cannot be undone.", { tasks: Array.isArray(archiveResult.closed_tasks) ? archiveResult.closed_tasks.length : Number(archiveResult.closed_tasks ?? 0), acceptances: unresolved.filter((item) => item.kind === "acceptance").length })) : archiveChecked ? (0, import_react22.createElement)("p", { className: "bc-muted" }, t("The project and its group history are kept. Nothing can be added after archiving, and this cannot be undone.")) : null,
           archiveResult && unresolved.length ? (0, import_react22.createElement)(
             "div",
             null,
@@ -13178,11 +13298,14 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
               (0, import_react22.createElement)("span", null, item.stage ?? "")
             )))
           ) : null,
-          !archiveResult && openTasks.length ? (0, import_react22.createElement)(
+          !archiveResult && archiveChecked && (openTasks.length || independentPending.length) ? (0, import_react22.createElement)(
             "div",
             null,
             (0, import_react22.createElement)("p", { className: "bc-detail-label" }, t("Will be closed")),
-            (0, import_react22.createElement)("ul", { className: "bc-tb-list" }, openTasks.map((task) => (0, import_react22.createElement)("li", { key: task.id }, (0, import_react22.createElement)("span", null, task.title), (0, import_react22.createElement)("span", null, task.stage ?? task.status ?? ""))))
+            (0, import_react22.createElement)("ul", { className: "bc-tb-list" }, [
+              ...openTasks.map((task) => (0, import_react22.createElement)("li", { key: task.id }, (0, import_react22.createElement)("span", null, task.title), (0, import_react22.createElement)("span", null, task.stage ?? task.status ?? ""))),
+              ...independentPending.map((record) => (0, import_react22.createElement)("li", { key: record.id }, (0, import_react22.createElement)("span", null, t("Acceptance: {title}", { title: record.title ?? record.id })), (0, import_react22.createElement)("span", null, t("Waiting for acceptance"))))
+            ])
           ) : null,
           archiveError ? (0, import_react22.createElement)("p", { className: "bc-exception", role: "alert" }, archiveError) : null
         ),
@@ -13191,7 +13314,7 @@ function ProjectPage({ project, data, tasks = [], tasksError = "", preview, load
           { className: "bc-co-create-actions" },
           (0, import_react22.createElement)("span", { className: "bc-co-spacer" }),
           archiveResult ? (0, import_react22.createElement)("button", { type: "button", className: "bc-button bc-primary", onClick: () => setArchiveOpen(false) }, t("Close")) : (0, import_react22.createElement)("button", { type: "button", className: "bc-button", disabled: archiveBusy, onClick: () => setArchiveOpen(false) }, t("Cancel")),
-          archiveResult ? null : (0, import_react22.createElement)("button", { type: "button", className: "bc-button bc-danger", disabled: archiveBusy || busy, onClick: () => void archive() }, archiveBusy ? t("Archiving…") : t("Archive project"))
+          archiveResult ? null : (0, import_react22.createElement)("button", { type: "button", className: "bc-button bc-danger", disabled: archiveBusy || busy || !archiveChecked, onClick: () => void archive() }, archiveBusy ? t("Archiving…") : t("Archive project"))
         )
       )
     ) : null
@@ -14781,6 +14904,13 @@ function CompanySurface({ page, actions, roster }) {
     });
     return () => controller.abort();
   }, [selected, preview, detailAttempt]);
+  const loadArchiveData = async (projectId) => {
+    const [taskResult, acceptanceResult] = await Promise.all([
+      call("company-command", { command: "task.list", payload: { project_id: projectId, operation_key: `archive-task-list-${freshKey()}` } }),
+      call("company-command", { command: "acceptance.list", payload: { project_id: projectId, limit: 200, operation_key: `archive-acceptance-list-${freshKey()}` } })
+    ]);
+    return { tasks: taskResult?.body?.tasks ?? [], acceptances: acceptanceResult?.body?.acceptances ?? [] };
+  };
   const sendTask = async (command, fields = {}) => {
     if (preview) throw Object.assign(new Error(t("Preview")), { code: "preview" });
     const result = await call("company-command", { command, payload: { ...fields, operation_key: freshKey() } });
@@ -14863,8 +14993,7 @@ function CompanySurface({ page, actions, roster }) {
   const project = data.projects.find((item) => item.id === selected);
   const coordinatorOf = (item) => data.employees.find((employee) => employee.project_id === item.id && employee.acceptance_role === "coordinator") ?? data.employees.find((employee) => employee.id === data.members.find((member) => member.id === item.coordinator_assignment_id)?.employee_id);
   const departmentOf = (item) => (item.source_department_ids ?? []).map((id) => data.departments.find((department) => department.id === id)?.name).filter(Boolean)[0] ?? "";
-  const groupReady = (item) => !preview && item.group_binding?.status === "bound" && Boolean(item.group_chat_ref) && Boolean(roster.roomsById?.[item.group_chat_ref]);
-  const openProject = (item) => groupReady(item) ? openChat(item) : actions.openCompanyPage("detail", item.id);
+  const openProject = (item) => actions.openCompanyPage("detail", item.id);
   const markStale = (item) => setTodosData((current) => current ? { ...current, todos: current.todos.map((row) => row.id === item.id ? { ...row, stale: true, ready: false, reason: null, reason_code: null } : row) } : current);
   const applyDecided = (item, action, opinion) => setTodosData((current) => {
     if (!current) return current;
@@ -14971,7 +15100,7 @@ function CompanySurface({ page, actions, roster }) {
       (0, import_react26.createElement)(
         "main",
         { className: "bc-content" + (onCompany ? " bc-content-company" : "") },
-        kind === "wizard" ? (0, import_react26.createElement)(ProjectWizard, { data, roster, preview, loading, error, mutate, onBack: () => actions.openCompanyPage("list"), onCreated: (result) => actions.openCompanyPage("detail", result.body?.project?.id) }) : kind === "detail" ? (0, import_react26.createElement)(ProjectPage, { project, data, tasks, tasksError, preview, loading: loading || detailLoading, error: detailError || error, onBack: () => actions.openCompanyPage("list"), onChat: () => project && openChat(project), onRetry: () => setDetailAttempt((value) => value + 1), onTaskCommand: sendTask, onCommand: async (command, fields) => {
+        kind === "wizard" ? (0, import_react26.createElement)(ProjectWizard, { data, roster, preview, loading, error, mutate, onBack: () => actions.openCompanyPage("list"), onCreated: (result) => actions.openCompanyPage("detail", result.body?.project?.id) }) : kind === "detail" ? (0, import_react26.createElement)(ProjectPage, { project, data, tasks, tasksError, preview, loading: loading || detailLoading, error: detailError || error, onBack: () => actions.openCompanyPage("list"), onChat: () => project && openChat(project), onRetry: () => setDetailAttempt((value) => value + 1), onTaskCommand: sendTask, onArchiveData: loadArchiveData, onCommand: async (command, fields) => {
           const result = await mutate(command, fields);
           setDetailAttempt((value) => value + 1);
           return result;
