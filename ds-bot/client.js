@@ -16041,17 +16041,17 @@ function ProjectChatPage({ project, stage: stageProp, faces, goal, nextStep, pen
   );
 }
 var PROJECT_CHAT_CSS = `
-header[class*="_header"]:has(.pc-head){position:absolute;top:0;left:0;right:0;z-index:8;display:flex;justify-content:center;padding:0;background:transparent;pointer-events:none;height:auto!important;overflow:visible!important}
+header[class*="_header"]:has(.pc-head){position:absolute;top:0;left:0;right:0;z-index:1200;display:flex;justify-content:center;padding:0;background:transparent;pointer-events:none;height:auto!important;overflow:visible!important}
 header[class*="_header"]:has(.pc-head)::before{content:"";position:absolute;inset:0 0 auto;height:calc(100% + 26px);background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
 .pc-frame{position:relative;display:flex;flex-direction:column;width:100%;pointer-events:none}
-.pc-archived{position:absolute;top:54px;left:50%;transform:translateX(-50%);z-index:9;pointer-events:auto;max-width:calc(100% - 24px);padding:6px 12px;border:.5px solid var(--bt-line-2);border-radius:999px;background:var(--bt-card);color:var(--bt-ink-2);font:500 12px/18px var(--bt-font);box-shadow:0 2px 8px -2px color-mix(in srgb,var(--bt-ink) 12%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-archived{position:absolute;top:54px;left:50%;transform:translateX(-50%);z-index:1201;pointer-events:auto;max-width:calc(100% - 24px);padding:6px 12px;border:.5px solid var(--bt-line-2);border-radius:999px;background:var(--bt-card);color:var(--bt-ink-2);font:500 12px/18px var(--bt-font);box-shadow:0 2px 8px -2px color-mix(in srgb,var(--bt-ink) 12%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 body.bc-project-archived [data-composer-card]{opacity:.6}
 body.bc-project-archived [data-composer-input]{pointer-events:none;user-select:none}
 body.bc-project-archived [data-composer-card] button{pointer-events:none}
 .pc-host-head{position:absolute;top:0;left:0;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .pc-page{--pc-main:var(--bt-main);--pc-ring:var(--bt-line-2);--pc-ink-3:var(--bt-ink-3);position:relative;display:flex;flex-direction:column;min-height:0;flex:1;background:var(--bt-main);color:var(--bt-ink);font-family:var(--bt-font)}
 .pc-page *{box-sizing:border-box}
-.pc-head-holder{position:absolute;inset:0 0 auto;z-index:8;pointer-events:none}
+.pc-head-holder{position:absolute;inset:0 0 auto;z-index:1200;pointer-events:none}
 .pc-head{display:flex;flex-direction:column;background:transparent;pointer-events:none}
 .pc-head::before{content:none;background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
 .pc-head-actions{position:absolute;right:12px;top:10px;display:flex;align-items:center;gap:6px;pointer-events:auto}
@@ -16089,7 +16089,13 @@ body.bc-project-archived [data-composer-card] button{pointer-events:none}
 .pc-stat-key{flex:none;color:var(--pc-ink-3)}
 .pc-stat-text{color:var(--bt-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pc-stat-count{font-weight:700;color:var(--bt-ink)}
-.pc-pin-layer{position:absolute;left:0;right:0;top:calc(100% + 8px);z-index:9;display:flex;justify-content:center;padding:0 12px;pointer-events:none}
+.pc-pin-layer{position:absolute;left:0;right:0;top:calc(100% + 8px);z-index:1201;display:flex;justify-content:center;padding:0 12px;pointer-events:none}
+.pc-empty{position:fixed;inset:52px 0 0;z-index:1190;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:32px;background:var(--bt-main);color:var(--bt-ink-2);font:400 13px/20px var(--bt-font);text-align:center;pointer-events:auto}
+.pc-empty-name{color:var(--bt-ink-3);font:500 12px/18px var(--bt-font)}
+.pc-empty strong{color:var(--bt-ink);font:600 15px/22px var(--bt-font)}
+.pc-empty p{margin:0;max-width:420px}
+.pc-empty-error{color:var(--bt-danger)}
+.pc-empty-actions{display:flex;gap:8px;margin-top:6px}
 .pc-pin{width:min(100%,var(--dsh-chat-content-width,960px));overflow:hidden;margin:0;padding:10px 14px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-card);pointer-events:none}
 .pc-pin-head{display:flex;align-items:baseline;gap:6px;font-size:12px;line-height:16px}
 .pc-pin-title{font-weight:600;color:var(--bt-ink)}
@@ -16252,7 +16258,15 @@ function ProjectChatHeaderSlot(props) {
   const [todos, setTodos] = (0, import_react29.useState)(null);
   const [drawer, setDrawer] = (0, import_react29.useState)(null);
   const [open, setOpen] = (0, import_react29.useState)(false);
+  const [groupBusy, setGroupBusy] = (0, import_react29.useState)(false);
+  const [groupError, setGroupError] = (0, import_react29.useState)("");
+  const [reload, setReload] = (0, import_react29.useState)(0);
   const opener = (0, import_react29.useRef)(null);
+  (0, import_react29.useEffect)(() => {
+    if (!roomId) return;
+    if (typeof props.actions?.closeCompanyPage !== "function") return;
+    props.actions.closeCompanyPage();
+  }, [roomId]);
   (0, import_react29.useEffect)(() => {
     if (!roomId) {
       setData(null);
@@ -16292,7 +16306,7 @@ function ProjectChatHeaderSlot(props) {
     return () => {
       live = false;
     };
-  }, [roomId]);
+  }, [roomId, reload]);
   (0, import_react29.useEffect)(() => {
     if (!open || !data || data.kind === "department") return;
     let live = true;
@@ -16376,25 +16390,58 @@ function ProjectChatHeaderSlot(props) {
     setDrawer(null);
     opener.current?.focus?.();
   };
-  return (0, import_react29.createElement)(ProjectChatSurface, {
-    props,
-    project,
-    members: data.members,
-    pendingCount: waitingTotal(todos),
-    pinned: pinnedRows(todos),
-    pending: drawer?.pending,
-    activity: drawer?.activity,
-    open,
-    onOpenDetails: (event) => {
-      opener.current = event?.currentTarget ?? null;
-      setOpen(true);
-    },
-    onClose: close,
-    onOpenConfig: () => {
-      props.actions.openCompanyPage("detail", project.id);
-      close();
+  const groupBroken = project.group_binding?.status === "pending";
+  const needsMember = data.members.length === 0;
+  const reconcileGroup = async () => {
+    if (groupBusy) return;
+    setGroupBusy(true);
+    setGroupError("");
+    try {
+      await call("project.group.reconcile", { project_id: project.id });
+      setReload((value) => value + 1);
+    } catch (failure) {
+      setGroupError(failure?.message ? String(failure.message) : t("The project group could not be created."));
+    } finally {
+      setGroupBusy(false);
     }
-  });
+  };
+  const emptyPanel = needsMember || groupBroken ? (0, import_react29.createElement)(
+    "div",
+    { className: "pc-empty", role: "status" },
+    (0, import_react29.createElement)("span", { className: "pc-empty-name" }, project.name),
+    (0, import_react29.createElement)("strong", null, t("The project group has not been created.")),
+    (0, import_react29.createElement)("p", null, needsMember ? t("Add an active member before creating the project group.") : null),
+    groupError ? (0, import_react29.createElement)("p", { className: "pc-empty-error", role: "alert" }, groupError) : null,
+    (0, import_react29.createElement)(
+      "div",
+      { className: "pc-empty-actions" },
+      needsMember ? (0, import_react29.createElement)("button", { type: "button", className: "pc-badge", onClick: () => props.actions.openCompanyPage("detail", project.id) }, t("Open project settings")) : (0, import_react29.createElement)("button", { type: "button", className: "pc-badge", onClick: () => void reconcileGroup(), disabled: groupBusy }, t("Create project group"))
+    )
+  ) : null;
+  return (0, import_react29.createElement)(
+    import_react29.Fragment,
+    null,
+    (0, import_react29.createElement)(ProjectChatSurface, {
+      props,
+      project,
+      members: data.members,
+      pendingCount: waitingTotal(todos),
+      pinned: pinnedRows(todos),
+      pending: drawer?.pending,
+      activity: drawer?.activity,
+      open,
+      onOpenDetails: (event) => {
+        opener.current = event?.currentTarget ?? null;
+        setOpen(true);
+      },
+      onClose: close,
+      onOpenConfig: () => {
+        props.actions.openCompanyPage("detail", project.id);
+        close();
+      }
+    }),
+    emptyPanel
+  );
 }
 
 // src/client/composer.js
