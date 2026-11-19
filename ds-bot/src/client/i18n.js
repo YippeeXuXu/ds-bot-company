@@ -1290,6 +1290,8 @@ Object.assign(ZH, HOST_ZH, {
   'New project / Step {current} of 4': '新建项目 / 第 {current} 步，共 4 步',
   'Creation stages': '创建步骤', Company: '公司', Departments: '部门', Employees: '员工', Project: '项目',
   'Create the company before adding departments.': '请先创建公司，再添加部门。',
+  'Create company': '创建公司',
+  'Name your company first; departments and employees come after.': '先给公司起个名字；创建后就能添加部门和员工。',
   'Company name': '公司名称', Continue: '继续', 'Saving…': '保存中…',
   'Choose source departments. Add their employees from the project page after creation.': '选择来源部门；创建后在项目页添加成员。',
   'No departments yet. Add one below.': '暂无部门，请在下方添加。',

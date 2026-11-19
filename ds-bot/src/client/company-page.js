@@ -344,21 +344,42 @@ export function CompanyPageView(props) {
     body = h('div', { className: 'bc-co-loading', role: 'status', 'aria-label': t('Loading company information…') },
       [0, 1, 2].map(index => h('span', { key: index, className: 'bc-skel bc-skel-line' + (index === 2 ? ' short' : '') })))
   } else if (data.company === null) {
-    body = h('div', { className: 'bc-state bc-co-state' },
-      h('strong', null, t('No company information yet')),
-      h('p', null, t('Create the company before adding departments.')))
+    // The first run lands here before any project exists. Creating the company is the
+    // only useful action, so it is inline instead of hiding behind a project wizard.
+    body = h('div', { className: 'bc-state bc-co-state bc-co-setup' },
+      h('strong', null, t('Create company')),
+      h('p', null, t('Name your company first; departments and employees come after.')),
+      h('div', { className: 'bc-co-setup-row' },
+        h('label', { className: 'bc-field' },
+          h('span', null, t('Company name')),
+          h('input', {
+            type: 'text',
+            value: props.companyName ?? '',
+            maxLength: 80,
+            autoFocus: true,
+            placeholder: t('Company name'),
+            onChange: event => props.onCompanyName?.(event.target.value),
+            onKeyDown: event => { if (event.key === 'Enter') props.onCreateCompany?.() },
+          })),
+        h('button', {
+          type: 'button',
+          className: 'bc-button bc-primary',
+          disabled: props.companyBusy || !(props.companyName ?? '').trim() || !props.canCreate,
+          onClick: props.onCreateCompany,
+        }, props.companyBusy ? t('Creating…') : t('Create company'))),
+      props.companyError ? h('p', { className: 'bc-exception', role: 'alert' }, props.companyError) : null)
   } else {
     body = chart
   }
 
   return h('section', { className: 'bc-co-page', 'aria-label': t('Company') },
-    data.company ? h('div', { className: 'bc-co-head' },
+    h('div', { className: 'bc-co-head' },
       h('div', { className: 'bc-co-grow' },
         h('h1', null, t('Company')),
-        h('p', null, companyLine(departments, employees, projects))),
-      props.canCreate ? h('div', { className: 'bc-co-actions' },
+        h('p', null, data.company ? companyLine(departments, employees, projects) : t('No company information yet'))),
+      data.company && props.canCreate ? h('div', { className: 'bc-co-actions' },
         h('button', { type: 'button', className: 'bc-button', onClick: () => props.onCreateOpen('department') }, `＋ ${t('New department')}`),
-        h('button', { type: 'button', className: 'bc-button', onClick: () => props.onCreateOpen('employee') }, `＋ ${t('New employee')}`)) : null) : null,
+        h('button', { type: 'button', className: 'bc-button', onClick: () => props.onCreateOpen('employee') }, `＋ ${t('New employee')}`)) : null),
     props.chatHint ? h('div', { className: 'bc-co-hintbar', role: 'status' },
       h('span', null, props.chatHint),
       h('button', { type: 'button', className: 'bc-co-hintbar-close', 'aria-label': t('Close'), onClick: () => props.onChatHint?.('') }, '×')) : null,
@@ -386,6 +407,9 @@ export function CompanyPage(props) {
   const [editBusy, setEditBusy] = useState(false)
   const [editError, setEditError] = useState('')
   const [editRefusal, setEditRefusal] = useState(null)
+  const [companyName, setCompanyName] = useState('')
+  const [companyBusy, setCompanyBusy] = useState(false)
+  const [companyError, setCompanyError] = useState('')
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
   const canvasRef = useRef(null)
@@ -450,6 +474,19 @@ export function CompanyPage(props) {
     finally { setDraftBusy(false) }
   }
 
+  // The company read is created once, outside the project wizard: an empty workspace
+  // otherwise has no route to `company.init`.
+  const createCompany = async () => {
+    if (!props.onCommand || companyBusy || !companyName.trim()) return
+    setCompanyBusy(true)
+    setCompanyError('')
+    try {
+      await props.onCommand('company.init', { name: companyName.trim() })
+      setCompanyName('')
+    } catch (failure) { setCompanyError(companyErrorText(failure)) }
+    finally { setCompanyBusy(false) }
+  }
+
   const openEdit = employee => {
     closeDraft()
     setEditing(employee.id)
@@ -511,6 +548,11 @@ export function CompanyPage(props) {
     editBusy,
     editError,
     editRefusal,
+    companyName,
+    companyBusy,
+    companyError,
+    onCompanyName: setCompanyName,
+    onCreateCompany: () => void createCompany(),
     onEditOpen: openEdit,
     onEditClose: closeEdit,
     onEditName: setEditName,
@@ -644,5 +686,9 @@ export const COMPANY_PAGE_CSS = `
 .bc-co-row-edit:hover{background:var(--bt-hover);color:var(--bt-ink)}
 .bc-co-row-edit:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
 @media (hover:none){.bc-co-row-edit{opacity:1}}
+.bc-co-setup{max-width:460px;margin:0 auto;padding:30px 24px;text-align:left}
+.bc-co-setup-row{display:flex;align-items:flex-end;gap:8px;margin-top:14px}
+.bc-co-setup-row .bc-field{flex:1;min-width:0}
+.bc-co-setup-row .bc-button{flex:none}
 .bc-co-loading{display:flex;flex-direction:column;gap:8px;padding:20px 32px}
 `

@@ -196,6 +196,30 @@ test('loading and "no company yet" are separate states, never the same words', (
   const empty = view({ data: { company: null, departments: [], employees: [], projects: [] } })
   assert.match(text(empty), /No company information yet/)
   assert.equal(collect(empty, node => node.props?.role === 'status').length, 0)
+  // The first run still gets the page head, but the department actions need a company.
+  assert.equal(byClass(empty, 'bc-co-head').length, 1)
+  assert.equal(byClass(empty, 'bc-co-actions').length, 0)
+})
+
+test('an empty company can be created in place instead of needing the project wizard', () => {
+  const typed = []
+  const created = []
+  const blank = view({
+    data: { company: null, departments: [], employees: [], projects: [] },
+    onCompanyName: value => typed.push(value),
+    onCreateCompany: () => created.push(1),
+  })
+  const input = collect(blank, node => node.type === 'input')[0]
+  assert.equal(button(blank, 'Create company').props.disabled, true)
+  input.props.onChange({ target: { value: '新公司' } })
+  assert.deepEqual(typed, ['新公司'])
+  const named = view({
+    data: { company: null, departments: [], employees: [], projects: [] },
+    companyName: '新公司',
+    onCreateCompany: () => created.push(1),
+  })
+  click(button(named, 'Create company'))
+  assert.deepEqual(created, [1])
 })
 
 test('archived departments and staff stay off the canvas and out of the count', () => {
