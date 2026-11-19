@@ -136,8 +136,14 @@ const groupProfilesOf = (state, department, botOf) => {
   const profiles = Object.values(state.employees)
     .filter(profile => profile.company_id === department.company_id && profile.department_id === department.id && profile.status === 'active')
     .sort((left, right) => left.created_at - right.created_at)
-  const missing = profiles.filter(profile => botOf(profile.bot_id) === undefined || botOf(profile.bot_id) === null)
-  return { profiles, missing }
+  // An unbound profile (no Bot chosen yet) is skipped, not named: it is a slot waiting for
+  // a Bot, and refusing the whole group would strand a department whose roster was filled
+  // in before its Bots arrived. A profile whose Bot has gone is still named — a group
+  // quietly missing someone is worse than a refusal that says who is missing.
+  const unbound = profiles.filter(profile => profile.bot_id === null || profile.bot_id === undefined || profile.bot_id === '')
+  const bound = profiles.filter(profile => !unbound.includes(profile))
+  const missing = bound.filter(profile => botOf(profile.bot_id) === undefined || botOf(profile.bot_id) === null)
+  return { profiles, bound, unbound, missing }
 }
 
 export function orgHandlers({ botOf = () => undefined, isPrivate = () => false, groups = {} } = {}) {
@@ -256,7 +262,7 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false, 
       if (typeof groups.create !== 'function') {
         throw companyFail('department/group-failed', 'This dsh cannot create a group chat, so the department group was not made.', { department_id: department.id })
       }
-      const { profiles, missing } = groupProfilesOf(state, department, botOf)
+      const { bound, unbound, missing } = groupProfilesOf(state, department, botOf)
       if (missing.length > 0) {
         const named = missing.map(profile => `${profile.name} (${profile.bot_id})`).join(', ')
         throw companyFail('department/group-missing-bots', `The group chat of ${department.name} was not created: ${named} ${missing.length === 1 ? 'has' : 'have'} no Bot in this team.`, {
@@ -264,10 +270,10 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false, 
           missing: missing.map(profile => ({ employee_id: profile.id, name: profile.name, bot_id: profile.bot_id })),
         })
       }
-      if (profiles.length < 2) {
-        throw companyFail('department/group-too-small', `A group chat needs at least two Bots; ${department.name} has ${profiles.length}. Add an employee before making its group chat.`, { department_id: department.id, count: profiles.length })
+      if (bound.length < 2) {
+        throw companyFail('department/group-too-small', `A group chat needs at least two Bots; ${department.name} has ${bound.length}. Add an employee before making its group chat.`, { department_id: department.id, count: bound.length })
       }
-      const members = profiles.map(profile => profile.bot_id)
+      const members = bound.map(profile => profile.bot_id)
       const lead = department.lead_employee_id == null ? undefined : state.employees[department.lead_employee_id]
       const admin = lead !== undefined && members.includes(lead.bot_id) ? lead.bot_id : undefined
       const name = optionalText(payload.name, 'name', 80) ?? `${department.name}群`
@@ -285,7 +291,8 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false, 
       department.revision += 1
       department.updated_at = now()
       const room = roomView(roomId, { name, members })
-      return { aggregate_id: department.id, body: { department: departmentView(department), room }, events: [{ type: 'department.group.created', data: { room_id: roomId, members } }] }
+      const skipped = unbound.map(profile => ({ employee_id: profile.id, name: profile.name }))
+      return { aggregate_id: department.id, body: { department: departmentView(department), room, skipped }, events: [{ type: 'department.group.created', data: { room_id: roomId, members, skipped } }] }
     },
 
     // Bind a group that already exists (made in the chat list, or by an earlier install).
@@ -332,12 +339,15 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false, 
 
     'employee.create': ({ state, payload, now }) => {
       const company = companyOf(state)
-      const botId = text(payload.bot_id, 'bot_id', { max: 120 })
-      const bot = botOf(botId)
-      if (bot === undefined || bot === null) throw companyFail('employee/unknown-bot', `No Bot ${botId} in this team.`, { field: 'bot_id', bot_id: botId })
-      if (isPrivate(botId)) throw companyFail('employee/private-bot', `Bot ${botId} is private and cannot hold an employee profile.`, { field: 'bot_id', bot_id: botId })
+      // A profile may be opened before its Bot is picked: `bot_id: null` is a slot the
+      // department can fill in later with employee.update. A Bot that is given must exist.
+      const unbound = payload.bot_id === undefined || payload.bot_id === null || payload.bot_id === ''
+      const botId = unbound ? null : text(payload.bot_id, 'bot_id', { max: 120 })
+      const bot = botId === null ? null : botOf(botId)
+      if (botId !== null && (bot === undefined || bot === null)) throw companyFail('employee/unknown-bot', `No Bot ${botId} in this team.`, { field: 'bot_id', bot_id: botId })
+      if (botId !== null && isPrivate(botId)) throw companyFail('employee/private-bot', `Bot ${botId} is private and cannot hold an employee profile.`, { field: 'bot_id', bot_id: botId })
       const department = departmentOf(state, text(payload.department_id, 'department_id', { max: 120 }))
-      if (activeProfileOf(state, botId) !== undefined) {
+      if (botId !== null && activeProfileOf(state, botId) !== undefined) {
         throw companyFail('employee.bot_already_employed', `Bot ${botId} already holds an active employee profile.`, { field: 'bot_id', bot_id: botId })
       }
       const id = newId('emp')
@@ -346,7 +356,7 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false, 
         company_id: company.id,
         bot_id: botId,
         department_id: department.id,
-        name: text(payload.name ?? bot.name, 'name', { max: 80 }),
+        name: text(payload.name ?? bot?.name, 'name', { max: 80 }),
         role: optionalText(payload.role, 'role', 80) ?? null,
         acceptance_role: acceptanceRole(payload.acceptance_role),
         // M1b-2.5: `follow` keeps the profile in step with the company default; a pinned
@@ -365,7 +375,20 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false, 
     'employee.update': ({ state, payload, now }) => {
       const profile = employeeOf(state, text(payload.employee_id, 'employee_id', { max: 120 }))
       if (payload.bot_id !== undefined && payload.bot_id !== profile.bot_id) {
-        throw companyFail('employee/immutable-field', 'A profile keeps its Bot; dismiss it and hire the other Bot instead.', { field: 'bot_id' })
+        // An unbound slot takes a Bot once; a bound profile keeps it.
+        const next = payload.bot_id === null || payload.bot_id === '' ? null : text(payload.bot_id, 'bot_id', { max: 120 })
+        if (next !== null && profile.bot_id !== null && profile.bot_id !== undefined && next !== profile.bot_id) {
+          throw companyFail('employee/immutable-field', 'A profile keeps its Bot; dismiss it and hire the other Bot instead.', { field: 'bot_id' })
+        }
+        if (next !== null) {
+          const bot = botOf(next)
+          if (bot === undefined || bot === null) throw companyFail('employee/unknown-bot', `No Bot ${next} in this team.`, { field: 'bot_id', bot_id: next })
+          if (isPrivate(next)) throw companyFail('employee/private-bot', `Bot ${next} is private and cannot hold an employee profile.`, { field: 'bot_id', bot_id: next })
+          if (activeProfileOf(state, next) !== undefined) {
+            throw companyFail('employee.bot_already_employed', `Bot ${next} already holds an active employee profile.`, { field: 'bot_id', bot_id: next })
+          }
+        }
+        profile.bot_id = next
       }
       if (payload.name !== undefined) profile.name = text(payload.name, 'name', { max: 80 })
       if (payload.role !== undefined) profile.role = optionalText(payload.role, 'role', 80) ?? null

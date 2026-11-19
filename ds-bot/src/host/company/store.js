@@ -83,6 +83,8 @@ export function createCompanyStore({ dir, now = Date.now, warn = () => {}, useLo
     const next = new Map()
     for (const profile of Object.values(state.employees)) {
       if (profile?.status !== 'active') continue
+      // An unbound profile holds no Bot, so several of them are fine.
+      if (profile.bot_id === null || profile.bot_id === undefined || profile.bot_id === '') continue
       if (next.has(profile.bot_id)) {
         stuck = `two active employees share Bot ${profile.bot_id}`
         return next

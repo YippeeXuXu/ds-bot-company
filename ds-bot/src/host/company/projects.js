@@ -213,6 +213,9 @@ export function projectHandlers({ groups = {} } = {}) {
         if (!sourceIds.includes(coordinator.department_id)) {
           throw companyFail('project/invalid', `The coordinator must come from one of the source departments.`, { field: 'coordinator_employee_id', department_id: coordinator.department_id, source_department_ids: sourceIds })
         }
+        if (coordinator.bot_id === null || coordinator.bot_id === undefined || coordinator.bot_id === '') {
+          throw companyFail('project/coordinator-without-bot', `${coordinator.name} has no Bot yet, so the project group cannot hold them. Bind a Bot on the employee profile, or pick another coordinator.`, { field: 'coordinator_employee_id', employee_id: coordinator.id })
+        }
         if (busyMembership(state, coordinator.id) !== undefined) {
           throw companyFail('project/member-busy', `Employee ${coordinator.id} is already in an active project.`, { field: 'coordinator_employee_id', employee_id: coordinator.id })
         }

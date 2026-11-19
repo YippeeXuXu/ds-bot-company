@@ -86,6 +86,8 @@ const STATUS = new Map([
   ['employee/still-referenced', 409],
   ['employee/inactive', 422],
   ['project/invalid', 422],
+  // A coordinator whose profile has no Bot yet: understood, refused before any room is made.
+  ['project/coordinator-without-bot', 422],
   ['project/owner-required', 422],
   ['project/missing-input', 422],
   // Acceptance objects: answering one that is not there, or that was decided already.
