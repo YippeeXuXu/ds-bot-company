@@ -402,12 +402,15 @@ export function TemplatesPageView(props) {
           h('label', { className: 'bc-field' }, t('Employee display name'),
             h('input', { value: dialog.name, maxLength: 80, onChange: event => handlers.onBotField?.('name', event.target.value) })),
           h('label', { className: 'bc-field' }, t('Bot name'),
-            h('input', { value: dialog.botName ?? '', maxLength: 40, onChange: event => handlers.onBotField?.('botName', event.target.value), placeholder: String(dialog.name ?? '').trim() || undefined }),
-            h('small', null, t('Leave empty to use the employee name.'))),
+            h('input', { value: dialog.botName ?? '', maxLength: 40, onChange: event => handlers.onBotField?.('botName', event.target.value), placeholder: String(dialog.name ?? '').trim() || undefined, 'aria-invalid': dialog.errorField === 'bot_name' ? 'true' : undefined }),
+            h('small', null, t('Leave empty to use the employee name.')),
+            dialog.errorField === 'bot_name' && dialog.error
+              ? h('small', { className: 'bc-tpl-inline-error', role: 'alert' }, dialog.error)
+              : null),
           h('label', { className: 'bc-field' }, t('Employee role'), h('select', {
             value: dialog.acceptanceRole, onChange: event => handlers.onBotField?.('acceptanceRole', event.target.value),
           }, ROLE_LABELS().map(([value, label]) => h('option', { key: value, value }, label))))),
-        dialog.error ? h('p', { className: 'bc-exception', role: 'alert' }, dialog.error) : null,
+        dialog.error && dialog.errorField !== 'bot_name' ? h('p', { className: 'bc-exception', role: 'alert' }, dialog.error) : null,
         h('p', { className: 'bc-co-note' }, t('If a step fails, the Bot and the skills already attached are removed again, so nothing is left on the team.')),
         h('div', { className: 'bc-co-create-actions' },
           h('button', { type: 'button', className: 'bc-button', onClick: () => handlers.onBotCancel?.() }, t('Cancel')),
@@ -537,6 +540,7 @@ export function TemplatesPage(props) {
       botName: '',
       acceptanceRole: 'executor',
       error: '',
+      errorField: '',
     })
   }
   // 3.4: the dialog stays open when the host refuses, so the reason is read next to
@@ -557,7 +561,8 @@ export function TemplatesPage(props) {
       setBotDialog(null)
       setFlash(t('“{name}” is on the team with {count} skills.', { name: bot?.name ?? botDialog.name.trim(), count: (bot?.skills ?? []).length }))
     } catch (error) {
-      setBotDialog(current => current ? { ...current, error: templateErrorText(error) } : current)
+      const errorField = error?.code === 'employee/bot-name-taken' ? 'bot_name' : ''
+      setBotDialog(current => current ? { ...current, error: templateErrorText(error), errorField } : current)
     } finally { setBusy(false) }
   }
 
@@ -701,6 +706,7 @@ export const TEMPLATES_CSS = `
 .bc-tpl-sheet-title{flex:1;min-width:240px}
 .bc-tpl-sheet-title h2{font-size:20px;line-height:27px;font-weight:600;margin:3px 0 0;letter-spacing:-.012em;overflow-wrap:anywhere}
 .bc-tpl-note{margin:5px 0 0;font-size:12px;line-height:17px;color:var(--bt-ink-2)}
+.bc-tpl-inline-error{margin-top:5px;font-size:12px;line-height:17px;color:var(--bt-danger)}
 .bc-tpl-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;padding-top:2px}
 .bc-tpl-spec{margin:0 0 18px;border-top:1px solid var(--bt-line);border-bottom:1px solid var(--bt-line);display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
 .bc-tpl-spec>div{min-width:0;padding:9px 14px 11px 0}

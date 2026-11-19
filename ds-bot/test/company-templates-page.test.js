@@ -300,6 +300,35 @@ test('a refusal stays in the dialog, next to the values it is about', () => {
   assert.match(text(byClass(tree, 'bc-tpl-modal-card')[0]), /A Bot with this name already exists/)
 })
 
+test('a taken Bot name is shown under the Bot name field', () => {
+  const dialog = {
+    departmentId: 'dep_rd', name: '小前', botName: '键盘', acceptanceRole: 'executor',
+    error: 'A Bot with this name already exists. Give this one another name.', errorField: 'bot_name',
+  }
+  const tree = TemplatesPageView(props({ botDialog: dialog }))
+  const card = byClass(tree, 'bc-tpl-modal-card')[0]
+  const inline = byClass(card, 'bc-tpl-inline-error')
+  assert.equal(inline.length, 1)
+  assert.match(text(inline[0]), /already exists/)
+  assert.equal(byClass(card, 'bc-exception').length, 0)
+  const nameInput = collect(card, node => node.type === 'input')[1]
+  assert.equal(nameInput.props['aria-invalid'], 'true')
+})
+
+test('the create payload only carries the names that were actually given', () => {
+  assert.deepEqual(plain(createBotPayload({
+    templateId: 'tpl_1', departmentId: 'dep_rd', name: ' 小前 ', botName: ' 小前 ', acceptanceRole: 'executor',
+  })), { template_id: 'tpl_1', department_id: 'dep_rd', name: '小前', acceptance_role: 'executor' })
+  assert.deepEqual(plain(createBotPayload({
+    templateId: 'tpl_1', departmentId: 'dep_rd', name: '', botName: '小明', acceptanceRole: 'acceptor',
+  })), { template_id: 'tpl_1', department_id: 'dep_rd', bot_name: '小明', acceptance_role: 'acceptor' })
+})
+
+test('a missing skill keeps the server list in the dialog', () => {
+  const message = templateErrorText({ code: 'employee/capability-missing', details: { missing: ['browser', 'charts'] } })
+  assert.match(message, /browser, charts/)
+})
+
 test('the fields report what was typed, and the close button gets out', () => {
   const seen = []
   const tree = TemplatesPageView(props({
