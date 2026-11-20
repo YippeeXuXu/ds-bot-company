@@ -40,10 +40,12 @@ function harness({ rows = [], hang = false, broken = false } = {}) {
   }
   const rt = {
     ctx,
-    // s1 and g1 are one Bot's own sessions; relay1 is the group relay's.
-    selfOf: id => (id === 's1' || id === 'g1' ? 'b1' : undefined),
+    // s1, s3 and g1 are one Bot's own sessions; g2 is a group chat that was closed;
+    // relay1 is the group relay's.
+    selfOf: id => (['s1', 's3', 'g1', 'g2'].includes(id) ? 'b1' : undefined),
     roomOf: id => (id === 'relay1' ? { id: 'r1', sessionId: 'relay1' } : undefined),
     groupOwners: new Map([['g1', { botId: 'b1', roomId: 'r1' }]]),
+    pastOwners: new Map([['g2', { botId: 'b1', roomId: 'r0' }]]),
     memorySlices: {
       list: () => {
         if (broken) throw new Error('the slice file is unreadable')
@@ -210,6 +212,43 @@ test('a group conversation recalls group slices only, and a private chat chat sl
   const groupText = sectionOf(await assemble(groupHarness, { sessionId: 'g1' }), 'bot-recall').text
   assert.match(groupText, /2026-11-09/)
   assert.doesNotMatch(groupText, /2026-11-08/)
+})
+
+test('the cache is per Session, so a group and a private chat never swap slices', async () => {
+  const rows = [
+    row('sl_chat', '我们把主色定成蓝色。', { kind: 'chat', session: 'old-chat', at: '2026-11-08T00:00:00.000Z' }),
+    row('sl_group', '我们把主色定成蓝色。', { kind: 'group', session: 'old-group', at: '2026-11-09T00:00:00.000Z' }),
+  ]
+  const h = harness({ rows })
+  say(h, '主色定成蓝色了吗')
+  const privateText = sectionOf(await assemble(h), 'bot-recall').text
+  say(h, '主色定成蓝色了吗', { sessionId: 'g1', kind: 'bot', role: 'round' })
+  const groupText = sectionOf(await assemble(h, { sessionId: 'g1' }), 'bot-recall').text
+  assert.match(privateText, /2026-11-08/)
+  assert.doesNotMatch(privateText, /2026-11-09/)
+  assert.match(groupText, /2026-11-09/, 'the same sentence in the group asks for group slices again')
+  assert.doesNotMatch(groupText, /2026-11-08/, 'a group turn does not read the private recall')
+})
+
+test('another Session of the same Bot recalls a slice this Session may not', async () => {
+  const rows = [row('sl_s1', '我们把主色定成蓝色。', { session: 's1' })]
+  const h = harness({ rows })
+  say(h, '主色定成蓝色了吗')
+  assert.equal(sectionOf(await assemble(h), 'bot-recall').text, '', 'a Session never recalls itself')
+  say(h, '主色定成蓝色了吗', { sessionId: 's3' })
+  assert.match(sectionOf(await assemble(h, { sessionId: 's3' }), 'bot-recall').text, /主色定成蓝色/)
+})
+
+test('a closed group chat still recalls group slices', async () => {
+  const rows = [
+    row('sl_chat', '我们把主色定成蓝色。', { kind: 'chat', session: 'old-chat', at: '2026-11-08T00:00:00.000Z' }),
+    row('sl_group', '我们把主色定成蓝色。', { kind: 'group', session: 'old-group', at: '2026-11-09T00:00:00.000Z' }),
+  ]
+  const h = harness({ rows })
+  say(h, '主色定成蓝色了吗', { sessionId: 'g2', kind: 'bot', role: 'round' })
+  const text = sectionOf(await assemble(h, { sessionId: 'g2' }), 'bot-recall').text
+  assert.match(text, /2026-11-09/)
+  assert.doesNotMatch(text, /2026-11-08/)
 })
 
 test('a hanging slice store costs the turn 300 ms and nothing else', async () => {

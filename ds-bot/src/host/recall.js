@@ -161,10 +161,16 @@ export function install(rt) {
     if (typeof slices?.list !== 'function') return ''
     const query = lastMessageOf.get(agentId)
     if (query === undefined || query === '') return ''
-    const key = `${botId}\u0000${query}`
+    // The cache is per conversation, not per Bot: the same sentence in a group and in a
+    // private chat must not swap their slices, and a Session's own slices are excluded by
+    // id, so two Sessions of one Bot can differ on the same query.
+    const key = `${agentId}\u0000${query}`
     const cached = cache.get(key)
     if (cached !== undefined) return cached
-    const kind = rt.groupOwners?.get?.(agentId) === undefined ? 'chat' : 'group'
+    // A group whose chat was closed keeps its old sessions in pastOwners; those are group
+    // conversations too, and their slices stay in the group.
+    const owner = rt.groupOwners?.get?.(agentId) ?? rt.pastOwners?.get?.(agentId)
+    const kind = owner?.roomId === undefined ? 'chat' : 'group'
     const all = await slices.list()
     const rows = (all ?? []).filter(row => row?.bot_id === botId && row?.kind === kind && row?.session_id !== agentId)
     const picked = pickRecall({ query, rows })
