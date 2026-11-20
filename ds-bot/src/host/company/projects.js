@@ -54,6 +54,29 @@ const runningMembership = (state, employeeId, exceptProjectId = null) => Object.
     && member.membership_status === 'active'
     && RUNNING.includes(state.projects[member.project_id]?.status))
 
+// PRD 批 1 T5: one Bot serves at most three live projects at once. The cap counts running
+// projects only — a draft in setup holds no work yet — and it is enforced at every door that
+// adds an employee to a project, not at start, so the refusal names the number up front.
+export const PROJECT_MEMBER_LIMIT = 3
+// Both kinds of service count: a membership row, and a project that named this employee its
+// memory keeper. The keeper is not a member (no group seat), so counting rows alone would
+// let one person hold an unbounded number of live projects.
+const liveProjectsOf = (state, employeeId) => {
+  const ids = new Set()
+  for (const member of Object.values(state.members)) {
+    if (member.employee_id === employeeId && member.membership_status === 'active' && RUNNING.includes(state.projects[member.project_id]?.status)) ids.add(member.project_id)
+  }
+  for (const project of Object.values(state.projects)) {
+    if (project.memory_assignment_id === employeeId && RUNNING.includes(project.status)) ids.add(project.id)
+  }
+  return [...ids]
+}
+const assertMemberRoom = (state, employee) => {
+  const live = liveProjectsOf(state, employee.id)
+  if (live.length < PROJECT_MEMBER_LIMIT) return
+  throw companyFail('project/member-limit', `${employee.name} already serves ${live.length} live projects; the limit is ${PROJECT_MEMBER_LIMIT}. Leave one before adding another.`, { employee_id: employee.id, limit: PROJECT_MEMBER_LIMIT, project_ids: live })
+}
+
 // The projects an employee is part of, kept in one place so `project_id` (the first, and the
 // one older screens read) cannot drift from the membership rows.
 const joinProject = (employee, projectId) => {
@@ -256,10 +279,12 @@ export function projectHandlers({ groups = {} } = {}) {
           throw companyFail('project/coordinator-without-bot', `${coordinator.name} has no Bot yet, so the project group cannot hold them. Bind a Bot on the employee profile, or pick another coordinator.`, { field: 'coordinator_employee_id', employee_id: coordinator.id })
         }
       }
+      if (coordinator !== undefined) assertMemberRoom(state, coordinator)
       const requirement = requirementOf(payload.acceptance_requirement)
       const acceptanceActor = acceptanceActorOf(state, payload.acceptance_actor, requirement)
       const memoryEmployee = payload.memory_employee_id === undefined ? undefined : employeeOf(state, text(payload.memory_employee_id, 'memory_employee_id', { max: 120 }))
       if (memoryEmployee !== undefined && memoryEmployee.status !== 'active') throw companyFail('employee/inactive', `Employee ${memoryEmployee.id} is dismissed; re-activate them before naming them as the memory keeper.`, { field: 'memory_employee_id', employee_id: memoryEmployee.id })
+      if (memoryEmployee !== undefined) assertMemberRoom(state, memoryEmployee)
 
       const projectId = newId('prj')
       const project = {
@@ -420,6 +445,7 @@ export function projectHandlers({ groups = {} } = {}) {
       if (employee.status !== 'active') throw companyFail('employee/inactive', `Employee ${employee.id} is dismissed; re-activate them before adding them to a project.`, { field: 'employee_id', employee_id: employee.id })
       const already = Object.values(state.members).find(member => member.project_id === project.id && member.employee_id === employee.id && member.membership_status !== 'left')
       if (already !== undefined) throw companyFail('project/member-exists', `Employee ${employee.id} is already in this project.`, { project_id: project.id, employee_id: employee.id, membership_status: already.membership_status })
+      assertMemberRoom(state, employee)
       // The coordinator post is one, and it is filled by the first member given that role
       // (a draft created without a coordinator is completed this way).
       if (role === 'coordinator') {

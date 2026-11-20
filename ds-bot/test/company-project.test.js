@@ -1019,3 +1019,52 @@ test('a membership carries differences that apply only inside one project (v1.18
   assert.equal(cleared.body.member.role, 'coordinator')
   rmSync(home, { recursive: true, force: true })
 })
+
+test('a Bot serves at most three live projects and the fourth door names the limit (v1.18)', async () => {
+  const home = tempHome()
+  const { store, commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const names = ['一号项目', '二号项目', '三号项目']
+  const projects = []
+  for (const [index, name] of names.entries()) {
+    const created = await run(commands, 'project.create', { operation_key: key(`limit-create-${index}`), ...draft(seed_, { name }) })
+    await run(commands, 'project.start', { operation_key: key(`limit-start-${index}`), project_id: created.body.project.id })
+    projects.push(created.body.project.id)
+  }
+
+  // The fourth door: the coordinator she already is on three live projects.
+  await assert.rejects(
+    run(commands, 'project.create', { operation_key: key('limit-fourth'), ...draft(seed_, { name: '四号项目' }) }),
+    error => error.code === 'project/member-limit'
+      && error.details.employee_id === seed_.alpha
+      && error.details.limit === 3
+      && error.details.project_ids.length === 3,
+  )
+  // The memory keeper walks through the same door, even when the coordinator is free of it.
+  await assert.rejects(
+    run(commands, 'project.create', {
+      operation_key: key('limit-keeper'),
+      ...draft(seed_, { name: '五号项目', coordinator_employee_id: undefined }),
+      memory_employee_id: seed_.keeper,
+    }),
+    error => error.code === 'project/member-limit' && error.details.employee_id === seed_.keeper,
+  )
+
+  // Adding her to a draft project is refused the same way.
+  const draftProject = await run(commands, 'project.create', {
+    operation_key: key('limit-draft'),
+    ...draft(seed_, { name: '六号项目', coordinator_employee_id: undefined, memory_employee_id: undefined }),
+  })
+  const target = draftProject.body.project.id
+  await assert.rejects(
+    run(commands, 'project.member.add', { operation_key: key('limit-add'), project_id: target, employee_id: seed_.alpha, role: 'coordinator' }),
+    error => error.code === 'project/member-limit'
+      && error.details.project_ids.sort().join() === [...projects].sort().join(),
+  )
+
+  // Leaving one frees the seat: archiving a project releases its membership.
+  await run(commands, 'project.archive', { operation_key: key('limit-archive'), project_id: projects[0] })
+  const freed = await run(commands, 'project.member.add', { operation_key: key('limit-add-after'), project_id: target, employee_id: seed_.alpha, role: 'coordinator' })
+  assert.equal(freed.status, 'committed')
+  rmSync(home, { recursive: true, force: true })
+})

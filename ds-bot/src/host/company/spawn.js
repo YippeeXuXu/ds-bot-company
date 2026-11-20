@@ -55,12 +55,16 @@ const departmentOf = (state, id) => {
   return department
 }
 
-// The company soul a hire takes when the caller names none. The builtin row is preferred by
-// its stable id; a company that renamed its own soul still finds exactly one to use.
+// The company soul a hire takes when the caller names none: builtin first, then the oldest,
+// then by id, so the same row wins on every call.
 const defaultSoul = (state, companyId) => {
   const souls = Object.values(state.templates)
     .filter(template => template.company_id === companyId && template.status !== 'archived' && kindOfRow(template) === 'soul')
-    .sort((left, right) => (left.source === 'builtin' && right.source !== 'builtin' ? -1 : left.created_at - right.created_at))
+    // A total order, not a mixed one: builtin rows first, then oldest, then id. Without the
+    // last key two souls made in the same millisecond could swap places between calls.
+    .sort((left, right) => (left.source === 'builtin' ? 0 : 1) - (right.source === 'builtin' ? 0 : 1)
+      || (left.created_at ?? 0) - (right.created_at ?? 0)
+      || String(left.id).localeCompare(String(right.id)))
   return souls[0]
 }
 

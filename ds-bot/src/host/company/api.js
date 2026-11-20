@@ -66,6 +66,7 @@ const STATUS = new Map([
   ['employee.bot_already_employed', 409],
   ['project/member-exists', 409],
   ['project/member-busy', 409],
+  ['project/member-limit', 422],
   // The coordinator post is one: promoting a second member is a conflict, not a server error.
   ['project/coordinator-exists', 409],
   ['project/state-conflict', 409],
