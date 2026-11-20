@@ -38,6 +38,10 @@ export const RECALL_MIN_HITS = 2
 export const RECALL_TEXT_MAX = 260
 // How much of a long message is scored; a whole paste is not worth tokenising.
 export const RECALL_QUERY_MAX = 2000
+// A slice nothing has used for this long counts for half: an old memory that never came up
+// should not outrank one the Bot keeps reaching for (4.5).
+export const DECAY_DAYS = 90
+export const DECAY_FACTOR = 0.5
 // The last few answers, so a retry or a second render in one turn costs no read.
 const CACHE_SIZE = 64
 const CJK_RUN = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]+/g
@@ -77,9 +81,22 @@ const timeOf = (row) => {
   return Number.isNaN(parsed) ? 0 : parsed
 }
 
+const useOf = (row) => {
+  const parsed = Date.parse(row?.last_used_at)
+  return Number.isNaN(parsed) ? timeOf(row) : parsed
+}
+
+// 1 for a slice used within the last 90 days, half for one that has gone quiet; a row
+// without dates is treated as fresh rather than punished for a missing field.
+export function decayFactor(row, now = Date.now()) {
+  const last = useOf(row)
+  if (last === 0) return 1
+  return now - last > DECAY_DAYS * 24 * 60 * 60 * 1000 ? DECAY_FACTOR : 1
+}
+
 // The slices worth showing for one message: at least `minHits` shared words, best first,
 // newer first when equally good, and never a slice of the conversation itself.
-export function pickRecall({ query, rows, limit = RECALL_LIMIT, minHits = RECALL_MIN_HITS } = {}) {
+export function pickRecall({ query, rows, limit = RECALL_LIMIT, minHits = RECALL_MIN_HITS, now = Date.now() } = {}) {
   const queryTokens = tokensOf(query)
   if (queryTokens.size === 0) return []
   const scored = []
@@ -88,9 +105,9 @@ export function pickRecall({ query, rows, limit = RECALL_LIMIT, minHits = RECALL
     if (typeof text !== 'string' || text === '') continue
     const hits = recallScore(queryTokens, text)
     if (hits < minHits) continue
-    scored.push({ row, hits })
+    scored.push({ row, hits, weight: hits * decayFactor(row, now) })
   }
-  scored.sort((left, right) => right.hits - left.hits || timeOf(right.row) - timeOf(left.row) || String(left.row?.id ?? '').localeCompare(String(right.row?.id ?? '')))
+  scored.sort((left, right) => right.weight - left.weight || right.hits - left.hits || timeOf(right.row) - timeOf(left.row) || String(left.row?.id ?? '').localeCompare(String(right.row?.id ?? '')))
   return scored.slice(0, Math.max(0, limit)).map(entry => entry.row)
 }
 
@@ -174,10 +191,20 @@ export function install(rt) {
     const all = await slices.list()
     const rows = (all ?? []).filter(row => row?.bot_id === botId && row?.kind === kind && row?.session_id !== agentId)
     const picked = pickRecall({ query, rows })
-    const text = recallText(picked)
+    const entry = { text: recallText(picked), rows: picked }
     if (cache.size >= CACHE_SIZE) cache.delete(cache.keys().next().value)
-    cache.set(key, text)
-    return text
+    cache.set(key, entry)
+    return entry
+  }
+
+  // A recalled slice is a slice that was used: the count and the time move without making
+  // the turn wait, and a store that refuses the write costs nothing here (4.5).
+  const touch = (rows) => {
+    const patch = rt.memorySlices?.patch
+    if (typeof patch !== 'function' || !Array.isArray(rows) || rows.length === 0) return
+    const at = new Date().toISOString()
+    Promise.resolve(patch(rows.map(row => ({ id: row.id, last_used_at: at, uses: (Number(row.uses) || 0) + 1 }))))
+      .catch(() => {})
   }
 
   ctx.on('agent/inbox/claimed', rememberMessage)
@@ -193,13 +220,15 @@ export function install(rt) {
   ctx.on('system-prompt/assemble', async (assembly, context, next) => {
     const result = (await next()) ?? assembly
     try {
-      const text = await withTimeout(recallFor(context?.agent?.id), RECALL_TIMEOUT_MS)
+      const answer = await withTimeout(recallFor(context?.agent?.id), RECALL_TIMEOUT_MS)
+      const text = answer?.text
       if (text === '' || text === undefined) return result
       const sections = Array.isArray(result?.sections) ? result.sections.map(section => ({ ...section })) : undefined
       if (sections === undefined) return result
       const slot = sections.find(section => section?.name === 'bot-recall')
       if (slot !== undefined) slot.text = text
       else sections.push({ name: 'bot-recall', text, interpolate: false })
+      touch(answer.rows)
       return { ...result, sections }
     } catch {
       return result

@@ -4,10 +4,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  DECAY_FACTOR,
   RECALL_LIMIT,
   RECALL_MIN_HITS,
   RECALL_ORDER,
   RECALL_TIMEOUT_MS,
+  decayFactor,
   install,
   pickRecall,
   recallScore,
@@ -27,6 +29,7 @@ const row = (id, text, { bot = 'b1', kind = 'chat', session = 's0', at = '2026-1
 function harness({ rows = [], hang = false, broken = false } = {}) {
   const listeners = new Map()
   const sections = []
+  const patches = []
   const on = (name, fn) => {
     const list = listeners.get(name) ?? []
     list.push(fn)
@@ -51,11 +54,15 @@ function harness({ rows = [], hang = false, broken = false } = {}) {
         if (broken) throw new Error('the slice file is unreadable')
         return hang ? new Promise(() => {}) : rows
       },
+      patch: updates => {
+        patches.push(updates)
+        return Promise.resolve(updates.length)
+      },
     },
     warn: () => {},
   }
   install(rt)
-  return { listeners, sections, rt }
+  return { listeners, sections, rt, patches }
 }
 
 // A step claims the user's message from the inbox just before it assembles the prompt, and
@@ -267,4 +274,25 @@ test('a slice store that throws leaves the prompt exactly as it was', async () =
   say(h, '我们把主色定成蓝色了吗')
   const assembly = await assemble(h)
   assert.equal(sectionOf(assembly, 'bot-recall').text, '')
+})
+
+test('a slice unused for ninety days counts half', () => {
+  const now = Date.parse('2026-11-20T00:00:00.000Z')
+  const old = { ...row('sl_old', '蓝色方案的预算表在共享盘', { at: '2026-01-02T00:00:00.000Z' }), last_used_at: '2026-01-02T00:00:00.000Z' }
+  const fresh = { ...row('sl_new', '蓝色方案的预算表在共享盘', { at: '2026-11-10T00:00:00.000Z' }), last_used_at: '2026-11-10T00:00:00.000Z' }
+  assert.equal(decayFactor(old, now), DECAY_FACTOR)
+  assert.equal(decayFactor(fresh, now), 1)
+  const picked = pickRecall({ query: '蓝色方案的预算表', rows: [old, fresh], now })
+  assert.deepEqual(picked.map(item => item.id), ['sl_new', 'sl_old'], 'the fresh slice leads when both hit the same words')
+})
+
+test('a recalled slice has its use and time written back', async () => {
+  const h = harness({ rows: [row('sl_a', '蓝色方案的预算表在共享盘 finance/2026Q1.xlsx')] })
+  say(h, '蓝色方案的预算表放哪了')
+  await assemble(h)
+  assert.equal(h.patches.length, 1)
+  const update = h.patches[0][0]
+  assert.equal(update.id, 'sl_a')
+  assert.equal(update.uses, 1)
+  assert.match(update.last_used_at, /^\d{4}-\d{2}-\d{2}T/)
 })
