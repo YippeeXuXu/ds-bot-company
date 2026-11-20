@@ -153,16 +153,28 @@ test('project.create commits the project, its coordinator and the project group 
   rmSync(home, { recursive: true, force: true })
 })
 
-test('a Bot that already serves a running project cannot coordinate a second one', async () => {
+test('a Bot that already serves a running project can coordinate a second one (v1.18)', async () => {
+  // Contract v1.18 replaced PRD D6: one Bot serves several live projects, with its membership
+  // kept apart per project. The second project is created and started like the first, and the
+  // employee records both projects.
   const home = tempHome()
-  const { commands, rooms } = open(home)
+  const { store, commands, rooms } = open(home)
   const seed_ = await seed(commands, rooms)
   const first = await run(commands, 'project.create', { operation_key: key('create-1'), ...draft(seed_) })
   await run(commands, 'project.start', { operation_key: key('start-1'), project_id: first.body.project.id })
-  await assert.rejects(
-    run(commands, 'project.create', { operation_key: key('create-2'), ...draft(seed_, { name: '另一个项目' }) }),
-    error => error.code === 'project/member-busy',
-  )
+  const second = await run(commands, 'project.create', { operation_key: key('create-2'), ...draft(seed_, { name: '另一个项目' }) })
+  assert.equal(second.status, 'committed')
+  const secondStart = await run(commands, 'project.start', { operation_key: key('start-2'), project_id: second.body.project.id })
+  assert.equal(secondStart.status, 'committed')
+
+  const coordinator = seed_.alpha
+  const ids = store.state.employees[coordinator].project_ids
+  assert.deepEqual([...ids].sort(), [first.body.project.id, second.body.project.id].sort())
+  assert.equal(store.state.employees[coordinator].project_id, ids[0])
+  // Two membership rows, one per project, not one row moved.
+  const rows = Object.values(store.state.members).filter(member => member.employee_id === coordinator)
+  assert.equal(rows.length, 2)
+  assert.deepEqual(rows.map(row => row.project_id).sort(), [first.body.project.id, second.body.project.id].sort())
   rmSync(home, { recursive: true, force: true })
 })
 
@@ -403,9 +415,8 @@ test('archiving keeps an employee active when legacy data already bound her to a
     operation_key: key('create-legacy-b'),
     ...draft(seed_, { name: '第二个项目', memory_employee_id: undefined }),
   })
-  // The cross-project guard (`project/member-busy`) refuses a second active binding through
-  // the API, so this state can only come from data written before that rule. Archiving the
-  // first project must not suspend an employee who still serves the second one.
+  // Since v1.18 the API itself writes this state (one Bot in two live projects). Archiving
+  // the first project must still not suspend an employee who serves the second one.
   const secondId = second.body.project.id
   store.state.projects[secondId].status = 'active'
   store.state.members.pmm_legacy = {
@@ -958,5 +969,53 @@ test('a dismissed employee cannot be named in a new project', async () => {
   // Nothing was written by any of the three refusals.
   const projects = await run(commands, 'project.list', { operation_key: key('list') })
   assert.equal(projects.body.projects.length, 0)
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('a membership carries differences that apply only inside one project (v1.18)', async () => {
+  const home = tempHome()
+  const { store, commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', { operation_key: key('create-diff'), ...draft(seed_) })
+  const projectId = created.body.project.id
+  const memberId = created.body.member.id
+  const before = store.state.members[memberId].configuration_version
+
+  const written = await run(commands, 'project.member.update', {
+    operation_key: key('diff-write'),
+    project_id: projectId,
+    employee_id: seed_.alpha,
+    local_diff: { model: 'deepseek/deepseek-reasoner', instructions: '  这个项目里先给结论。  ' },
+  })
+  assert.equal(written.status, 'committed')
+  assert.deepEqual(written.body.member.local_diff, { model: 'deepseek/deepseek-reasoner', instructions: '这个项目里先给结论。' })
+  assert.equal(written.body.member.configuration_version, before + 1)
+  assert.match(readFileSync(store.eventsPath, 'utf8'), /"type":"project\.member\.updated".*"local_diff"/)
+
+  // The same difference again changes nothing, so no revision is spent on it.
+  const revisionBefore = store.state.revision
+  const again = await run(commands, 'project.member.update', {
+    operation_key: key('diff-again'),
+    project_id: projectId,
+    employee_id: seed_.alpha,
+    local_diff: { model: 'deepseek/deepseek-reasoner', instructions: '这个项目里先给结论。' },
+  })
+  assert.equal(store.state.revision, revisionBefore)
+  assert.equal(again.status, 'ok')
+
+  // Keys the membership does not hold, and shapes that are not an object, are refused.
+  await assert.rejects(
+    run(commands, 'project.member.update', { operation_key: key('diff-bad-key'), project_id: projectId, employee_id: seed_.alpha, local_diff: { temperature: '1' } }),
+    error => error.code === 'company/invalid' && error.details.field === 'local_diff',
+  )
+  await assert.rejects(
+    run(commands, 'project.member.update', { operation_key: key('diff-bad-shape'), project_id: projectId, employee_id: seed_.alpha, local_diff: ['model'] }),
+    error => error.code === 'company/invalid' && error.details.field === 'local_diff',
+  )
+
+  // Null clears it, and the post she holds is untouched.
+  const cleared = await run(commands, 'project.member.update', { operation_key: key('diff-clear'), project_id: projectId, employee_id: seed_.alpha, local_diff: null })
+  assert.equal(cleared.body.member.local_diff, null)
+  assert.equal(cleared.body.member.role, 'coordinator')
   rmSync(home, { recursive: true, force: true })
 })

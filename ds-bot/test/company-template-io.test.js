@@ -87,8 +87,10 @@ test('a template file exports every active template, builtin first (M1b-3.5)', a
     const result = await run(commands, 'template.export', { operation_key: 'k-export-all' })
     const file = result.body.file
     assert.equal(file.format, 'ds-company/templates')
-    assert.equal(file.version, 1)
+    // v1.18 wrote version 2: every entry names its kind.
+    assert.equal(file.version, 2)
     assert.deepEqual(file.templates.map(entry => entry.name), ['前端工程师', '后端工程师', '数据工程师'])
+    assert.deepEqual(file.templates.map(entry => entry.kind), ['agent', 'agent', 'agent'])
     assert.deepEqual(file.templates[1].skills, ['guide', 'playwright-cli'])
     assert.equal(file.templates[1].model, 'deepseek/deepseek-chat')
     assert.match(file.exported_at, /^\d{4}-\d{2}-\d{2}T/)
@@ -247,10 +249,18 @@ test('a file of the wrong format or version is refused whole (M1b-3.5)', async (
 
     const wrongVersion = await errorOf(run(commands, 'template.import', {
       operation_key: 'k-version',
-      file: { format: 'ds-company/templates', version: 2, templates: [{ name: '前端工程师' }] },
+      file: { format: 'ds-company/templates', version: 3, templates: [{ name: '前端工程师' }] },
     }))
     assert.equal(wrongVersion.code, 'template/import-invalid')
     assert.equal(wrongVersion.details.field, 'version')
+
+    // A v1 file still imports: its rows carry no kind and were all jobs.
+    const fromV1 = await run(commands, 'template.import', {
+      operation_key: 'k-version-1',
+      file: { format: 'ds-company/templates', version: 1, templates: [{ name: '数据工程师', instructions: '旧文件。' }] },
+    })
+    assert.equal(fromV1.body.imported.length, 1)
+    assert.equal(fromV1.body.imported[0].kind, 'agent')
 
     const empty = await errorOf(run(commands, 'template.import', {
       operation_key: 'k-empty',

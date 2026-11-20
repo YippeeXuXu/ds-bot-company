@@ -5,6 +5,12 @@
 //
 // Two kinds live in one table. A builtin template comes with the plugin and is read-only;
 // changing it means saving a copy, so an update never overwrites what the plugin ships.
+//
+// Since contract v1.18 a template also names its own kind (M2 batch 1): an `agent` template
+// holds the job — duties, skills, model and thinking level — and a `soul` template holds the
+// character, the voice and the values. A Bot is made from one of each (employee.create-from-
+// template), and its instructions are the soul paragraph followed by the agent paragraph. Rows
+// written before the split carry no `kind`; they are read as `agent`, which is what they were.
 // The host capability names in `skills` are the ones `attach_capability` takes; whether a
 // name exists is checked when a Bot is made from the template (3.4), not here, because the
 // library can change after a template is saved.
@@ -12,6 +18,10 @@ import { randomUUID } from 'node:crypto'
 import { companyFail } from './store.js'
 
 export const TEMPLATE_SOURCES = ['builtin', 'custom']
+// `agent` is the job; `soul` is the character. A kind is fixed when the row is made and is
+// never edited afterwards — changing what a template is would silently change every Bot made
+// from it, and the export format names the kind for the same reason.
+export const TEMPLATE_KINDS = ['agent', 'soul']
 
 const newId = prefix => `${prefix}_${randomUUID().replaceAll('-', '').slice(0, 12)}`
 
@@ -25,6 +35,25 @@ const text = (value, field, { max = 120, min = 1 } = {}) => {
 const optionalText = (value, field, max = 2000) => (value === undefined || value === null || value === '' ? undefined : text(value, field, { max }))
 
 const nameKey = name => name.trim().toLowerCase()
+
+const kindOf = (value, field = 'kind') => {
+  if (value === undefined) return undefined
+  const kind = text(value, field, { max: 40 })
+  if (!TEMPLATE_KINDS.includes(kind)) throw companyFail('company/invalid', `${field} must be one of ${TEMPLATE_KINDS.join(', ')}.`, { field, value: kind })
+  return kind
+}
+
+// A row from before the split has no kind. It was a job description, so it reads as `agent`
+// everywhere — the view, the export and the hiring path all go through this one reading.
+export const kindOfRow = template => (TEMPLATE_KINDS.includes(template.kind) ? template.kind : 'agent')
+
+export const soulOf = (state, companyId, id) => {
+  const template = templateOf(state, id)
+  if (template.company_id !== companyId) throw companyFail('template/not-found', `No template ${id}.`, { template_id: id })
+  if (template.status === 'archived') throw companyFail('template/archived', `Template ${template.name} is archived; pick another one.`, { template_id: template.id })
+  if (kindOfRow(template) !== 'soul') throw companyFail('template/kind-mismatch', `Template ${template.name} is not a soul template.`, { template_id: template.id, field: 'soul_template_id', kind: kindOfRow(template) })
+  return template
+}
 
 const companyOf = (state) => {
   const company = Object.values(state.companies).find(entry => entry.status !== 'archived')
@@ -73,7 +102,7 @@ const contentOf = (payload, template = {}) => ({
 
 const EDITABLE = ['role', 'instructions', 'model', 'effort', 'skills']
 
-export const templateView = template => ({ ...template, skills: [...(template.skills ?? [])], local_overrides: { ...template.local_overrides } })
+export const templateView = template => ({ ...template, kind: kindOfRow(template), skills: [...(template.skills ?? [])], local_overrides: { ...template.local_overrides } })
 
 export function templateHandlers() {
   return {
@@ -83,11 +112,14 @@ export function templateHandlers() {
       const name = text(payload.name ?? (origin ? `${origin.name} 副本` : undefined), 'name', { max: 40 })
       if (nameTaken(state, company.id, name)) throw companyFail('template/name-taken', `A template named ${name} already exists.`, { field: 'name' })
       const content = contentOf(payload, origin)
+      // A copy keeps its origin's kind: copying the company soul gives another soul, not a job.
+      const kind = kindOf(payload.kind) ?? (origin === undefined ? 'agent' : kindOfRow(origin))
       const id = newId('tpl')
       state.templates[id] = {
         id,
         company_id: company.id,
         name,
+        kind,
         ...content,
         version: 1,
         source: 'custom',
@@ -99,7 +131,7 @@ export function templateHandlers() {
         updated_at: now(),
         revision: 1,
       }
-      return { aggregate_id: id, body: { template: templateView(state.templates[id]) }, events: [{ type: 'template.created', data: { name, source: 'custom', from: origin?.id ?? null } }] }
+      return { aggregate_id: id, body: { template: templateView(state.templates[id]) }, events: [{ type: 'template.created', data: { name, kind, source: 'custom', from: origin?.id ?? null } }] }
     },
 
     'template.update': ({ state, payload, now }) => {
@@ -128,7 +160,7 @@ export function templateHandlers() {
       template.version += 1
       template.revision += 1
       template.updated_at = now()
-      return { aggregate_id: template.id, body: { template: templateView(template) }, events: [{ type: 'template.updated', data: { name: template.name, version: template.version } }] }
+      return { aggregate_id: template.id, body: { template: templateView(template) }, events: [{ type: 'template.updated', data: { name: template.name, kind: kindOfRow(template), version: template.version } }] }
     },
 
     'template.archive': ({ state, payload, now }) => {

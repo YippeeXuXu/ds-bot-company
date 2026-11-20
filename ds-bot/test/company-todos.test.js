@@ -514,12 +514,13 @@ test('A10: a writable install saves a v1 file back once, with one migration even
   assert.equal(saved.version, 5)
   assert.equal(saved.revision, 7)
   assert.deepEqual(saved.acceptances, {})
-  // The same one save tops up the builtin templates a v1 file cannot have (3.6b).
-  assert.equal(Object.keys(saved.templates).length, 9)
+  // The same one save tops up the builtin templates a v1 file cannot have (3.6b), which since
+  // v1.18 are nine ability templates plus the company soul.
+  assert.equal(Object.keys(saved.templates).length, 10)
   const events = readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
   assert.deepEqual(events.map(event => event.type), ['company/migrated', 'company/builtin-templates-seeded'])
   assert.deepEqual(events[0].data, { from: 1, to: 5 })
-  assert.deepEqual(events[1].data, { count: 9 })
+  assert.deepEqual(events[1].data, { count: 10 })
   rt.company.close()
 
   // A second start on the now-current file has nothing to write back.

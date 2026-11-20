@@ -440,7 +440,10 @@ test('the real roster makes the Bot, attaches the skill and writes the profile (
   assert.ok(bot !== undefined, 'the team file holds the Bot')
   assert.equal(bot.name, 'Blueberry')
   assert.equal(bot.role, '前端')
-  assert.equal(bot.instructions, '你负责界面与动效。')
+  const soul = Object.values(env.rt.companyStore.state.templates).find(row => row.kind === 'soul')
+  assert.ok(soul !== undefined, 'the company soul is seeded by company.init')
+  assert.equal(bot.instructions, `${soul.instructions}\n\n你负责界面与动效。`)
+  assert.equal(result.body.soul_template_id, soul.id)
   assert.deepEqual(bot.capabilities, ['guide'])
   assert.equal(bot.effort, undefined, 'an empty template effort does not inherit the profile default')
   assert.equal(env.saved().bots[employee.bot_id].effort, undefined)
@@ -512,4 +515,74 @@ test('the HTTP entry answers a hire with 200, 409 or 422 (M1b-3.4)', async (t) =
   const noSkill = await post({ template_id: 'tpl_no_skill', department_id: department.id, name: '橙子' })
   assert.equal(noSkill.status, 422)
   assert.equal(noSkill.body.code, 'employee/capability-missing')
+})
+
+// `open()` wires the handlers without the seeding that `company.init` adds in index.js, so a
+// company soul is put in by hand here — the same row the real seeding writes.
+function seedSoul(env, companyId, fields = {}) {
+  return seedTemplate(env.store, companyId, {
+    id: 'tpl_soul',
+    name: '公司默认语气',
+    role: null,
+    instructions: '先给结论，再给依据。',
+    model: null,
+    effort: null,
+    skills: [],
+    kind: 'soul',
+    ...fields,
+  })
+}
+
+test('a soul template cannot be hired from in place of an ability (v1.18)', async (t) => {
+  const env = open()
+  t.after(() => env.dispose())
+  const { company, department } = await ready(env)
+  const soul = seedSoul(env, company.id)
+  assert.equal(await codeOf(hire(env, department, { template_id: soul.id })), 'template/kind-mismatch')
+})
+
+test('an ability template cannot stand in as the soul (v1.18)', async (t) => {
+  const env = open()
+  t.after(() => env.dispose())
+  const { department } = await ready(env)
+  assert.equal(await codeOf(hire(env, department, { soul_template_id: 'tpl_frontend' })), 'template/kind-mismatch')
+})
+
+test('the preview keeps the two parts apart, writes nothing, and matches the hire word for word (v1.18)', async (t) => {
+  const env = open()
+  t.after(() => env.dispose())
+  const { company, department } = await ready(env)
+  seedSoul(env, company.id)
+  const before = Object.keys(env.store.state.employees).length
+  const preview = await env.commands.execute('employee.preview-from-template', {
+    operation_key: 'k-preview',
+    template_id: 'tpl_frontend',
+    department_id: department.id,
+    name: '蓝莓',
+  })
+  assert.notEqual(preview.status, 'failed')
+  assert.equal(preview.body.soul.kind, 'soul')
+  assert.equal(preview.body.agent.kind, 'agent')
+  assert.equal(preview.body.agent.id, 'tpl_frontend')
+  assert.equal(preview.body.name, '蓝莓')
+  assert.equal(preview.body.instructions, `${preview.body.soul.instructions}\n\n${env.store.state.templates.tpl_frontend.instructions}`)
+  assert.equal(Object.keys(env.store.state.employees).length, before, 'a preview writes no profile')
+  assert.equal(Object.keys(env.store.state.projects).length, 0)
+
+  const hired = await hire(env, department, { name: '蓝莓' })
+  assert.equal(hired.status, 'committed')
+  assert.equal(hired.body.bot.instructions, preview.body.instructions)
+})
+
+test('a company without a soul hires from the ability text alone (v1.18)', async (t) => {
+  const env = open()
+  t.after(() => env.dispose())
+  const { department } = await ready(env)
+  for (const [id, row] of Object.entries(env.store.state.templates)) {
+    if (row.kind === 'soul') delete env.store.state.templates[id]
+  }
+  const hired = await hire(env, department)
+  assert.equal(hired.status, 'committed')
+  assert.equal(hired.body.bot.instructions, env.store.state.templates.tpl_frontend.instructions)
+  assert.equal(hired.body.soul_template_id, null)
 })

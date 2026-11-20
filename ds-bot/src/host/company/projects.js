@@ -42,16 +42,32 @@ const activeMembers = (state, projectId) => Object.values(state.members)
   .filter(member => member.project_id === projectId && member.membership_status === 'active')
   .sort((left, right) => left.joined_at - right.joined_at)
 
-// The active membership an employee already holds in a running project, if any: one
-// employee serves one active project at a time (PRD D6). A membership in a project that is
-// still in setup does not occupy the employee, so a second draft may still be planned;
-// `project.start` checks again before either draft goes live. Archived read-only
-// memberships never count.
+// One Bot may serve several live projects (contract v1.18 replaced PRD D6): its memberships,
+// workspace and sessions are kept apart per project, and memory stays shared with each entry
+// tagged by its source project. What is left of the old rule is the question archiving asks —
+// does this employee still serve another live project? — so the lookup answers "the other
+// running membership", not "a reason to refuse".
 const RUNNING = ['active', 'paused', 'delivering']
-const busyMembership = (state, employeeId) => Object.values(state.members)
+const runningMembership = (state, employeeId, exceptProjectId = null) => Object.values(state.members)
   .find(member => member.employee_id === employeeId
+    && member.project_id !== exceptProjectId
     && member.membership_status === 'active'
     && RUNNING.includes(state.projects[member.project_id]?.status))
+
+// The projects an employee is part of, kept in one place so `project_id` (the first, and the
+// one older screens read) cannot drift from the membership rows.
+const joinProject = (employee, projectId) => {
+  const ids = Array.isArray(employee.project_ids) ? employee.project_ids : []
+  if (!ids.includes(projectId)) ids.push(projectId)
+  employee.project_ids = ids
+  employee.project_id = ids[0] ?? null
+}
+
+const leaveProject = (employee, projectId) => {
+  const ids = (Array.isArray(employee.project_ids) ? employee.project_ids : []).filter(id => id !== projectId)
+  employee.project_ids = ids
+  employee.project_id = ids[0] ?? null
+}
 
 const companyOf = state => {
   const company = Object.values(state.companies).find(entry => entry.status !== 'archived')
@@ -81,6 +97,29 @@ const employeeRole = (value) => {
   const role = value ?? 'executor'
   if (!MEMBER_ROLES.includes(role)) throw companyFail('company/invalid', `role is one of ${MEMBER_ROLES.join(', ')}.`, { field: 'role', allowed: MEMBER_ROLES })
   return role
+}
+
+// A membership may carry differences that apply only inside this project (contract v1.18):
+// another model, another thinking level, or extra instructions. The Bot itself is untouched,
+// so the same employee can look different in each project she serves. Every key is optional
+// and a null value clears that key; an empty result is stored as null, not as `{}`.
+export const LOCAL_DIFF_KEYS = ['model', 'effort', 'instructions']
+const localDiffOf = (value) => {
+  if (value === null || value === undefined) return null
+  if (typeof value !== 'object' || Array.isArray(value)) throw companyFail('company/invalid', 'local_diff is an object of model, effort and instructions.', { field: 'local_diff', allowed: LOCAL_DIFF_KEYS })
+  const unknown = Object.keys(value).filter(key => !LOCAL_DIFF_KEYS.includes(key))
+  if (unknown.length > 0) throw companyFail('company/invalid', `local_diff only holds ${LOCAL_DIFF_KEYS.join(', ')}.`, { field: 'local_diff', unknown, allowed: LOCAL_DIFF_KEYS })
+  const diff = {}
+  for (const key of LOCAL_DIFF_KEYS) {
+    if (value[key] === undefined) continue
+    if (value[key] === null) continue
+    if (typeof value[key] !== 'string') throw companyFail('company/invalid', `local_diff.${key} is a string or null.`, { field: `local_diff.${key}` })
+    const trimmed = value[key].trim()
+    if (trimmed === '') continue
+    if (trimmed.length > 8000) throw companyFail('company/invalid', `local_diff.${key} is longer than 8000 characters.`, { field: `local_diff.${key}` })
+    diff[key] = trimmed
+  }
+  return Object.keys(diff).length === 0 ? null : diff
 }
 
 const requirementOf = (value) => {
@@ -216,9 +255,6 @@ export function projectHandlers({ groups = {} } = {}) {
         if (coordinator.bot_id === null || coordinator.bot_id === undefined || coordinator.bot_id === '') {
           throw companyFail('project/coordinator-without-bot', `${coordinator.name} has no Bot yet, so the project group cannot hold them. Bind a Bot on the employee profile, or pick another coordinator.`, { field: 'coordinator_employee_id', employee_id: coordinator.id })
         }
-        if (busyMembership(state, coordinator.id) !== undefined) {
-          throw companyFail('project/member-busy', `Employee ${coordinator.id} is already in an active project.`, { field: 'coordinator_employee_id', employee_id: coordinator.id })
-        }
       }
       const requirement = requirementOf(payload.acceptance_requirement)
       const acceptanceActor = acceptanceActorOf(state, payload.acceptance_actor, requirement)
@@ -282,7 +318,7 @@ export function projectHandlers({ groups = {} } = {}) {
       }
       state.members[memberId] = member
       project.coordinator_assignment_id = memberId
-      coordinator.project_id = projectId
+      joinProject(coordinator, projectId)
       const roomId = await bindGroup(project, name, [coordinator.bot_id], now, state)
       return {
         aggregate_id: projectId,
@@ -384,9 +420,6 @@ export function projectHandlers({ groups = {} } = {}) {
       if (employee.status !== 'active') throw companyFail('employee/inactive', `Employee ${employee.id} is dismissed; re-activate them before adding them to a project.`, { field: 'employee_id', employee_id: employee.id })
       const already = Object.values(state.members).find(member => member.project_id === project.id && member.employee_id === employee.id && member.membership_status !== 'left')
       if (already !== undefined) throw companyFail('project/member-exists', `Employee ${employee.id} is already in this project.`, { project_id: project.id, employee_id: employee.id, membership_status: already.membership_status })
-      if (busyMembership(state, employee.id) !== undefined) {
-        throw companyFail('project/member-busy', `Employee ${employee.id} is already in an active project.`, { field: 'employee_id', project_id: project.id, employee_id: employee.id })
-      }
       // The coordinator post is one, and it is filled by the first member given that role
       // (a draft created without a coordinator is completed this way).
       if (role === 'coordinator') {
@@ -416,7 +449,7 @@ export function projectHandlers({ groups = {} } = {}) {
         readiness: ['ready'],
       }
       state.members[memberId] = member
-      employee.project_id = project.id
+      joinProject(employee, project.id)
       if (role === 'coordinator') project.coordinator_assignment_id = memberId
       const events = [{ type: 'project.member.added', data: { employee_id: employee.id, role } }]
       let warning
@@ -455,7 +488,7 @@ export function projectHandlers({ groups = {} } = {}) {
       if (project.coordinator_assignment_id === member.id) project.coordinator_assignment_id = null
       // The department does not change: leaving a project ends the membership only, and
       // the employee (and its history) stays where it is (spec member semantics).
-      if (employee.project_id === project.id) employee.project_id = null
+      leaveProject(employee, project.id)
       const remaining = expectedBots(state, project.id)
       let warning
       if (roomMembers(project) !== undefined) {
@@ -478,8 +511,12 @@ export function projectHandlers({ groups = {} } = {}) {
       const employee = employeeOf(state, text(payload.employee_id, 'employee_id', { max: 120 }))
       const member = Object.values(state.members).find(entry => entry.project_id === project.id && entry.employee_id === employee.id && entry.membership_status === 'active')
       if (member === undefined) throw companyFail('project/member-not-found', `Employee ${employee.id} is not an active member of this project.`, { project_id: project.id, employee_id: employee.id })
-      const role = employeeRole(payload.role)
-      if (role === member.role) return { aggregate_id: project.id, mutates: false, body: { project, member } }
+      // A membership is updated field by field: sending only local_diff must not silently
+      // demote the coordinator to the default role.
+      const role = payload.role === undefined ? member.role : employeeRole(payload.role)
+      const localDiff = payload.local_diff === undefined ? undefined : localDiffOf(payload.local_diff)
+      const diffSame = localDiff === undefined || JSON.stringify(localDiff) === JSON.stringify(member.local_diff ?? null)
+      if (role === member.role && diffSame) return { aggregate_id: project.id, mutates: false, body: { project, member } }
       if (role === 'coordinator') {
         const current = project.coordinator_assignment_id == null ? undefined : state.members[project.coordinator_assignment_id]
         if (current !== undefined && current.id !== member.id && current.membership_status === 'active') {
@@ -492,8 +529,10 @@ export function projectHandlers({ groups = {} } = {}) {
       if (member.role === 'coordinator' && project.coordinator_assignment_id === member.id) project.coordinator_assignment_id = null
       member.role = role
       if (role === 'coordinator') project.coordinator_assignment_id = member.id
+      if (localDiff !== undefined) member.local_diff = localDiff
+      member.configuration_version = (member.configuration_version ?? 1) + 1
       project.updated_at = now()
-      return { aggregate_id: project.id, body: { project, member }, events: [{ type: 'project.member.updated', data: { employee_id: employee.id, role } }] }
+      return { aggregate_id: project.id, body: { project, member }, events: [{ type: 'project.member.updated', data: { employee_id: employee.id, role, ...(localDiff === undefined ? {} : { local_diff: localDiff }) } }] }
     },
 
     'project.start': async ({ state, payload, now }) => {
@@ -517,8 +556,6 @@ export function projectHandlers({ groups = {} } = {}) {
         if (department.chat_ref == null || roomMembers({ group_chat_ref: department.chat_ref }) === undefined) {
           blockers.push({ code: 'department_group', department_id: department.id, employee_id: employee.id, message: `Department ${department.name} has no group chat bound.` })
         }
-        const busy = busyMembership(state, employee.id)
-        if (busy !== undefined) blockers.push({ code: 'member_busy', employee_id: employee.id, project_id: busy.project_id, message: `Employee ${employee.id} is already serving another active project.` })
       }
       const requirement = project.acceptance_requirement
       if (requirement === 'owner_only') {
@@ -642,22 +679,22 @@ export function projectHandlers({ groups = {} } = {}) {
       // A memory keeper is suspended only when this project was her post. Archiving must not
       // take an employee out of another project she still serves: someone who keeps the
       // memory of another live project (setup/active/paused/delivering), or who still holds
-      // an active membership in a running one (busyMembership, PRD D6), stays active and is
+      // an active membership in another running one (runningMembership), stays active and is
       // left out of `suspended_employees`. Members of this project were moved to
-      // `archived_readonly` above, so they never keep themselves busy here.
+      // `archived_readonly` above, so they never count as serving elsewhere here.
       const keepsOtherLiveProject = employeeId => Object.values(state.projects ?? {})
         .some(entry => isRow(entry) && entry.id !== project.id && LIVE.includes(entry.status) && entry.memory_assignment_id === employeeId)
       const suspendedEmployees = []
       for (const employeeId of suspended) {
         const employee = state.employees[employeeId]
         if (employee === undefined || employee.status !== 'active') continue
-        if (keepsOtherLiveProject(employeeId) || busyMembership(state, employeeId) !== undefined) continue
+        if (keepsOtherLiveProject(employeeId) || runningMembership(state, employeeId, project.id) !== undefined) continue
         employee.status = 'suspended'
         employee.updated_at = closedAt
         employee.revision = (employee.revision ?? 1) + 1
         suspendedEmployees.push(employeeId)
       }
-      for (const employee of Object.values(state.employees)) if (employee.project_id === project.id) employee.project_id = null
+      for (const employee of Object.values(state.employees)) if (Array.isArray(employee.project_ids) && employee.project_ids.includes(project.id)) leaveProject(employee, project.id)
       // M1c: archiving closes the acceptances the project still owns. Only `pending` ones
       // move — a card already decided keeps its own outcome — and the reason is recorded on
       // the acceptance itself (`close_reason`, contract §2.2 / §3.5 rule 9), because the
