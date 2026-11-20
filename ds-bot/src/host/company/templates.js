@@ -102,6 +102,21 @@ const contentOf = (payload, template = {}) => ({
 
 const EDITABLE = ['role', 'instructions', 'model', 'effort', 'skills']
 
+// The two kinds differ in what they may carry, not only in how they are listed. A soul holds
+// the character alone: instructions, nothing about the work. An ability has to say what the
+// work is, so its role is required. Old rows are left as they are; the check runs on writes.
+const assertKindShape = (kind, content) => {
+  if (kind === 'soul') {
+    for (const field of ['role', 'model', 'effort']) {
+      const value = content[field]
+      if (value !== null && value !== undefined && value !== '') throw companyFail('company/invalid', `A soul template carries instructions only; ${field} must stay empty.`, { field })
+    }
+    if ((content.skills ?? []).length > 0) throw companyFail('company/invalid', 'A soul template carries instructions only; skills must stay empty.', { field: 'skills' })
+    return
+  }
+  if (content.role === null || content.role === undefined || content.role === '') throw companyFail('company/invalid', 'An ability template needs a role.', { field: 'role' })
+}
+
 export const templateView = template => ({ ...template, kind: kindOfRow(template), skills: [...(template.skills ?? [])], local_overrides: { ...template.local_overrides } })
 
 export function templateHandlers() {
@@ -114,6 +129,7 @@ export function templateHandlers() {
       const content = contentOf(payload, origin)
       // A copy keeps its origin's kind: copying the company soul gives another soul, not a job.
       const kind = kindOf(payload.kind) ?? (origin === undefined ? 'agent' : kindOfRow(origin))
+      assertKindShape(kind, content)
       const id = newId('tpl')
       state.templates[id] = {
         id,
@@ -148,6 +164,7 @@ export function templateHandlers() {
         }
       }
       const content = contentOf(payload, template)
+      assertKindShape(kindOfRow(template), content)
       for (const field of EDITABLE) {
         if (JSON.stringify(content[field]) === JSON.stringify(template[field])) continue
         template[field] = content[field]

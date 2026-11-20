@@ -154,17 +154,17 @@ test('template names are unique and skills are checked before they are saved (M1
   const home = tempHome()
   const { commands } = open(home)
   await company(commands)
-  await run(commands, 'template.create', { operation_key: 'k-a', name: '前端' })
+  await run(commands, 'template.create', { operation_key: 'k-a', name: '前端', role: '前端' })
 
-  assert.equal(await codeOf(run(commands, 'template.create', { operation_key: 'k-b', name: ' 前端 ' })), 'template/name-taken')
-  assert.equal(await codeOf(run(commands, 'template.create', { operation_key: 'k-c', name: '写手', skills: ['Web Search'] })), 'company/invalid')
-  assert.equal(await codeOf(run(commands, 'template.create', { operation_key: 'k-d', name: '写手', skills: ['guide', 'guide'] })), 'company/invalid')
-  assert.equal(await codeOf(run(commands, 'template.create', { operation_key: 'k-e', name: '写手', instructions: 'x'.repeat(8001) })), 'company/invalid')
-  assert.equal(await codeOf(run(commands, 'template.create', { operation_key: 'k-f', name: 'x'.repeat(41) })), 'company/invalid')
+  assert.equal(await codeOf(run(commands, 'template.create', { operation_key: 'k-b', name: ' 前端 ', role: '前端' })), 'template/name-taken')
+  assert.equal(await codeOf(run(commands, 'template.create', { operation_key: 'k-c', name: '写手', role: '写手', skills: ['Web Search'] })), 'company/invalid')
+  assert.equal(await codeOf(run(commands, 'template.create', { operation_key: 'k-d', name: '写手', role: '写手', skills: ['guide', 'guide'] })), 'company/invalid')
+  assert.equal(await codeOf(run(commands, 'template.create', { operation_key: 'k-e', name: '写手', role: '写手', instructions: 'x'.repeat(8001) })), 'company/invalid')
+  assert.equal(await codeOf(run(commands, 'template.create', { operation_key: 'k-f', name: 'x'.repeat(41), role: '写手' })), 'company/invalid')
   assert.equal(await codeOf(run(commands, 'template.update', { operation_key: 'k-g', template_id: 'tpl_missing', role: 'x' })), 'template/not-found')
   // A company has to exist first: a template belongs to one.
   const empty = open(tempHome())
-  assert.equal(await codeOf(run(empty.commands, 'template.create', { operation_key: 'k-empty', name: '前端' })), 'company/not-found')
+  assert.equal(await codeOf(run(empty.commands, 'template.create', { operation_key: 'k-empty', name: '前端', role: '前端' })), 'company/not-found')
   rmSync(home, { recursive: true, force: true })
 })
 
@@ -183,5 +183,43 @@ test('the templates table is saved in the company file at the current version (M
   assert.equal(stored.name, '产品')
   assert.equal(stored.source, 'custom')
   assert.equal(store.state.version, 5)
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('an ability template needs a role and a soul carries instructions only (v1.18)', async () => {
+  const home = tempHome()
+  const { commands } = open(home)
+  await company(commands)
+
+  // An ability template has to say what the work is.
+  const noRole = await run(commands, 'template.create', { operation_key: 's-1', name: '没职责' }).catch(error => error)
+  assert.equal(noRole.code, 'company/invalid')
+  assert.equal(noRole.details.field, 'role')
+
+  // A soul carries the character alone: no role, no model, no effort, no skills.
+  for (const [key, field, payload] of [
+    ['s-2', 'role', { role: '写手' }],
+    ['s-3', 'model', { model: 'deepseek/deepseek-chat' }],
+    ['s-4', 'effort', { effort: 'high' }],
+    ['s-5', 'skills', { skills: ['guide'] }],
+  ]) {
+    const failure = await run(commands, 'template.create', { operation_key: key, name: '语气', kind: 'soul', ...payload }).catch(error => error)
+    assert.equal(failure.code, 'company/invalid')
+    assert.equal(failure.details.field, field)
+  }
+  const soul = await run(commands, 'template.create', { operation_key: 's-6', name: '语气', kind: 'soul', instructions: '说话短，先说结论。' })
+  assert.equal(soul.body.template.kind, 'soul')
+  assert.equal(soul.body.template.role, null)
+
+  // An edit keeps the shape too: a soul cannot grow a model afterwards.
+  const grown = await run(commands, 'template.update', { operation_key: 's-7', template_id: soul.body.template.id, model: 'deepseek/deepseek-chat' }).catch(error => error)
+  assert.equal(grown.code, 'company/invalid')
+  assert.equal(grown.details.field, 'model')
+
+  // An ability template cannot lose its role either.
+  const ability = await run(commands, 'template.create', { operation_key: 's-8', name: '写手', role: '写手' })
+  const lost = await run(commands, 'template.update', { operation_key: 's-9', template_id: ability.body.template.id, role: '' }).catch(error => error)
+  assert.equal(lost.code, 'company/invalid')
+  assert.equal(lost.details.field, 'role')
   rmSync(home, { recursive: true, force: true })
 })
