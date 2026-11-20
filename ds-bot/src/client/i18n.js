@@ -1158,6 +1158,20 @@ const ZH = {
   'the timeout must be 1000–120000 ms': '超时要在 1000–120000 毫秒之间',
   'the batch size must be 1–128': '批量大小要在 1–128 之间',
   '{pending} waiting · {embedded} embedded · {failed} failed': '待处理 {pending} · 已向量化 {embedded} · 失败 {failed}',
+  'Summary model': '摘要模型',
+  'Summary model is off: {problem}': '摘要模型未启用：{problem}',
+  'Without it, merged summaries join the original lines instead of rewriting them.': '没配也能合并，只是把原句拼起来，不会重写。',
+  'Summary model is on.': '摘要模型已启用。',
+  'The shape of the chat API the service answers.': '服务所使用的对话接口类型。',
+  'Summary service': '摘要服务',
+  'Where the chat model listens, such as http://127.0.0.1:11434': '对话模型监听的地址，例如 http://127.0.0.1:11434',
+  'Summary service address': '摘要服务地址',
+  'The chat model that writes summaries, such as qwen3:4b': '用来写摘要的对话模型，例如 qwen3:4b',
+  'Summary model name': '摘要模型名',
+  'Timeout (ms)': '超时（毫秒）',
+  'How long one summary may take. Between 1000 and 120000.': '一条摘要最多等多久，1000–120000 毫秒。',
+  'Summary timeout': '摘要超时',
+  'The summary model could not be saved.': '摘要模型设置没保存上。',
 }
 
 // Host errors stay English, since Bots read them too; they are translated where the

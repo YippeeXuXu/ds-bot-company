@@ -1,4 +1,5 @@
-// Settings → Memory (M2 G4 4.6): the local embedding service behind the memory slices —
+// Settings → Memory (M2 G4 4.6, 4.5.1): the local embedding service behind the memory
+// slices and the chat model that writes the merged summaries —
 // where it listens, which model it runs, whether it is on, a test that always answers
 // with a reason, and the slices themselves with a delete and a clear. A save reaches the
 // running host at once: the host writes the settings file and re-reads it, so the page
@@ -42,6 +43,36 @@ export const patchOf = (state, form) => {
 }
 
 const bareUrl = url => String(url ?? '').trim().replace(/\/+$/, '')
+
+// The summary model (4.5.1) is a second, optional service: it only writes a summary when
+// it is configured, and the page shows it in its own section. The timeout is a text field
+// because the user may still be typing it; the host rejects what is not a number.
+export const summaryFormOf = state => ({
+  endpoint: state?.endpoint ?? 'ollama',
+  base_url: state?.base_url ?? '',
+  model: state?.model ?? '',
+  timeout_ms: String(state?.timeout_ms ?? 15000),
+})
+
+export const summaryPatchOf = (state, form) => {
+  if (!state) return null
+  const patch = {}
+  if (form.endpoint !== (state.endpoint ?? 'ollama')) patch.endpoint = form.endpoint
+  if (bareUrl(form.base_url) !== bareUrl(state.base_url)) patch.base_url = form.base_url
+  if (String(form.model ?? '').trim() !== (state.model ?? '')) patch.model = form.model
+  const timeout = Number.parseInt(String(form.timeout_ms ?? '').trim(), 10)
+  if (timeout !== (state.timeout_ms ?? 15000)) patch.timeout_ms = timeout
+  return Object.keys(patch).length === 0 ? null : patch
+}
+
+// The line above the summary fields: what is missing, or which model writes the summaries.
+export function summaryStatusOf(state) {
+  if (!state) return null
+  if (!state.configured) {
+    return { tone: 'warn', title: t('Summary model is off: {problem}', { problem: t(PROBLEMS[state.problem] ?? state.problem ?? '') }), hint: t('Without it, merged summaries join the original lines instead of rewriting them.') }
+  }
+  return { tone: 'on', title: t('Summary model is on.'), hint: t('{model} at {url}', { model: state.model, url: state.base_url }) }
+}
 
 function stampOf(at) {
   if (!at) return ''
@@ -99,6 +130,8 @@ function SliceRow({ row, name, remove }) {
 // the tests can render this with plain props.
 export function MemoryPageView(props) {
   const { state, summary, rows, form, bot, nameOf, notice, saved, saving, testing, test, clearing, Section, Row } = props
+  const { summaryState, summaryForm, summarySaving, summarySaved, summaryNotice } = props
+  const summaryStatus = summaryStatusOf(summaryState)
   const shown = rows?.rows ?? []
   const status = statusOf(state)
   return [
@@ -147,6 +180,47 @@ export function MemoryPageView(props) {
           : t('The test failed: {error}', { error: hostText(test.error ?? '') })) : null),
       state?.settings_path ? h('div', { key: 'path', className: 'bt-mempage-path' }, t('Settings are kept in {path}', { path: state.settings_path })) : null),
 
+    summaryState
+      ? h(Section, { key: 'summary', title: t('Summary model'), className: 'bt-mempage' },
+        summaryStatus ? h('div', { key: 'state', className: 'bt-mempage-state', 'data-tone': summaryStatus.tone, role: 'status' },
+          h('span', { className: 'bt-mempage-state-title' }, summaryStatus.title),
+          h('span', { className: 'bt-mempage-state-hint' }, summaryStatus.hint)) : null,
+        h(Row, { key: 'endpoint', label: t('Service'), hint: t('The shape of the chat API the service answers.') },
+          h('select', {
+            className: 'bt-select', 'aria-label': t('Summary service'), value: summaryForm.endpoint, disabled: summarySaving,
+            onChange: event => props.onSummaryEdit({ endpoint: event.target.value }),
+          }, ENDPOINTS.map(([id, label]) => h('option', { key: id, value: id }, label)))),
+        h(Row, { key: 'base', label: t('Service address'), hint: t('Where the chat model listens, such as http://127.0.0.1:11434') },
+          h('input', {
+            className: 'bt-input', type: 'text', value: summaryForm.base_url, disabled: summarySaving, spellCheck: false,
+            placeholder: summaryForm.endpoint === 'openai' ? 'http://127.0.0.1:8080/v1' : 'http://127.0.0.1:11434',
+            'aria-label': t('Summary service address'),
+            onChange: event => props.onSummaryEdit({ base_url: event.target.value }),
+          })),
+        h(Row, { key: 'model', label: t('Model name'), hint: t('The chat model that writes summaries, such as qwen3:4b') },
+          h('input', {
+            className: 'bt-input', type: 'text', value: summaryForm.model, disabled: summarySaving, spellCheck: false,
+            placeholder: 'qwen3:4b', 'aria-label': t('Summary model name'),
+            onChange: event => props.onSummaryEdit({ model: event.target.value }),
+          })),
+        h(Row, { key: 'timeout', label: t('Timeout (ms)'), hint: t('How long one summary may take. Between 1000 and 120000.') },
+          h('input', {
+            className: 'bt-input', type: 'number', min: 1000, max: 120000, step: 1000,
+            value: summaryForm.timeout_ms, disabled: summarySaving,
+            'aria-label': t('Summary timeout'),
+            onChange: event => props.onSummaryEdit({ timeout_ms: event.target.value }),
+          })),
+        h('div', { key: 'actions', className: 'bt-mempage-actions' },
+          h('button', {
+            type: 'button', className: 'bt-soft bt-soft-sm',
+            disabled: summaryState === null || summarySaving || summaryPatchOf(summaryState, summaryForm) === null,
+            onClick: () => props.onSaveSummary(),
+          }, summarySaving ? t('Saving…') : t('Save')),
+          summarySaved ? h('span', { key: 'saved', className: 'bt-mempage-saved' }, h(CheckIcon), t('Saved.')) : null,
+          summaryNotice ? h('span', { key: 'notice', className: 'bt-mempage-notice', role: 'alert' }, summaryNotice) : null),
+        summaryState.settings_path ? h('div', { key: 'path', className: 'bt-mempage-path' }, t('Settings are kept in {path}', { path: summaryState.settings_path })) : null)
+      : null,
+
     h(Section, { key: 'slices', title: t('Memory slices · {count}', { count: summary.count ?? 0 }), className: 'bt-mempage' },
       h(Row, {
         key: 'filter',
@@ -189,8 +263,13 @@ export function MemoryPage({ roster, actions, run, Section, Row }) {
   const [testing, setTesting] = useState(false)
   const [test, setTest] = useState(null)
   const [clearing, setClearing] = useState(false)
+  const [summaryForm, setSummaryForm] = useState(() => summaryFormOf(null))
+  const [summarySaving, setSummarySaving] = useState(false)
+  const [summarySaved, setSummarySaved] = useState(false)
+  const [summaryNotice, setSummaryNotice] = useState('')
 
   const state = view?.state ?? null
+  const summaryState = view?.summary ?? null
   const summary = view?.slices ?? { count: 0, bots: [] }
 
   const sliceQuery = (botId = bot) => actions.memorySlices({ limit: SLICES_SHOWN, ...(botId === '' ? {} : { bot_id: botId }) })
@@ -199,6 +278,7 @@ export function MemoryPage({ roster, actions, run, Section, Row }) {
   const load = () => translated(Promise.all([actions.memorySettings(), sliceQuery('')])).then(([next, page]) => {
     setView(next)
     setForm(formOf(next?.state))
+    setSummaryForm(summaryFormOf(next?.summary))
     setRows(page)
   })
   useEffect(() => { void run(load()) }, [])
@@ -213,6 +293,12 @@ export function MemoryPage({ roster, actions, run, Section, Row }) {
     const timer = setTimeout(() => setSaved(false), 2500)
     return () => clearTimeout(timer)
   }, [saved])
+
+  useEffect(() => {
+    if (!summarySaved) return undefined
+    const timer = setTimeout(() => setSummarySaved(false), 2500)
+    return () => clearTimeout(timer)
+  }, [summarySaved])
 
   // A save answers with the state it left the host in, so the page shows the new service
   // without asking again.
@@ -243,6 +329,25 @@ export function MemoryPage({ roster, actions, run, Section, Row }) {
     setNotice('')
   }
 
+  // The summary model has its own save: the embedding switch does not touch it, and a
+  // refusal names the field the host rejected.
+  const saveSummary = () => {
+    const patch = summaryPatchOf(summaryState, summaryForm)
+    if (patch === null) return Promise.resolve(true)
+    setSummarySaving(true)
+    setSummaryNotice('')
+    setSummarySaved(false)
+    return run(translated(Promise.resolve(actions.memorySummarySave(patch))).then((answer) => {
+      if (answer?.ok !== true) {
+        setSummaryNotice(answer?.message ? hostText(answer.message) : t('The summary model could not be saved.'))
+        return
+      }
+      setSummarySaved(true)
+      setView(current => (current === null ? current : { ...current, summary: answer.state }))
+      setSummaryForm(summaryFormOf(answer.state))
+    })).finally(() => setSummarySaving(false))
+  }
+
   const testNow = () => {
     const measure = () => {
       setTesting(true)
@@ -261,6 +366,13 @@ export function MemoryPage({ roster, actions, run, Section, Row }) {
 
   return h(MemoryPageView, {
     state, summary, rows, form, bot, nameOf, notice, saved, saving, testing, test, clearing, Section, Row,
+    summaryState, summaryForm, summarySaving, summarySaved, summaryNotice,
+    onSummaryEdit: (part) => {
+      setSummaryForm(current => ({ ...current, ...part }))
+      setSummarySaved(false)
+      setSummaryNotice('')
+    },
+    onSaveSummary: () => void saveSummary(),
     onToggle: on => void save(patchOf(state, { ...form, enabled: on })),
     onEdit: edit,
     onSave: () => void save(patchOf(state, form)),

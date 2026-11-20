@@ -150,6 +150,7 @@ export function teamActions({ call, after, partFor, roster, ui, live, cards, hel
     // tests it, and prunes the rows. A save answers with the state it left the host in.
     memorySettings: () => call('memory-settings'),
     memorySettingsSave: patch => call('memory-settings-save', { patch }),
+    memorySummarySave: patch => call('memory-summary-save', { patch }),
     memoryTest: () => call('memory-test'),
     memorySlices: (flags = {}) => call('memory-slices', flags),
     memorySliceDelete: id => call('memory-slice-delete', { id }),

@@ -2,13 +2,13 @@
 // `summary_of` keeps every source, the originals move to the archive and can be put back,
 // and a model that fails skips the group without writing half a row.
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { createSliceStore } from '../src/host/memory-slices.js'
-import { MERGE_MAX, MERGE_THRESHOLD, cosine, groupSlices, install, summaryText } from '../src/host/memory-summary.js'
+import { MERGE_MAX, MERGE_THRESHOLD, cosine, groupSlices, install, normalizeSettingsPatch, resolveSummarySettings, summaryText } from '../src/host/memory-summary.js'
 
 const openDir = () => mkdtempSync(join(tmpdir(), 'ds-bot-summary-'))
 
@@ -36,6 +36,7 @@ const mockChat = (answer = 'One short summary.') => {
     request.on('data', chunk => { body += chunk })
     request.on('end', () => {
       const asked = JSON.parse(body)
+      server.calls = (server.calls ?? 0) + 1
       server.lastPrompt = asked.messages?.[0]?.content ?? ''
       response.writeHead(200, { 'content-type': 'application/json' })
       response.end(JSON.stringify({ message: { role: 'assistant', content: answer } }))
@@ -46,11 +47,12 @@ const mockChat = (answer = 'One short summary.') => {
   })
 }
 
-const runtimeFor = ({ dir, config = {}, warn = () => {} }) => {
+const runtimeFor = ({ dir, home = dir, config = {}, warn = () => {} }) => {
   const store = createSliceStore({ dir, warn })
   const rt = {
     ctx: { on: () => () => {}, effect: fn => { fn(); return () => {} } },
     config,
+    home,
     selfOf: id => (id === 's1' ? 'b1' : undefined),
     memorySlices: {
       list: () => store.read(),
@@ -160,6 +162,11 @@ test('a model that fails skips the group and leaves no half-written row', async 
   assert.equal(existsSync(store.archivePath), false)
   assert.match(warnings.join('\n'), /memory summary skipped a group/)
   assert.match(rt.memorySummary.state().problem, /could not be reached|ECONNREFUSED|fetch failed/)
+  // Once the page clears the address, the state names the missing field again instead of
+  // repeating the older run's failure.
+  rt.memorySummary.save({ base_url: '' })
+  assert.equal(rt.memorySummary.state().configured, false)
+  assert.equal(rt.memorySummary.state().problem, 'base_url is not set')
 })
 
 test('a configured model writes the summary it answers, and the prompt carries the sources', async (t) => {
@@ -213,4 +220,65 @@ test('one turn of merging counts, and the state says what happened', async () =>
 
 test('the merge threshold is the cosine the contract names', () => {
   assert.equal(MERGE_THRESHOLD, 0.86)
+})
+
+test('resolveSummarySettings reads the file shape and names what is missing', () => {
+  const options = resolveSummarySettings({ endpoint: 'openai', base_url: ' http://127.0.0.1:8080/v1/ ', model: 'qwen3:4b', timeout_ms: 4000 })
+  assert.deepEqual(options, { endpoint: 'openai', baseUrl: 'http://127.0.0.1:8080/v1', model: 'qwen3:4b', timeoutMs: 4000, configured: true, problem: null })
+  assert.equal(resolveSummarySettings({ endpoint: 'nope', base_url: '', model: 'm' }).problem, 'base_url is not set')
+  assert.equal(resolveSummarySettings({ base_url: 'http://x', model: '' }).problem, 'model is not set')
+  assert.equal(resolveSummarySettings({ base_url: 'http://x', model: 'm', timeout_ms: 10 }).timeoutMs, 15000, 'an out-of-range timeout falls back')
+  assert.equal(resolveSummarySettings({}).configured, false)
+})
+
+test('the settings patch refuses one bad field at a time', () => {
+  assert.deepEqual(normalizeSettingsPatch({ endpoint: 'openai', model: ' m ', timeout_ms: 5000 }), { ok: true, next: { endpoint: 'openai', model: 'm', timeout_ms: 5000 } })
+  assert.equal(normalizeSettingsPatch({ endpoint: 'lmstudio' }).field, 'endpoint')
+  assert.equal(normalizeSettingsPatch({ base_url: 'ftp://x' }).field, 'base_url')
+  assert.equal(normalizeSettingsPatch({ model: 'x'.repeat(81) }).field, 'model')
+  assert.equal(normalizeSettingsPatch({ timeout_ms: 999 }).field, 'timeout_ms')
+})
+
+test('a saved settings file wins over the plugin config, and save reaches the next run', async (t) => {
+  const dir = openDir()
+  const chat = await mockChat('文件模型写的摘要。')
+  t.after(() => chat.server.close())
+  // The page saved a working model once; the plugin config still points at a dead port.
+  writeFileSync(join(dir, 'memory-summary.json'), JSON.stringify({ endpoint: 'ollama', base_url: chat.base, model: 'file-model' }))
+  const loaded = runtimeFor({ dir, config: { memorySummary: { endpoint: 'ollama', base_url: 'http://127.0.0.1:9', model: 'config-model' } } })
+  assert.equal(loaded.rt.memorySummary.state().configured, true, 'the file wins over the config')
+  assert.equal(loaded.rt.memorySummary.state().model, 'file-model')
+  assert.equal(loaded.rt.memorySummary.state().settings_path, join(dir, 'memory-summary.json'))
+  await loaded.store.append([
+    slice('sl_a', '蓝色方案的季度预算表先压差旅。', { embedding: vec(1, 0) }),
+    slice('sl_b', '蓝色方案的季度预算表差旅压到 8 万。', { embedding: vec(0.99, 0.05) }),
+  ])
+  const merged = await loaded.rt.memorySummary.run('b1')
+  assert.equal(merged.merged, 2)
+  assert.equal(loaded.store.read().find(row => Array.isArray(row.summary_of)).text, '文件模型写的摘要。')
+
+  // A save lands in the file and in the running module: the next run asks the new model.
+  mkdirSync(dir, { recursive: true })
+  const answer = loaded.rt.memorySummary.save({ base_url: chat.base, model: 'saved-model', timeout_ms: 30000 })
+  assert.equal(answer.ok, true)
+  assert.equal(answer.state.model, 'saved-model')
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, 'memory-summary.json'), 'utf8')), { endpoint: 'ollama', base_url: chat.base, model: 'saved-model', timeout_ms: 30000 })
+  assert.equal(loaded.rt.memorySummary.state().timeout_ms, 30000)
+  assert.equal(loaded.store.read().length, 1, 'the two sources are still one summary')
+
+  // The save reaches the very next run: two new lines go to the model, not to the fallback
+  // that would simply join the originals.
+  await loaded.store.append([
+    slice('sl_c', '红色方案的年度预算先压广告。', { embedding: vec(1, 0) }),
+    slice('sl_d', '红色方案年度预算广告压到 6 万。', { embedding: vec(0.99, 0.05) }),
+  ])
+  const second = await loaded.rt.memorySummary.run('b1')
+  assert.equal(second.merged, 2)
+  assert.equal(chat.server.calls, 2, 'the saved model answered the next run')
+  assert.match(chat.server.lastPrompt, /红色方案/, 'the prompt held the lines just added')
+  assert.equal(loaded.store.read().find(row => Array.isArray(row.summary_of) && row.summary_of.includes('sl_c')).text, '文件模型写的摘要。')
+
+  const refused = loaded.rt.memorySummary.save({ timeout_ms: 5 })
+  assert.equal(refused.ok, false)
+  assert.equal(refused.field, 'timeout_ms')
 })

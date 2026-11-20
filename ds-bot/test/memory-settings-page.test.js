@@ -10,7 +10,7 @@ import { build } from 'esbuild'
 const PLUGIN = dirname(dirname(fileURLToPath(import.meta.url)))
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { MemoryPage, MemoryPageView, formOf, patchOf, statusOf } from './src/client/memory-settings.js'",
+    contents: "export { MemoryPage, MemoryPageView, formOf, patchOf, statusOf, summaryFormOf, summaryPatchOf, summaryStatusOf } from './src/client/memory-settings.js'",
     resolveDir: PLUGIN,
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -26,7 +26,7 @@ const react = {
 const module = { exports: {} }
 const sandbox = { module, exports: module.exports, require: name => (name === 'react' ? react : {}), window: {} }
 runInNewContext(outputFiles[0].text, sandbox)
-const { MemoryPage, MemoryPageView, formOf, patchOf, statusOf } = module.exports
+const { MemoryPage, MemoryPageView, formOf, patchOf, statusOf, summaryFormOf, summaryPatchOf, summaryStatusOf } = module.exports
 
 // Function components are plain functions here, so rendering is just calling them.
 const render = node => {
@@ -70,13 +70,19 @@ const off = {
 const ready = { ...off, enabled: true, wanted: true, base_url: 'http://127.0.0.1:11434', model: 'bge-m3', embedded: 4, pending: 2 }
 const missing = { ...off, wanted: true, problem: 'base_url is not set' }
 const slice = { id: 'sl_1', bot_id: 'bot_1', text: 'User: 帮我看下这周的派单', created_at: '2026-11-19T10:00:00.000Z', has_embedding: true }
+// The summary model (4.5.1): its own file, its own section, off until an address and a
+// model are both given.
+const summaryOff = { configured: false, problem: 'base_url is not set', endpoint: 'ollama', base_url: '', model: '', timeout_ms: 15000, saved: {}, settings_path: '/tmp/home/memory-summary.json' }
+const summaryReady = { ...summaryOff, configured: true, problem: null, base_url: 'http://127.0.0.1:11434', model: 'qwen3:4b', timeout_ms: 20000 }
+const saveButtons = tree => buttons(tree).filter(item => text(item).includes('Save'))
 
 const view = (patch = {}) => render(MemoryPageView({
   state: off, summary: { count: 0, bots: [] }, rows: { rows: [], total: 0 }, form: formOf(off), bot: '',
   nameOf: id => String(id), notice: '', saved: false, saving: false, testing: false, test: null, clearing: false,
+  summaryState: summaryReady, summaryForm: summaryFormOf(summaryReady), summarySaving: false, summarySaved: false, summaryNotice: '',
   Section, Row,
   onToggle() {}, onEdit() {}, onSave() {}, onTest() {}, onFilter() {}, onRemove() {},
-  onAskClear() {}, onKeep() {}, onClear() {},
+  onAskClear() {}, onKeep() {}, onClear() {}, onSummaryEdit() {}, onSaveSummary() {},
   ...patch,
 }))
 
@@ -188,4 +194,59 @@ test('a saved page confirms it took effect', () => {
 
 test('MemoryPage is the stateful wrapper the settings dialog mounts', () => {
   assert.equal(typeof MemoryPage, 'function')
+})
+test('summaryFormOf reads the summary file shape, timeout included', () => {
+  assert.deepEqual(plain(summaryFormOf(summaryReady)), { endpoint: 'ollama', base_url: 'http://127.0.0.1:11434', model: 'qwen3:4b', timeout_ms: '20000' })
+  assert.deepEqual(plain(summaryFormOf(null)), { endpoint: 'ollama', base_url: '', model: '', timeout_ms: '15000' })
+})
+
+test('summaryPatchOf carries one changed field, and a trailing slash is no change', () => {
+  assert.equal(summaryPatchOf(summaryReady, summaryFormOf(summaryReady)), null)
+  assert.equal(summaryPatchOf(null, summaryFormOf(null)), null)
+  assert.equal(summaryPatchOf(summaryReady, { ...summaryFormOf(summaryReady), base_url: 'http://127.0.0.1:11434/' }), null)
+  assert.deepEqual(plain(summaryPatchOf(summaryReady, { ...summaryFormOf(summaryReady), model: 'qwen3:8b' })), { model: 'qwen3:8b' })
+  assert.deepEqual(plain(summaryPatchOf(summaryReady, { ...summaryFormOf(summaryReady), timeout_ms: '30000' })), { timeout_ms: 30000 })
+  assert.deepEqual(plain(summaryPatchOf(summaryReady, { ...summaryFormOf(summaryReady), endpoint: 'openai', base_url: '' })), { endpoint: 'openai', base_url: '' })
+})
+
+test('summaryStatusOf says what the summary model is missing, or which one writes', () => {
+  const warn = summaryStatusOf(summaryOff)
+  assert.equal(warn.tone, 'warn')
+  assert.match(text(warn.title), /Summary model is off: The service address is not set\./)
+  assert.equal(summaryStatusOf({ ...summaryOff, problem: 'model is not set' }).title, 'Summary model is off: The model name is not set.')
+  const on = summaryStatusOf(summaryReady)
+  assert.equal(on.tone, 'on')
+  assert.equal(on.title, 'Summary model is on.')
+  assert.equal(on.hint, 'qwen3:4b at http://127.0.0.1:11434')
+  assert.equal(summaryStatusOf(null), null)
+})
+
+test('the summary section shows its fields, and a save sends only what changed', () => {
+  let sent = null
+  const dirty = { ...summaryFormOf(summaryReady), model: 'qwen3:8b' }
+  const tree = view({ summaryForm: dirty, onSaveSummary: () => { sent = summaryPatchOf(summaryReady, dirty) } })
+  assert.match(text(tree), /Summary model/)
+  assert.match(text(tree), /Summary model is on\./)
+  assert.match(text(tree), /qwen3:4b at http:\/\/127\.0\.0\.1:11434/)
+  assert.match(text(tree), /Settings are kept in \/tmp\/home\/memory-summary\.json/)
+  assert.equal(saveButtons(tree).length, 2, 'one save for the memory service, one for the summary model')
+  const summarySave = saveButtons(tree)[1]
+  assert.equal(summarySave.props.disabled, false)
+  click(summarySave)
+  assert.deepEqual(plain(sent), { model: 'qwen3:8b' })
+  // With nothing changed the summary save is disabled too.
+  assert.equal(saveButtons(view())[1].props.disabled, true)
+})
+
+test('the summary section is absent on a host that does not answer for it', () => {
+  const tree = view({ summaryState: null })
+  assert.equal(text(tree).includes('Summary model'), false)
+  assert.equal(saveButtons(tree).length, 1)
+})
+
+test('a summary save that fails shows the host reason, and a taken one confirms', () => {
+  const failed = view({ summaryState: summaryOff, summaryForm: summaryFormOf(summaryOff), summaryNotice: 'the timeout must be 1000–120000 ms' })
+  assert.match(text(failed), /the timeout must be 1000–120000 ms/)
+  const saved = view({ summaryState: summaryReady, summaryForm: summaryFormOf(summaryReady), summarySaved: true })
+  assert.match(text(saved), /Saved\./)
 })
