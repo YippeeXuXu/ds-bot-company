@@ -554,6 +554,8 @@ test('the preview keeps the two parts apart, writes nothing, and matches the hir
   const { company, department } = await ready(env)
   seedSoul(env, company.id)
   const before = Object.keys(env.store.state.employees).length
+  const statePath = join(env.home, 'company', 'state.json')
+  const bytesBefore = readFileSync(statePath)
   const preview = await env.commands.execute('employee.preview-from-template', {
     operation_key: 'k-preview',
     template_id: 'tpl_frontend',
@@ -568,6 +570,7 @@ test('the preview keeps the two parts apart, writes nothing, and matches the hir
   assert.equal(preview.body.instructions, `${preview.body.soul.instructions}\n\n${env.store.state.templates.tpl_frontend.instructions}`)
   assert.equal(Object.keys(env.store.state.employees).length, before, 'a preview writes no profile')
   assert.equal(Object.keys(env.store.state.projects).length, 0)
+  assert.deepEqual(readFileSync(statePath), bytesBefore, 'a preview leaves the company file byte for byte')
 
   const hired = await hire(env, department, { name: '蓝莓' })
   assert.equal(hired.status, 'committed')
@@ -585,4 +588,36 @@ test('a company without a soul hires from the ability text alone (v1.18)', async
   assert.equal(hired.status, 'committed')
   assert.equal(hired.body.bot.instructions, env.store.state.templates.tpl_frontend.instructions)
   assert.equal(hired.body.soul_template_id, null)
+})
+
+// G1: the default soul has to answer the same row on every call. The order is a total one —
+// builtin first, then the oldest, then the id — so two souls written in the same millisecond
+// cannot trade places between two people opening the hire screen.
+test('the default soul is one fixed order: builtin, then oldest, then id (v1.18)', async (t) => {
+  const env = open()
+  t.after(() => env.dispose())
+  const { company } = await ready(env)
+  const builtin = seedSoul(env, company.id, { id: 'tpl_soul_builtin', source: 'builtin', created_at: 9 })
+  seedSoul(env, company.id, { id: 'tpl_soul_z', created_at: 1 })
+  seedSoul(env, company.id, { id: 'tpl_soul_a', created_at: 1 })
+  let seq = 0
+  const soulId = async () => {
+    seq += 1
+    const preview = await env.commands.execute('employee.preview-from-template', {
+      operation_key: `k-preview-default-${seq}`,
+      template_id: 'tpl_frontend',
+    })
+    assert.notEqual(preview.status, 'failed')
+    return preview.body.soul.id
+  }
+  for (let round = 0; round < 20; round += 1) {
+    assert.equal(await soulId(), builtin.id, 'a builtin soul wins even when a custom soul is older')
+  }
+  env.store.state.templates[builtin.id].status = 'archived'
+  for (let round = 0; round < 20; round += 1) {
+    assert.equal(await soulId(), 'tpl_soul_a', 'without a builtin soul the oldest wins, and the id orders a tie')
+  }
+  env.store.state.templates.tpl_soul_a.created_at = 5
+  assert.equal(await soulId(), 'tpl_soul_z')
+  assert.equal(await soulId(), 'tpl_soul_z')
 })
