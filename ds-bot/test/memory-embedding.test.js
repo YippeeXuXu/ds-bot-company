@@ -153,6 +153,21 @@ test('a failed round keeps the slice queued, says what happened, and waits befor
   }
 })
 
+test('a service that is not listening answers the test with its address and the reason', async () => {
+  // An address that was listening a moment ago, so the port is free and not a blocked one.
+  const probe = createServer(() => {})
+  await new Promise(done => probe.listen(0, '127.0.0.1', done))
+  const port = probe.address().port
+  await new Promise(done => probe.close(done))
+  const { rt } = runtimeFor({ config: { memoryEmbedding: { enabled: true, base_url: `http://127.0.0.1:${port}`, model: 'bge-m3' } } })
+  const answer = await rt.memoryEmbedding.test()
+  assert.equal(answer.ok, false)
+  assert.match(answer.error, new RegExp(`http://127\\.0\\.0\\.1:${port}/api/embeddings could not be reached`))
+  assert.match(answer.error, /ECONNREFUSED/)
+  assert.equal(answer.model, 'bge-m3')
+  assert.ok(Number.isFinite(answer.latency_ms))
+})
+
 test('a service that answers with the wrong number of vectors is a failure, not a silent gap', async () => {
   const service = await mockService(() => ({ data: [{ index: 0, embedding: [0.1] }] }))
   try {

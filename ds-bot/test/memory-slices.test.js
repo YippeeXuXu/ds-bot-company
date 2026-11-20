@@ -221,6 +221,17 @@ test('4.2: clear drops one Bot\'s slices and keeps the others', async () => {
   assert.deepEqual(store.read().map(slice => slice.bot_id), ['bot_2'])
 })
 
+test('clearing with no Bot removes every slice', async () => {
+  const home = openHome()
+  const store = createSliceStore({ dir: join(home, 'memory-slices'), warn: () => {} })
+  await store.append([row(), row({ bot_id: 'bot_2' })])
+  assert.equal(store.countOf('bot_1'), 1)
+  const kept = await store.clear()
+  assert.equal(kept, 0)
+  assert.deepEqual(store.read(), [])
+  assert.equal(await store.clear(), 0, 'clearing an empty store is a no-op')
+})
+
 test('4.3: a vector is patched onto a slice that is already on disk', async () => {
   const home = openHome()
   const store = createSliceStore({ dir: join(home, 'memory-slices'), now: () => 1 })

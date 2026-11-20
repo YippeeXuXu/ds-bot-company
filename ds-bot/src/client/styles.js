@@ -564,6 +564,37 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-set-paste{flex-direction:column;align-items:stretch;gap:8px}
 .bt-chevron{color:var(--bt-ink-3);display:inline-flex;flex:none}
 
+/* Settings → Memory: the local embedding service and its slices (M2 G4 4.6). */
+.bt-mempage .bt-set-row>.bt-set-control{flex:1;min-width:0;max-width:64%}
+.bt-mempage .bt-set-control .bt-input,.bt-mempage .bt-set-control .bt-select{width:100%}
+.bt-mempage-state{display:flex;flex-direction:column;gap:2px;padding:12px}
+.bt-mempage .bt-set-card>.bt-mempage-state:first-child{border-radius:12px 12px 0 0;background:var(--bt-hover)}
+.bt-mempage .bt-set-card>.bt-mempage-state[data-tone=on]:first-child{background:color-mix(in srgb,var(--bt-green) 8%,transparent)}
+.bt-mempage .bt-set-card>.bt-mempage-state[data-tone=warn]:first-child{background:color-mix(in srgb,var(--bt-danger) 7%,transparent)}
+.bt-mempage-state-title{font-size:13px;line-height:18px;font-weight:500}
+.bt-mempage-state-hint{font-size:12px;line-height:16px;color:var(--bt-ink-3);overflow-wrap:anywhere}
+.bt-mempage-state-error{font-size:12px;line-height:16px;color:var(--bt-danger);overflow-wrap:anywhere}
+.bt-mempage-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px}
+.bt-mempage-saved{display:inline-flex;align-items:center;gap:4px;font-size:12px;line-height:16px;color:var(--bt-ink-3);animation:bt-veil-in .2s ease-out}
+.bt-mempage-saved svg{width:13px;height:13px}
+.bt-mempage-notice{font-size:12px;line-height:16px;color:var(--bt-danger);overflow-wrap:anywhere}
+.bt-mempage-test{display:inline-flex;align-items:center;gap:4px;flex:1 1 auto;min-width:0;max-width:100%;font-size:12px;line-height:16px;color:var(--bt-danger);overflow-wrap:anywhere}
+.bt-mempage-test[data-ok]{color:var(--bt-green)}
+.bt-mempage-test svg{width:13px;height:13px;flex:none}
+.bt-mempage-path{padding:2px 12px 10px;font-size:11px;line-height:15px;color:var(--bt-ink-3);overflow-wrap:anywhere}
+.bt-mempage-slice{display:flex;align-items:flex-start;gap:10px;padding:10px 12px}
+.bt-mempage-slice-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.bt-mempage-slice-text{font-size:13px;line-height:19px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.bt-mempage-slice-meta{display:flex;align-items:center;gap:8px;font-size:11px;line-height:15px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums;min-width:0}
+.bt-mempage-slice-meta>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-mempage-slice-meta>.bt-tag{flex:none;overflow:visible}
+.bt-mempage-slice-remove{flex:none;height:26px;min-width:26px;border-radius:999px;border:0;background:none;color:var(--bt-ink-3);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0 8px;font:inherit;font-size:12px;opacity:0;transition:opacity .12s ease,background-color .12s ease,color .12s ease}
+.bt-mempage-slice:hover .bt-mempage-slice-remove,.bt-mempage-slice-remove:focus-visible,.bt-mempage-slice-remove[data-confirm]{opacity:1}
+.bt-mempage-slice-remove:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.bt-mempage-slice-remove[data-confirm]{background:color-mix(in srgb,var(--bt-danger) 10%,transparent);color:var(--bt-danger);padding:0 10px}
+@media (hover:none){.bt-mempage-slice-remove{opacity:1}}
+@media (max-width:700px){.bt-mempage .bt-set-row{flex-wrap:wrap}.bt-mempage .bt-set-row>.bt-set-control{max-width:none;flex:1 1 100%}}
+
 /* Settings → Connectors. */
 .bt-connector{display:flex;flex-direction:column;gap:10px;padding:12px}
 .bt-connector-head{display:flex;align-items:center;gap:12px;min-width:0}
