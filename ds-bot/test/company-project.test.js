@@ -1022,7 +1022,7 @@ test('a membership carries differences that apply only inside one project (v1.18
 
 test('a Bot serves at most three live projects and the fourth door names the limit (v1.18)', async () => {
   const home = tempHome()
-  const { store, commands, rooms } = open(home)
+  const { commands, rooms } = open(home)
   const seed_ = await seed(commands, rooms)
   const names = ['一号项目', '二号项目', '三号项目']
   const projects = []
