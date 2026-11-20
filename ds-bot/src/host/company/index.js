@@ -106,6 +106,9 @@ export function install(rt) {
   const commands = createCommands({
     store,
     now,
+    // Only the refusal is logged, never the payload: an operation_key or a note may name
+    // something the person did not want in the journal.
+    warn,
     // `acceptance.decide` is answered with the revision of the acceptance itself (the to-do
     // row carries it, contract A12), and every task command that writes is answered with the
     // task's own revision, so the envelope leaves those comparisons to their handlers.

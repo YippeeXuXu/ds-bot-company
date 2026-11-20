@@ -443,12 +443,12 @@ test('A10: a v1 company is read as the current version, revision untouched, upgr
   }
   writeFileSync(join(home, 'company', 'state.json'), JSON.stringify(legacy))
   const store = storeOf(home)
-  assert.equal(store.state.version, 5)
+  assert.equal(store.state.version, 6)
   assert.deepEqual(store.state.acceptances, {})
   assert.deepEqual(store.state.todo_log, {})
   assert.deepEqual(store.state.templates, {})
   assert.equal(store.state.revision, 7)
-  assert.deepEqual(store.migration(), { from: 1, to: 5 })
+  assert.deepEqual(store.migration(), { from: 1, to: 6 })
 
   const api = apiOf(home, {})
   const result = await api.todos({})
@@ -459,7 +459,7 @@ test('A10: a v1 company is read as the current version, revision untouched, upgr
   store.clearMigration()
   assert.equal(store.migration(), undefined)
   const saved = JSON.parse(readFileSync(join(home, 'company', 'state.json'), 'utf8'))
-  assert.equal(saved.version, 5)
+  assert.equal(saved.version, 6)
   assert.equal(saved.revision, 7)
   assert.deepEqual(saved.acceptances, {})
   assert.deepEqual(saved.templates, {})
@@ -507,11 +507,11 @@ test('A10: a writable install saves a v1 file back once, with one migration even
   // 3.6b appends a second event to the same upgrade (the builtin templates it tops up), so
   // the wait is for both: one event would still let the read in before the seed is written.
   const deadline = Date.now() + 2000
-  while (Date.now() < deadline && !(JSON.parse(readFileSync(stateFile, 'utf8')).version === 5 && eventCount() === 2)) {
+  while (Date.now() < deadline && !(JSON.parse(readFileSync(stateFile, 'utf8')).version === 6 && eventCount() === 2)) {
     await new Promise(resolve => setTimeout(resolve, 10))
   }
   const saved = JSON.parse(readFileSync(stateFile, 'utf8'))
-  assert.equal(saved.version, 5)
+  assert.equal(saved.version, 6)
   assert.equal(saved.revision, 7)
   assert.deepEqual(saved.acceptances, {})
   // The same one save tops up the builtin templates a v1 file cannot have (3.6b), which since
@@ -519,7 +519,7 @@ test('A10: a writable install saves a v1 file back once, with one migration even
   assert.equal(Object.keys(saved.templates).length, 10)
   const events = readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
   assert.deepEqual(events.map(event => event.type), ['company/migrated', 'company/builtin-templates-seeded'])
-  assert.deepEqual(events[0].data, { from: 1, to: 5 })
+  assert.deepEqual(events[0].data, { from: 1, to: 6 })
   assert.deepEqual(events[1].data, { count: 10 })
   rt.company.close()
 

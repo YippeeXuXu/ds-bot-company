@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { createCommands } from '../src/host/company/commands.js'
 import { orgHandlers } from '../src/host/company/org.js'
-import { createCompanyStore } from '../src/host/company/store.js'
+import { COMPANY_VERSION, createCompanyStore } from '../src/host/company/store.js'
 
 const bots = { bot_a: { id: 'bot_a', name: 'Alpha' }, bot_b: { id: 'bot_b', name: 'Beta' } }
 const botOf = id => bots[id]
@@ -201,7 +201,7 @@ test('a file from a newer plugin version counts as corrupt', async () => {
   mkdirSync(companyDir(home), { recursive: true })
   writeFileSync(statePath(home), JSON.stringify({ version: 99, revision: 4 }))
   const { store } = open(home)
-  assert.match(store.readOnly(), /version 99 is not 5/)
+  assert.match(store.readOnly(), /version 99 is not 6/)
   rmSync(home, { recursive: true, force: true })
 })
 
@@ -244,5 +244,92 @@ test('an unknown command and a missing operation_key are refused', async () => {
   const { commands } = open(home)
   await assert.rejects(run(commands, 'company.explode', { operation_key: 'k' }), error => error.code === 'company/unknown-command')
   await assert.rejects(run(commands, 'company.init', { name: 'No Key' }), error => error.code === 'company/invalid')
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('a new company carries the owner actor and no grants (v6)', async () => {
+  const home = tempHome()
+  const { store } = open(home)
+  const owner = store.state.actors.user
+  assert.equal(owner.id, 'user')
+  assert.equal(owner.kind, 'owner')
+  assert.equal(owner.name, '老板')
+  assert.equal(owner.status, 'active')
+  assert.equal(typeof owner.created_at, 'number')
+  assert.deepEqual(store.state.grants, {})
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('a v5 file upgrades to v6 and the owner keeps the id the old fields used (v6)', async () => {
+  const home = tempHome()
+  const legacy = {
+    version: 5,
+    revision: 2,
+    companies: { cmp_1: { id: 'cmp_1', name: 'Acme', status: 'active', company_id: 'cmp_1', created_at: 1 } },
+    departments: {},
+    employees: {},
+    projects: {},
+    members: {},
+    operation_log: {},
+    acceptances: {},
+    todo_log: {},
+    templates: {},
+    tasks: {},
+    runs: {},
+  }
+  mkdirSync(companyDir(home), { recursive: true })
+  writeFileSync(statePath(home), JSON.stringify(legacy))
+  const first = open(home)
+  assert.equal(first.store.state.version, COMPANY_VERSION)
+  assert.deepEqual(first.store.migration(), { from: 5, to: COMPANY_VERSION })
+  assert.equal(first.store.state.actors.user.kind, 'owner')
+  // Reading never rewrites the file; the upgrade lands with the next commit.
+  assert.equal(JSON.parse(readFileSync(statePath(home), 'utf8')).version, 5)
+  const department = await run(first.commands, 'department.create', { operation_key: 'dep', expected_revision: 2, name: '产品' })
+  assert.equal(department.status, 'committed')
+  const saved = JSON.parse(readFileSync(statePath(home), 'utf8'))
+  assert.equal(saved.version, COMPANY_VERSION)
+  assert.equal(saved.actors.user.kind, 'owner')
+  assert.deepEqual(saved.grants, {})
+  first.store.clearMigration()
+  const second = open(home)
+  assert.equal(second.store.migration(), undefined)
+  assert.equal(second.store.state.actors.user.id, 'user')
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('a stored owner row is kept as it is, including a changed name or status (v6)', async () => {
+  const home = tempHome()
+  mkdirSync(companyDir(home), { recursive: true })
+  writeFileSync(statePath(home), JSON.stringify({
+    version: 6,
+    revision: 1,
+    companies: {},
+    departments: {},
+    employees: {},
+    projects: {},
+    members: {},
+    operation_log: {},
+    acceptances: {},
+    todo_log: {},
+    templates: {},
+    tasks: {},
+    runs: {},
+    actors: { user: { id: 'user', kind: 'owner', name: '本人', status: 'disabled', created_at: 3, updated_at: 4 } },
+    grants: {},
+  }))
+  const { store } = open(home)
+  assert.equal(store.state.actors.user.name, '本人')
+  assert.equal(store.state.actors.user.status, 'disabled')
+  assert.equal(store.state.actors.user.created_at, 3)
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('an actors table of the wrong shape counts as corrupt (v6)', async () => {
+  const home = tempHome()
+  mkdirSync(companyDir(home), { recursive: true })
+  writeFileSync(statePath(home), JSON.stringify({ version: 6, revision: 1, actors: [] }))
+  const { store } = open(home)
+  assert.match(store.readOnly(), /actors is not a table/)
   rmSync(home, { recursive: true, force: true })
 })

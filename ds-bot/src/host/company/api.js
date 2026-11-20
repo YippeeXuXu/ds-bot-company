@@ -15,6 +15,7 @@ import { dirname } from 'node:path'
 import { departmentView } from './org.js'
 import { templateView } from './templates.js'
 import { projectDetailOf } from './projects.js'
+import { OWNER_ACTOR_ID } from './store.js'
 import { createTodos, TODOS_ANSWER_PATH, TODOS_PATH } from './todos.js'
 
 export const COMMAND_PATH = '/api/company/command'
@@ -78,6 +79,8 @@ const STATUS = new Map([
   ['project/group-failed', 409],
   ['company/invalid', 422],
   ['company/unknown-command', 422],
+  // A person who is signed in but was not granted this command: understood, refused.
+  ['company/forbidden', 403],
   // A host that cannot do what the command needs (a Bot that cannot be delivered to).
   ['company/unsupported', 422],
   ['employee/unknown-bot', 422],
@@ -143,7 +146,10 @@ export const queryOf = url => {
   return query
 }
 
-export function createCompanyApi({ store, execute, groups = {}, now = Date.now, approvals = () => [], sessionBot, home, redact = value => value, answerApproval, runExclusive, warn = () => {} }) {
+// `actorOf(body)` answers who is asking; the local owner until a second person can sign in,
+// so every existing route keeps its meaning. A caller that reads a session identity passes
+// its own lookup and the same commands answer to that person's grants.
+export function createCompanyApi({ store, execute, groups = {}, now = Date.now, approvals = () => [], sessionBot, home, redact = value => value, answerApproval, runExclusive, warn = () => {}, actorOf = () => store.state.actors?.[OWNER_ACTOR_ID] ?? { id: OWNER_ACTOR_ID, kind: 'owner', status: 'active' } }) {
   const roomMembers = project => {
     if (typeof groups.members !== 'function' || project.group_chat_ref == null) return undefined
     return groups.members(project.group_chat_ref)
@@ -300,7 +306,7 @@ export function createCompanyApi({ store, execute, groups = {}, now = Date.now, 
       return { status: 422, body: { code: 'company/invalid', message: 'A company command needs `operation_key`.', details: { field: 'operation_key' } } }
     }
     try {
-      return { status: 200, body: await execute(name, payload) }
+      return { status: 200, body: await execute(name, payload, { actor: actorOf(body) }) }
     } catch (error) {
       return { status: statusOf(error?.code), body: failureBody(error) }
     }
