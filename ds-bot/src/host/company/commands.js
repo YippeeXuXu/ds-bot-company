@@ -7,7 +7,8 @@
 // first result, the same key with other content is a conflict. `expected_revision`
 // makes a stale screen safe: a rename decided on revision 7 cannot land on revision 9.
 import { createHash } from 'node:crypto'
-import { companyFail } from './store.js'
+import { assertAccess } from './access.js'
+import { companyFail, OWNER_ACTOR_ID } from './store.js'
 
 const KEY_MAX = 200
 const LOG_KEPT = 500
@@ -28,7 +29,7 @@ const text = (value, field, max = KEY_MAX) => {
   return value
 }
 
-export function createCommands({ store, handlers = {}, now = Date.now, logKept = LOG_KEPT, rowRevisionCommands = new Set() }) {
+export function createCommands({ store, handlers = {}, now = Date.now, logKept = LOG_KEPT, rowRevisionCommands = new Set(), warn = () => {} }) {
   // Commands run one at a time: the state is read, changed and saved as a whole, so a
   // second command that started during the first would save over its result.
   let queue = Promise.resolve()
@@ -48,7 +49,11 @@ export function createCommands({ store, handlers = {}, now = Date.now, logKept =
     for (const key of byAge.slice(0, keys.length - logKept)) delete log[key]
   }
 
-  const execute = async (command, payload = {}) => {
+  // The owner row every local call answers as; a caller that knows who is asking passes
+  // that actor in, and the settings screen will do so once a second person can sign in.
+  const actorOfState = () => store.state.actors?.[OWNER_ACTOR_ID] ?? { id: OWNER_ACTOR_ID, kind: 'owner', status: 'active' }
+
+  const execute = async (command, payload = {}, context = {}) => {
     const handler = handlers[command]
     if (typeof handler !== 'function') throw companyFail('company/unknown-command', `No company command named ${command}.`, { command })
     if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
@@ -57,6 +62,17 @@ export function createCommands({ store, handlers = {}, now = Date.now, logKept =
     const body = payload
     const key = text(body.operation_key, 'operation_key')
     store.assertWritable()
+    // The permission fence sits with the write fence, before the queue: a caller who may
+    // not run this command never takes its turn, so a long-running write cannot delay the
+    // refusal and a refusal can never be replayed as somebody else's result. Only the
+    // decision is logged, never the payload.
+    const actor = context.actor ?? actorOfState()
+    try {
+      assertAccess(command, { actor, grants: store.state.grants ?? {}, payload: body })
+    } catch (error) {
+      warn('ds-bot: company command %s was refused for %s', command, actor?.id ?? 'someone')
+      throw error
+    }
     const digest = digestOf({ command, payload: Object.fromEntries(Object.entries(body).filter(([name]) => name !== 'operation_key')) })
 
     // The replay and revision checks run inside the queue, not before it: two callers
