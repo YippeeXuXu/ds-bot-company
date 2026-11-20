@@ -20,6 +20,7 @@
 // Keeping the seam explicit is why this module never touches `acceptances.js`.
 import { newId } from './projects.js'
 import { companyFail } from './store.js'
+import { actorKindOf, isOwnerActor } from './access.js'
 
 // `task.update`, `task.move`, `task.submit` and `task.reopen` are answered with the
 // revision of the task itself, not the company's; commands.js must leave that comparison to
@@ -119,7 +120,14 @@ const requirementOf = (project, deliverableClass) => (
 // daily requirement because D7 wants an independent Bot there.
 const actorOf = (state, project, value, requirement, field) => {
   if (value === undefined || value === null || value === '') return null
-  if (value === 'user') return 'user'
+  const kind = actorKindOf(state, value)
+  if (kind === 'owner') return 'user'
+  if (kind === 'human') {
+    const human = state.actors[value]
+    if (human.status !== 'active') throw companyFail('actor/inactive', `Person ${human.name ?? value} is disabled; restore them before naming them as the acceptor.`, { field, actor_id: value })
+    if (requirement === 'owner_only') throw companyFail('project/owner-required', 'owner_only acceptance belongs to the owner.', { field })
+    return value
+  }
   const employee = employeeOf(state, value, field)
   if (requirement === 'owner_only') throw companyFail('project/owner-required', 'owner_only acceptance belongs to the owner.', { field })
   return employee.id
@@ -189,8 +197,12 @@ const readyProblems = (state, task) => {
   if (!Array.isArray(task.input_refs)) problems.push({ field: 'input_refs', message: 'List the inputs, even as an empty list.' })
   if (!Array.isArray(task.acceptance_checks) || task.acceptance_checks.length === 0) problems.push({ field: 'acceptance_checks', message: 'Name at least one acceptance check.' })
   if (task.acceptance_actor === null) problems.push({ field: 'acceptance_actor', message: 'Name the acceptor.' })
-  else if (task.acceptance_actor === 'user') {
+  else if (isOwnerActor(state, task.acceptance_actor)) {
     if (task.acceptance_requirement === 'daily_independent_bot') problems.push({ field: 'acceptance_actor', message: 'Daily work is accepted by an independent Bot, not the owner.' })
+  } else if (actorKindOf(state, task.acceptance_actor) === 'human') {
+    const person = state.actors[task.acceptance_actor]
+    if (person?.status !== 'active') problems.push({ field: 'acceptance_actor', message: 'The acceptor is not an active person.' })
+    else if (task.acceptance_requirement === 'owner_only') problems.push({ field: 'acceptance_actor', message: 'This delivery is accepted by the owner only.' })
   } else {
     const acceptor = state.employees[task.acceptance_actor]
     if (acceptor === undefined || acceptor.status !== 'active') problems.push({ field: 'acceptance_actor', message: 'The acceptor is not an active employee.' })

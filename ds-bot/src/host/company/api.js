@@ -91,6 +91,10 @@ const STATUS = new Map([
   // dismissed employee anywhere else is a request that is understood and refused.
   ['employee/still-referenced', 409],
   ['employee/inactive', 422],
+  // People (v6): a named person who is not there, or who was disabled after being named.
+  ['actor/not-found', 404],
+  ['actor/inactive', 422],
+  ['actor/immutable-field', 422],
   ['project/invalid', 422],
   // A coordinator whose profile has no Bot yet: understood, refused before any room is made.
   ['project/coordinator-without-bot', 422],

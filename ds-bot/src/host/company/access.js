@@ -79,6 +79,15 @@ const ACCESS = {
 // The owner is the local user; the grants table never carries a row for them.
 const owner = actor => actor?.kind === 'owner'
 
+// The owner row, read from the file rather than compared as a string: `'user'` is the id the
+// company has carried since v1 and stays, but a check that reads the row keeps working when
+// the row is named differently in a later version.
+export const actorKindOf = (state, id) => {
+  if (typeof id !== 'string' || id === '') return undefined
+  return state?.actors?.[id]?.kind
+}
+export const isOwnerActor = (state, id) => actorKindOf(state, id) === 'owner'
+
 // The permissions an actor holds for one project: the company-wide read surface, plus every
 // grant that either covers the whole company or this exact project. A grant for another
 // project stays out, so moving to another project asks again (PRD: ②③ 换项目不继承).
