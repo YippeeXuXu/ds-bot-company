@@ -685,34 +685,29 @@ var ZH = {
   "This group has no admin": "这个群没有管理员",
   "What should this group achieve?": "这个群要达成什么？",
   Start: "开始",
-  Drafting: "对齐中",
-  Active: "进行中",
-  Collapse: "收起",
   Resume: "继续",
   "Stop the goal?": "确认终止？",
   "Aligning the goal with you": "正在和你对齐目标",
-  "{admin} is aligning the goal with you in the chat.": "{admin} 正在聊天里和你对齐目标。",
   "{admin} asks what is still open, then writes the goal with its checks and stages.": "{admin} 会先问清还没定的地方，再写出带验收方法和阶段的目标。",
   Objective: "目标",
   "Done when": "验收方法",
   Rules: "约束",
-  "Stage {n}/{count}": "阶段 {n}/{count}",
-  "Stage {n}/{count} · {title}": "阶段 {n}/{count} · {title}",
-  "Stage {n} · {title}": "阶段 {n} · {title}",
   "Final check": "总验收",
   "Goal reached": "已达成",
-  Passed: "已通过",
-  Current: "当前",
-  Checking: "验收中",
-  Upcoming: "未开始",
-  "Sent back ×{n}": "返工 ×{n}",
-  "Not started": "未开始",
-  Reported: "已交回",
+  "Stages": "阶段",
+  "Stage {n}: {title}": "第 {n} 阶段：{title}",
+  "Paused · {title}": "已暂停 · {title}",
+  "Waiting for you · {title}": "等你 · {title}",
+  "Checking · {title}": "验收中 · {title}",
+  "Sent back by {admin}: {feedback}": "{admin} 打回重做：{feedback}",
+  "Sent back {n} times by {admin}. Last time: {feedback}": "{admin} 已打回 {n} 次，最近一次：{feedback}",
+  "Done when: {text}": "完成标准：{text}",
+  "Evidence: {text}": "通过的依据：{text}",
+  "Back to current stage": "回到当前阶段",
+  "Goal and checks": "目标与验收",
   Summary: "总结",
   Evidence: "证据",
-  "Paused. Write in the group to correct the direction; the admin updates the goal.": "已暂停。在群里说出要调整的地方，管理员会更新目标。",
   "Stop current work too": "同时停止当前工作",
-  "{admin} is waiting for you.": "{admin} 在等你回复。",
   "Setting a goal": "正在设定目标",
   "Goal set: {title} · {count} stages": "已设定目标：{title} · {count} 个阶段",
   "Stage {n} passed · now stage {m}: {next}": "阶段 {n} 已通过 · 进入阶段 {m}：{next}",
@@ -1649,6 +1644,13 @@ Object.assign(ZH, HOST_ZH, {
   "Version": "版本",
   "No instructions written yet.": "还没写职责指令。",
   "Optional, shown on the team list": "可选，显示在团队列表里",
+  "Shown on the team list": "会显示在成员列表里",
+  "How this company talks and behaves": "这家公司怎么说话、怎么做事",
+  "A soul template carries the voice only: no job title, no model, no skills.": "灵魂模板只管语气：没有岗位、模型和技能。",
+  "An agent template needs a job title, so this cannot stay empty.": "能力模板要填岗位，这一栏不能空。",
+  "A template needs a name, up to 40 characters.": "模板名称不能空，最多 40 个字。",
+  "A soul template carries instructions only, so it takes no skills.": "灵魂模板只带指令，不带技能。",
+  "A soul template carries instructions only, so model and thinking level stay empty.": "灵魂模板只带指令，模型和思考强度要留空。",
   "What this job is responsible for, and how it works": "这个岗位负责什么、怎么工作",
   "{ref} (not served now)": "{ref}（当前未提供）",
   "{id} (not in this model)": "{id}（该模型没有这一档）",
@@ -4584,7 +4586,7 @@ var MemoryIcon = lineIcon(["M5.5 3.5h8A1.5 1.5 0 0 1 15 5v10a1.5 1.5 0 0 1-1.5 1
 var TerminalIcon = lineIcon(["M4.5 4h11A1.5 1.5 0 0 1 17 5.5v9a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5v-9A1.5 1.5 0 0 1 4.5 4z", "M6.5 8l2.5 2.5L6.5 13", "M11 13h3.5"]);
 var FolderIcon = lineIcon(["M3 6A1.5 1.5 0 0 1 4.5 4.5h3.2l1.8 2h6A1.5 1.5 0 0 1 17 8v6.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5z"]);
 var SideIcon = lineIcon(["M4.5 4h11A1.5 1.5 0 0 1 17 5.5v6a1.5 1.5 0 0 1-1.5 1.5H9L5.5 16v-3h-1A1.5 1.5 0 0 1 3 11.5v-6A1.5 1.5 0 0 1 4.5 4z", "M6.5 7h7", "M6.5 10h4.5"]);
-var GoalIcon = lineIcon(["M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14z", "M10 6.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z", "M10 10h.01"]);
+var GoalIcon = lineIcon(["M15.1 8.8A6.5 6.5 0 1 1 11.2 4.9", "M9 8a3 3 0 1 0 0 6 3 3 0 1 0 0-6", "M9 11l7.5-7.5", "M14.6 2.8v2.6h2.6"]);
 var ChatsIcon = lineIcon(["M3.5 5.5A1.5 1.5 0 0 1 5 4h7a1.5 1.5 0 0 1 1.5 1.5V10A1.5 1.5 0 0 1 12 11.5H8L5 14v-2.5A1.5 1.5 0 0 1 3.5 10z", "M13.5 7.5H15A1.5 1.5 0 0 1 16.5 9v4.5A1.5 1.5 0 0 1 15 15v2l-2.5-2h-3A1.5 1.5 0 0 1 8 13.5V13"]);
 var SETTINGS_ICONS = { general: GearIcon, bots: PeopleIcon, groups: ChatsIcon, usage: GaugeIcon };
 
@@ -4622,7 +4624,6 @@ var RUNNING = /* @__PURE__ */ new Set(["active", "paused"]);
 var FACES_MAX = 4;
 var hasGoalAdmin = (room2, roster) => room2 !== void 0 && room2.members?.includes(room2.admin) === true && roster.byId?.[room2.admin] !== void 0;
 var canSetGoal = (room2, roster) => hasGoalAdmin(room2, roster) && room2.goal?.status !== "active" && room2.goal?.status !== "paused";
-var stageRef = (n, count) => t("Stage {n}/{count}", { n, count });
 function goalView(goal, { roster = {}, roomWork = [] } = {}) {
   if (goal === null || goal === void 0) return null;
   const stages2 = goal.stages ?? [];
@@ -4630,7 +4631,8 @@ function goalView(goal, { roster = {}, roomWork = [] } = {}) {
   const at = goal.current;
   const current = RUNNING.has(goal.status) ? stages2[at] : void 0;
   const checking = current !== void 0 && (current.tasks ?? []).every((task) => REPORTED.has(task.status));
-  const barLabel = goal.status === "drafting" ? t("Aligning the goal with you") : goal.status === "stopped" ? t("Stopped") : goal.status === "complete" ? `${t("Goal reached")} · ${count}/${count}` : goal.status === "paused" ? current ? `${t("Paused")} · ${stageRef(at + 1, count)}` : t("Paused") : goal.idle === true ? current ? `${t("Waiting for you")} · ${stageRef(at + 1, count)}` : t("Waiting for you") : current ? t("Stage {n}/{count} · {title}", { n: at + 1, count, title: current.title }) : t("Final check");
+  const number = goal.status === "drafting" ? void 0 : goal.status === "stopped" ? stages2.filter((stage) => stage.status === "passed").length : current !== void 0 ? at + 1 : count;
+  const barLabel = goal.status === "drafting" ? t("Aligning the goal with you") : goal.status === "stopped" ? t("Stopped") : goal.status === "complete" ? t("Goal reached") : goal.status === "paused" ? current ? t("Paused · {title}", { title: current.title }) : t("Paused") : goal.idle === true ? current ? t("Waiting for you · {title}", { title: current.title }) : t("Waiting for you") : current === void 0 ? t("Final check") : checking ? t("Checking · {title}", { title: current.title }) : current.title;
   const segments = stages2.map((stage, i) => stage.status === "passed" ? "done" : i === at && goal.status === "paused" ? "paused" : i === at && goal.status === "active" ? checking ? "checking" : "current" : "todo");
   const working = new Set((roomWork ?? []).map((entry) => entry.botId));
   const seen = /* @__PURE__ */ new Set();
@@ -4644,8 +4646,8 @@ function goalView(goal, { roster = {}, roomWork = [] } = {}) {
     title: stage.title,
     acceptance: stage.acceptance,
     status: stage.status,
-    chip: stage.status === "passed" ? "passed" : i === at && RUNNING.has(goal.status) ? checking && goal.status === "active" ? "checking" : "current" : "upcoming",
-    tasks: (stage.tasks ?? []).map((task) => ({ bot: roster.byId?.[task.botId], task: task.task, status: task.status, note: task.note })),
+    kind: stage.status === "passed" ? "passed" : i === at && RUNNING.has(goal.status) ? "current" : "upcoming",
+    tasks: (stage.tasks ?? []).map((task) => ({ bot: roster.byId?.[task.botId], task: task.task, status: task.status })),
     evidence: stage.evidence,
     reworks: stage.reworks ?? 0,
     feedback: stage.feedback
@@ -4654,7 +4656,7 @@ function goalView(goal, { roster = {}, roomWork = [] } = {}) {
     status: goal.status,
     idle: goal.idle === true,
     title: goal.title ?? "",
-    done: stages2.filter((stage) => stage.status === "passed").length,
+    number,
     count,
     segments,
     barLabel,
@@ -4721,84 +4723,133 @@ function GoalBar({ view, open, room: room2, actions }) {
     (0, import_react5.createElement)("span", { className: "bt-goal-chev", "aria-hidden": true }, (0, import_react5.createElement)(ChevronDownIcon))
   );
 }
-var STAGE_CHIP = { passed: "Passed", current: "Current", checking: "Checking", upcoming: "Upcoming" };
-var TASK_CHIP = { pending: "Not started", working: "Working", reported: "Reported", done: "Done" };
 function TaskRow({ task, working }) {
   const live = working.has(task.bot?.id) || task.status === "working";
+  const returned = REPORTED.has(task.status);
   return (0, import_react5.createElement)(
     "div",
-    { className: "bt-goal-task" },
-    task.bot ? (0, import_react5.createElement)(BotAvatar, { bot: task.bot, size: 20, state: live ? "working" : "idle" }) : null,
+    { className: "bt-goal-task", "data-task": task.status === "pending" ? "pending" : void 0 },
     (0, import_react5.createElement)(
       "span",
-      { className: "bt-goal-task-body" },
-      (0, import_react5.createElement)(
-        "span",
-        { className: "bt-goal-task-line" },
-        (0, import_react5.createElement)("span", { className: "bt-goal-task-name", style: task.bot ? { color: inkText(colorOf(task.bot)) } : void 0 }, task.bot?.name ?? t("a Bot"))
-      ),
-      (0, import_react5.createElement)("span", { className: "bt-goal-task-text" }, task.task),
-      task.note ? (0, import_react5.createElement)("span", { className: "bt-goal-task-note" }, task.note) : null
+      { className: "bt-goal-tav" },
+      task.bot ? (0, import_react5.createElement)(BotAvatar, { bot: task.bot, size: 20, state: live ? "working" : "idle" }) : null,
+      returned ? (0, import_react5.createElement)("span", { className: "bt-goal-tdone", "aria-hidden": true }, (0, import_react5.createElement)(CheckIcon)) : null
     ),
-    (0, import_react5.createElement)("span", { className: "bt-goal-chip", "data-chip": task.status }, t(TASK_CHIP[task.status] ?? "Not started"))
-  );
-}
-function GoalStage({ stage, open, working, onToggle }) {
-  return (0, import_react5.createElement)(
-    "div",
-    { className: "bt-goal-stage" },
     (0, import_react5.createElement)(
-      "button",
-      { type: "button", className: "bt-goal-sh", "aria-expanded": open, onClick: onToggle },
-      (0, import_react5.createElement)("span", { className: "bt-goal-sg", "data-sg": stage.chip === "checking" ? "current" : stage.chip, "aria-hidden": true }),
-      (0, import_react5.createElement)("span", { className: "bt-goal-st" }, t("Stage {n} · {title}", { n: stage.n, title: stage.title })),
-      (0, import_react5.createElement)("span", { className: "bt-goal-chip", "data-chip": stage.chip }, t(STAGE_CHIP[stage.chip])),
-      stage.reworks > 0 ? (0, import_react5.createElement)("span", { className: "bt-goal-chip", "data-chip": "rework" }, t("Sent back ×{n}", { n: stage.reworks })) : null
-    ),
-    open ? (0, import_react5.createElement)(
-      "div",
-      { className: "bt-goal-sbody" },
-      stage.acceptance ? (0, import_react5.createElement)("div", { className: "bt-goal-line" }, (0, import_react5.createElement)("span", { className: "bt-goal-sub" }, t("Done when")), stage.acceptance) : null,
-      stage.evidence !== void 0 && stage.status === "passed" ? (0, import_react5.createElement)("div", { className: "bt-goal-evi" }, stage.evidence) : null,
-      stage.feedback ? (0, import_react5.createElement)("div", { className: "bt-goal-line" }, (0, import_react5.createElement)("span", { className: "bt-goal-sub" }, t("Sent back ×{n}", { n: stage.reworks })), stage.feedback) : null,
-      stage.tasks.map((task, i) => (0, import_react5.createElement)(TaskRow, { key: i, task, working }))
-    ) : null
+      "span",
+      { className: "bt-goal-ttext" },
+      (0, import_react5.createElement)("span", { className: "bt-goal-tname", style: task.bot ? { color: inkText(colorOf(task.bot)) } : void 0 }, task.bot?.name ?? t("a Bot")),
+      " ",
+      task.task
+    )
   );
 }
 var STOP_ARM_MS = 3e3;
 function GoalPanel({ goal, view, room: room2, roster, actions, working }) {
-  const [expanded, setExpanded] = (0, import_react5.useState)(goal.current);
+  const at = RUNNING.has(view.status) && goal.current < view.stages.length ? goal.current : -1;
+  const [selected, setSelected] = (0, import_react5.useState)(at);
+  const [checks, setChecks] = (0, import_react5.useState)(false);
   const [armed, setArmed] = (0, import_react5.useState)(false);
-  (0, import_react5.useEffect)(() => setExpanded(goal.current), [goal.current]);
+  (0, import_react5.useEffect)(() => setSelected(RUNNING.has(view.status) && goal.current < view.stages.length ? goal.current : -1), [view.status, goal.current]);
   (0, import_react5.useEffect)(() => {
     if (!armed) return void 0;
     const timer = setTimeout(() => setArmed(false), STOP_ARM_MS);
     return () => clearTimeout(timer);
   }, [armed]);
+  const stepper = (0, import_react5.useRef)(null);
+  (0, import_react5.useEffect)(() => {
+    const box = stepper.current;
+    if (box === null || typeof ResizeObserver !== "function") return void 0;
+    const measure = () => box.querySelectorAll(".bt-goal-step").forEach((node) => node.classList.toggle("bt-goal-mini", node.clientWidth < 14));
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    measure();
+    return () => observer.disconnect();
+  }, [view.stages.length]);
   const control = (action) => void Promise.resolve(actions.goalControl(room2.id, goal.id, action)).catch((error) => actions.reportError(error, "goal"));
-  const admin = roster.byId?.[room2.admin]?.name ?? t("a Bot");
-  const live = view.status === "active" || view.status === "paused";
-  const statusChip = view.status === "drafting" ? t("Drafting") : view.status === "paused" ? t("Paused") : view.status === "complete" ? t("Goal reached") : view.status === "stopped" ? t("Stopped") : view.idle ? t("Waiting for you") : t("Active");
+  const stage = selected >= 0 ? view.stages[selected] : void 0;
   const sec = (key, label2, ...body) => (0, import_react5.createElement)(
     "div",
     { key, className: "bt-goal-sec" },
     (0, import_react5.createElement)("div", { className: "bt-goal-sub" }, label2),
     ...body.map((line, i) => (0, import_react5.createElement)("div", { key: i, className: "bt-goal-text" }, line))
   );
+  const hasChecks = goal.objective !== void 0 || goal.acceptance !== void 0 || goal.constraints?.length > 0;
+  const admin = roster.byId?.[room2.admin]?.name ?? t("a Bot");
+  const stopWork = () => void Promise.resolve(actions.stopRoomWork(room2.id)).catch((error) => actions.reportError(error, "stop"));
   return (0, import_react5.createElement)(
     "div",
     { className: "bt-goal-panel", role: "region", "aria-label": view.title },
     (0, import_react5.createElement)(
       "div",
-      { className: "bt-goal-head" },
-      (0, import_react5.createElement)("div", { className: "bt-goal-title" }, view.title),
-      (0, import_react5.createElement)("span", { className: "bt-goal-chip", "data-chip": view.status }, statusChip),
+      { className: "bt-goal-body" },
+      view.status === "drafting" ? null : (0, import_react5.createElement)(
+        "div",
+        { ref: stepper, className: "bt-goal-steps", role: "group", "aria-label": t("Stages") },
+        view.stages.map((stageView, i) => (0, import_react5.createElement)("button", {
+          key: stageView.n,
+          type: "button",
+          className: "bt-goal-step",
+          "data-step": stageView.kind === "current" && (view.status === "paused" || view.idle === true) ? "waiting" : stageView.kind,
+          "data-sel": i === selected || void 0,
+          title: t("Stage {n}: {title}", { n: stageView.n, title: stageView.title }),
+          "aria-label": t("Stage {n}: {title}", { n: stageView.n, title: stageView.title }),
+          "aria-current": i === at ? "step" : void 0,
+          onClick: () => setSelected(i)
+        }, (0, import_react5.createElement)("span", { className: "bt-goal-node" }, stageView.status === "passed" ? (0, import_react5.createElement)(CheckIcon) : stageView.n)))
+      ),
       (0, import_react5.createElement)(
         "div",
-        { className: "bt-goal-acts" },
+        { key: `s${selected}`, className: "bt-goal-bstage" },
+        view.status === "drafting" ? goal.brief ? (0, import_react5.createElement)("div", { className: "bt-goal-btext" }, goal.brief) : null : stage === void 0 ? (0, import_react5.createElement)(
+          import_react5.Fragment,
+          null,
+          goal.summary ? (0, import_react5.createElement)("div", { className: "bt-goal-btext" }, goal.summary) : null,
+          goal.evidence ? (0, import_react5.createElement)("div", { className: "bt-goal-evi" }, goal.evidence) : null,
+          view.status === "stopped" && goal.reason ? (0, import_react5.createElement)("div", { className: "bt-goal-evi" }, goal.reason) : null
+        ) : (0, import_react5.createElement)(
+          import_react5.Fragment,
+          null,
+          (0, import_react5.createElement)(
+            "div",
+            { className: "bt-goal-bline" },
+            (0, import_react5.createElement)("span", { className: "bt-goal-btitle" }, stage.title),
+            selected !== at && at >= 0 ? (0, import_react5.createElement)("button", { type: "button", className: "bt-goal-back", onClick: () => setSelected(at) }, t("Back to current stage")) : null
+          ),
+          stage.acceptance ? (0, import_react5.createElement)("div", { className: "bt-goal-line" }, t("Done when: {text}", { text: stage.acceptance })) : null,
+          selected === at && stage.reworks > 0 && stage.feedback ? (0, import_react5.createElement)("div", { className: "bt-goal-rw" }, stage.reworks > 1 ? t("Sent back {n} times by {admin}. Last time: {feedback}", { n: stage.reworks, admin, feedback: stage.feedback }) : t("Sent back by {admin}: {feedback}", { admin, feedback: stage.feedback })) : null,
+          stage.evidence !== void 0 && stage.status === "passed" ? (0, import_react5.createElement)("div", { className: "bt-goal-evi" }, t("Evidence: {text}", { text: stage.evidence })) : null,
+          stage.tasks.length > 0 ? (0, import_react5.createElement)("div", { className: "bt-goal-tasks" }, stage.tasks.map((task, i) => (0, import_react5.createElement)(TaskRow, { key: i, task, working }))) : null
+        )
+      ),
+      checks && hasChecks ? (0, import_react5.createElement)(
+        "div",
+        { className: "bt-goal-ckbody" },
+        goal.objective ? sec("objective", t("Objective"), goal.objective) : null,
+        goal.acceptance ? sec("acceptance", t("Done when"), goal.acceptance) : null,
+        goal.constraints?.length > 0 ? sec("rules", t("Rules"), (0, import_react5.createElement)(
+          "ul",
+          { className: "bt-goal-rules" },
+          goal.constraints.map((rule, i) => (0, import_react5.createElement)("li", { key: i }, rule))
+        )) : null
+      ) : null
+    ),
+    (0, import_react5.createElement)(
+      "div",
+      { className: "bt-goal-foot" },
+      hasChecks ? (0, import_react5.createElement)("button", {
+        type: "button",
+        className: "bt-goal-checks",
+        "aria-expanded": checks,
+        onClick: () => setChecks(!checks)
+      }, (0, import_react5.createElement)("span", { className: "bt-goal-mchev", "aria-hidden": true }, (0, import_react5.createElement)(ChevronDownIcon)), t("Goal and checks")) : (0, import_react5.createElement)("span"),
+      (0, import_react5.createElement)(
+        "span",
+        { className: "bt-goal-facts" },
+        view.status === "paused" && working.size > 0 ? (0, import_react5.createElement)("button", { type: "button", className: "bt-goal-back", onClick: stopWork }, t("Stop current work too")) : null,
         view.status === "active" ? (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => control("pause") }, t("Pause")) : null,
         view.status === "paused" ? (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => control("resume") }, t("Resume")) : null,
-        live ? (0, import_react5.createElement)("button", {
+        view.status === "active" || view.status === "paused" ? (0, import_react5.createElement)("button", {
           type: "button",
           className: "bt-soft bt-soft-sm bt-goal-danger",
           "data-armed": armed || void 0,
@@ -4807,52 +4858,6 @@ function GoalPanel({ goal, view, room: room2, roster, actions, working }) {
         view.status === "complete" || view.status === "stopped" ? (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => control("clear") }, t("Clear")) : null,
         view.status === "drafting" ? (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => control("clear") }, t("Cancel")) : null
       )
-    ),
-    (0, import_react5.createElement)(
-      "div",
-      { className: "bt-goal-body" },
-      view.status === "drafting" ? (0, import_react5.createElement)(
-        "div",
-        { key: "draft", className: "bt-goal-sec" },
-        (0, import_react5.createElement)("div", { className: "bt-goal-text" }, t("{admin} is aligning the goal with you in the chat.", { admin })),
-        goal.brief ? (0, import_react5.createElement)("div", { className: "bt-goal-text" }, goal.brief) : null
-      ) : null,
-      goal.objective ? sec("objective", t("Objective"), goal.objective) : null,
-      goal.acceptance ? sec("acceptance", t("Done when"), goal.acceptance) : null,
-      goal.constraints?.length > 0 ? sec("rules", t("Rules"), (0, import_react5.createElement)(
-        "ul",
-        { className: "bt-goal-rules" },
-        goal.constraints.map((rule, i) => (0, import_react5.createElement)("li", { key: i }, rule))
-      )) : null,
-      view.stages.length > 0 ? (0, import_react5.createElement)(
-        "div",
-        { key: "stages", className: "bt-goal-stages" },
-        view.stages.map((stage, i) => (0, import_react5.createElement)(GoalStage, {
-          key: stage.n,
-          stage,
-          open: expanded === i,
-          working,
-          onToggle: () => setExpanded(expanded === i ? -1 : i)
-        }))
-      ) : null,
-      view.status === "paused" ? (0, import_react5.createElement)(
-        "div",
-        { key: "paused", className: "bt-goal-sec" },
-        (0, import_react5.createElement)("div", { className: "bt-goal-text" }, t("Paused. Write in the group to correct the direction; the admin updates the goal.")),
-        working.size > 0 ? (0, import_react5.createElement)("button", {
-          type: "button",
-          className: "bt-soft bt-soft-sm",
-          onClick: () => void Promise.resolve(actions.stopRoomWork(room2.id)).catch((error) => actions.reportError(error, "stop"))
-        }, t("Stop current work too")) : null
-      ) : null,
-      view.idle === true && view.status === "active" ? (0, import_react5.createElement)("div", { key: "idle", className: "bt-goal-text" }, t("{admin} is waiting for you.", { admin })) : null,
-      view.status === "complete" ? (0, import_react5.createElement)(
-        import_react5.Fragment,
-        { key: "done" },
-        goal.summary ? sec("summary", t("Summary"), goal.summary) : null,
-        goal.evidence ? sec("evidence", t("Evidence"), goal.evidence) : null
-      ) : null,
-      view.status === "stopped" && goal.reason ? (0, import_react5.createElement)("div", { key: "reason", className: "bt-goal-text" }, goal.reason) : null
     )
   );
 }
@@ -4996,42 +5001,54 @@ var GOAL_CSS = `
 .bt-goal-chev{flex:none;display:inline-flex;color:var(--bt-ink-3)}
 .bt-goal-chev svg{width:14px;height:14px;transition:${spring(SPRING_SHAPE, "transform")}}
 .bt-goal-bar[aria-expanded=true] .bt-goal-chev svg{transform:rotate(180deg)}
-.bt-goal-panel{display:flex;flex-direction:column;max-height:min(62vh,520px);overflow-y:auto;overflow-x:hidden;border-radius:0 0 18px 18px;animation:bt-veil-in .22s ease-out backwards}
-.bt-goal-head{display:flex;align-items:flex-start;gap:8px;padding:12px 14px 0}
-.bt-goal-title{flex:0 1 auto;min-width:0;font-size:15px;line-height:20px;font-weight:600;overflow-wrap:anywhere}
-.bt-goal-acts{display:flex;align-items:center;gap:6px;flex:none;margin-left:auto}
-.bt-goal-acts .bt-icon-btn{margin:-4px -6px -4px 0}
-.bt-goal-body{display:flex;flex-direction:column;gap:10px;padding:10px 14px 14px;font-size:13px;line-height:18px;color:var(--bt-ink)}
+/* The bar's extras hand off to the open panel and give their room to the label. */
+.bt-island[data-open] .bt-goal-segs,.bt-island[data-open] .bt-goal-faces{display:none}
+.bt-island[data-open] .bt-goal-chev{margin-left:auto}
+.bt-goal-panel{display:flex;flex-direction:column;max-height:min(62vh,520px);overflow:hidden;border-radius:0 0 18px 18px;animation:bt-veil-in .22s ease-out backwards}
+.bt-goal-body{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}
+/* The stepper: one shrinking node per stage on a hairline. */
+.bt-goal-steps{display:flex;align-items:center;gap:6px;padding:10px 14px 0}
+.bt-goal-step{position:relative;flex:0 1 20px;min-width:8px;height:20px;display:flex;align-items:center;justify-content:center;border:0;background:none;cursor:pointer;padding:0}
+.bt-goal-step::before{content:"";position:absolute;left:-3px;right:-3px;top:50%;height:1px;background:var(--bt-line-2)}
+.bt-goal-step:first-child::before{left:50%}
+.bt-goal-step:last-child::before{right:50%}
+.bt-goal-node{position:relative;z-index:1;box-sizing:border-box;width:min(20px,100%);aspect-ratio:1;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--bt-main);border:1.5px solid var(--bt-line-2);color:var(--bt-ink-3);font-size:10px;line-height:1;font-variant-numeric:tabular-nums}
+.bt-goal-node>svg{width:12px;height:12px}
+.bt-goal-step[data-step=passed]>.bt-goal-node{background:var(--bt-green);border-color:var(--bt-green);color:var(--bt-main)}
+.bt-goal-step[data-step=current]>.bt-goal-node{border-color:var(--bt-accent);color:var(--bt-accent);font-weight:600}
+.bt-goal-step[data-step=waiting]>.bt-goal-node{border-color:var(--bt-star);color:var(--bt-star);font-weight:600}
+.bt-goal-step[data-sel]:not([aria-current])>.bt-goal-node{box-shadow:0 0 0 1.5px var(--bt-ink)}
+.bt-goal-step.bt-goal-mini .bt-goal-node{font-size:0}
+/* The selected stage below the stepper. */
+.bt-goal-bstage{display:flex;flex-direction:column;padding:4px 14px 14px;font-size:13px;line-height:18px;animation:bt-veil-in .22s ease-out backwards}
+.bt-goal-bline{display:flex;align-items:baseline;gap:8px}
+.bt-goal-btitle{flex:1 1 auto;font-weight:600}
+.bt-goal-back{flex:none;border:0;background:none;padding:0;font:inherit;font-size:12px;line-height:16px;color:var(--bt-accent);cursor:pointer}
+.bt-goal-btext{overflow-wrap:anywhere}
+.bt-goal-line{margin-top:2px;min-width:0;font-size:12px;line-height:18px;color:var(--bt-ink-2);overflow-wrap:anywhere}
 .bt-goal-sec{display:flex;flex-direction:column;gap:4px;min-width:0}
-.bt-goal-sub{font-size:12px;line-height:16px;font-weight:600;color:var(--bt-ink-2)}
+.bt-goal-sub{flex:none;font-size:12px;line-height:16px;font-weight:600;color:var(--bt-ink-2)}
+.bt-goal-rw{margin-top:8px;border-radius:8px;padding:6px 10px;background:color-mix(in srgb,var(--bt-star) 10%,transparent);font-size:12px;line-height:18px;color:var(--bt-ink);overflow-wrap:anywhere}
 .bt-goal-text{overflow-wrap:anywhere}
 .bt-goal-rules{margin:0;padding-left:18px}
-.bt-goal-line{display:flex;gap:6px;min-width:0;overflow-wrap:anywhere}
-.bt-goal-line .bt-goal-sub{flex:none}
-.bt-goal-evi{font-size:12px;line-height:16px;color:var(--bt-ink-3);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.bt-goal-stages{display:flex;flex-direction:column;gap:6px}
-.bt-goal-stage{border:1px solid var(--bt-line);border-radius:10px;overflow:hidden}
-.bt-goal-sh{display:flex;align-items:center;gap:8px;width:100%;min-width:0;box-sizing:border-box;padding:8px 10px;border:0;background:none;color:var(--bt-ink);font:inherit;font-size:13px;line-height:18px;cursor:pointer;text-align:left;transition:background-color .12s ease}
-.bt-goal-sh:hover{background:var(--bt-hover)}
-.bt-goal-sh[aria-expanded=true]{border-bottom:.5px solid var(--bt-line)}
-.bt-goal-sg{flex:none;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;color:var(--bt-ink-3)}
-.bt-goal-sg::before{content:"○";font-size:12px;line-height:1}
-.bt-goal-sg[data-sg=passed]::before{content:"✓";color:var(--bt-green)}
-.bt-goal-sg[data-sg=current]::before{content:"●";color:var(--bt-accent);font-size:9px}
-.bt-goal-st{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bt-goal-chip{flex:none;max-width:120px;font-size:11px;line-height:15px;padding:1px 6px;border-radius:4px;background:var(--bt-tag-bg);color:var(--bt-tag-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bt-goal-chip[data-chip=current],.bt-goal-chip[data-chip=checking]{background:color-mix(in srgb,var(--bt-accent) 12%,transparent);color:var(--bt-accent)}
-.bt-goal-chip[data-chip=passed],.bt-goal-chip[data-chip=done]{background:color-mix(in srgb,var(--bt-green) 14%,transparent);color:var(--bt-green)}
-.bt-goal-chip[data-chip=rework]{background:color-mix(in srgb,var(--bt-star) 14%,transparent);color:var(--bt-ink-2)}
-.bt-goal-sbody{display:flex;flex-direction:column;gap:8px;padding:8px 10px 10px}
+.bt-goal-evi{margin-top:8px;font-size:12px;line-height:18px;color:var(--bt-ink-2);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.bt-goal-tasks{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .bt-goal-task{display:flex;align-items:flex-start;gap:8px;min-width:0}
-.bt-goal-task .bt-mark{margin-top:1px}
-.bt-goal-task-body{flex:0 1 auto;min-width:0;display:flex;flex-direction:column}
-.bt-goal-task-line{display:flex;min-width:0}
-.bt-goal-task-name{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bt-goal-task-text{overflow-wrap:anywhere}
-.bt-goal-task-note{font-size:12px;line-height:16px;color:var(--bt-ink-3);overflow-wrap:anywhere}
-.bt-goal-task>.bt-goal-chip{margin-left:auto}
+.bt-goal-task[data-task=pending]{opacity:.55}
+.bt-goal-tav{position:relative;flex:none;display:inline-flex;margin-top:1px}
+.bt-goal-tdone{position:absolute;right:-2px;bottom:-2px;width:12px;height:12px;border-radius:50%;background:var(--bt-green);color:var(--bt-main);display:inline-flex;align-items:center;justify-content:center;box-shadow:0 0 0 1.5px var(--bt-main)}
+.bt-goal-tdone svg{width:9px;height:9px}
+.bt-goal-ttext{flex:0 1 auto;min-width:0;overflow-wrap:anywhere}
+.bt-goal-tname{font-weight:500}
+.bt-goal-ckbody{display:flex;flex-direction:column;gap:10px;padding:0 14px 10px;font-size:13px;line-height:18px;text-align:left}
+/* The bottom row: disclosure on the left, controls on the right. */
+.bt-goal-foot{display:flex;align-items:center;gap:8px;height:40px;flex:none;padding:0 8px 0 14px;border-top:.5px solid var(--bt-line)}
+.bt-goal-checks{display:inline-flex;align-items:center;gap:4px;border:0;background:none;padding:4px 6px;margin-left:-6px;border-radius:6px;font:inherit;font-size:12px;line-height:16px;color:var(--bt-ink-2);cursor:pointer}
+.bt-goal-checks:hover{background:var(--bt-hover)}
+.bt-goal-mchev{display:inline-flex;width:14px;height:14px;color:var(--bt-ink-3)}
+.bt-goal-mchev svg{width:14px;height:14px;transition:${spring(SPRING_SHAPE, "transform")}}
+.bt-goal-checks[aria-expanded=true] .bt-goal-mchev svg{transform:rotate(180deg)}
+.bt-goal-facts{display:flex;align-items:center;gap:6px;flex:none;margin-left:auto}
 .bt-goal-danger{color:var(--bt-danger)}
 .bt-goal-danger[data-armed]{background:color-mix(in srgb,var(--bt-danger) 10%,transparent)}
 .bt-goal-compose{display:flex;flex-direction:column;gap:8px;padding:12px 14px}
@@ -11472,6 +11489,21 @@ var templateErrorText = (failure) => {
   const text = companyErrorText(failure);
   return text || t("The change could not be saved.");
 };
+var kindFieldHint = (failure) => {
+  if (failure?.code !== "company/invalid") return null;
+  switch (failure?.details?.field) {
+    case "name":
+      return { field: "name", text: t("A template needs a name, up to 40 characters.") };
+    case "role":
+      return { field: "role", text: t("An agent template needs a job title, so this cannot stay empty.") };
+    case "skills":
+      return { field: "skills", text: t("A soul template carries instructions only, so it takes no skills.") };
+    case "model":
+    case "effort":
+      return { field: "", text: t("A soul template carries instructions only, so model and thinking level stay empty.") };
+  }
+  return null;
+};
 var effortCache = /* @__PURE__ */ new Map();
 function useEffortOptions(roster, ref, actions) {
   const served = (roster?.models ?? []).find((model) => model.ref === ref);
@@ -11528,6 +11560,7 @@ function TemplatesPageView(props) {
     loading = false,
     error = "",
     failure = "",
+    failureField = "",
     preview = false,
     flash = "",
     form = null,
@@ -11593,65 +11626,88 @@ function TemplatesPageView(props) {
           "label",
           { className: "bc-field" },
           t("Template name"),
-          (0, import_react22.createElement)("input", { value: form.name, maxLength: 40, required: true, onChange: (event) => handlers.onForm?.("name", event.target.value) })
+          (0, import_react22.createElement)("input", {
+            value: form.name,
+            maxLength: 40,
+            required: true,
+            "aria-invalid": failureField === "name" ? "true" : void 0,
+            onChange: (event) => handlers.onForm?.("name", event.target.value)
+          }),
+          failureField === "name" && failure ? (0, import_react22.createElement)("p", { className: "bc-field-error", role: "alert" }, failure) : null
         ),
-        (0, import_react22.createElement)(
+        isSoul ? null : (0, import_react22.createElement)(
           "label",
           { className: "bc-field" },
           t("Job title"),
-          (0, import_react22.createElement)("input", { value: form.role ?? "", maxLength: 24, onChange: (event) => handlers.onForm?.("role", event.target.value), placeholder: t("Optional, shown on the team list") })
+          (0, import_react22.createElement)("input", {
+            value: form.role ?? "",
+            maxLength: 24,
+            "aria-required": "true",
+            "aria-invalid": failureField === "role" ? "true" : void 0,
+            onChange: (event) => handlers.onForm?.("role", event.target.value),
+            placeholder: t("Shown on the team list")
+          }),
+          failureField === "role" && failure ? (0, import_react22.createElement)("p", { className: "bc-field-error", role: "alert" }, failure) : null
         )
       ),
       (0, import_react22.createElement)(
         "label",
         { className: "bc-field" },
         t("Instructions"),
-        (0, import_react22.createElement)("textarea", { value: form.instructions ?? "", maxLength: 8e3, rows: 12, onChange: (event) => handlers.onForm?.("instructions", event.target.value), placeholder: t("What this job is responsible for, and how it works") })
+        (0, import_react22.createElement)("textarea", {
+          value: form.instructions ?? "",
+          maxLength: 8e3,
+          rows: 12,
+          onChange: (event) => handlers.onForm?.("instructions", event.target.value),
+          placeholder: isSoul ? t("How this company talks and behaves") : t("What this job is responsible for, and how it works")
+        })
       ),
-      (0, import_react22.createElement)(
-        "div",
-        { className: "bc-grid" },
-        (0, import_react22.createElement)(
-          "label",
-          { className: "bc-field" },
-          t("Model"),
-          (0, import_react22.createElement)(
-            "select",
-            { value: form.model ?? "", onChange: (event) => handlers.onForm?.("model", event.target.value) },
-            (0, import_react22.createElement)("option", { value: "" }, t("Model default")),
-            (roster.models ?? []).map((model) => (0, import_react22.createElement)("option", { key: model.ref, value: model.ref }, model.name ?? model.ref)),
-            form.model && !(roster.models ?? []).some((model) => model.ref === form.model) ? (0, import_react22.createElement)("option", { key: form.model, value: form.model }, t("{ref} (not served now)", { ref: form.model })) : null
-          )
-        ),
-        (0, import_react22.createElement)(
-          "label",
-          { className: "bc-field" },
-          t("Thinking level"),
-          (0, import_react22.createElement)(
-            "select",
-            { value: form.effort ?? "", onChange: (event) => handlers.onForm?.("effort", event.target.value) },
-            effortOptions.map((option) => (0, import_react22.createElement)("option", { key: option.value || "default", value: option.value }, option.label))
-          )
-        )
-      ),
-      (0, import_react22.createElement)(
-        "div",
-        { className: "bc-field" },
-        (0, import_react22.createElement)("span", null, t("Skills")),
+      isSoul ? (0, import_react22.createElement)("p", { className: "bc-tpl-note" }, t("A soul template carries the voice only: no job title, no model, no skills.")) : [
         (0, import_react22.createElement)(
           "div",
-          { className: "bc-tpl-skills-edit" },
-          [.../* @__PURE__ */ new Set([...(roster.capabilities ?? []).map((item) => item.name), ...form.skills ?? []])].map((name) => (0, import_react22.createElement)("button", {
-            key: name,
-            type: "button",
-            className: "bc-chip",
-            "aria-pressed": (form.skills ?? []).includes(name),
-            onClick: () => handlers.onToggleSkill?.(name)
-          }, name))
+          { key: "model", className: "bc-grid" },
+          (0, import_react22.createElement)(
+            "label",
+            { className: "bc-field" },
+            t("Model"),
+            (0, import_react22.createElement)(
+              "select",
+              { value: form.model ?? "", onChange: (event) => handlers.onForm?.("model", event.target.value) },
+              (0, import_react22.createElement)("option", { value: "" }, t("Model default")),
+              (roster.models ?? []).map((model) => (0, import_react22.createElement)("option", { key: model.ref, value: model.ref }, model.name ?? model.ref)),
+              form.model && !(roster.models ?? []).some((model) => model.ref === form.model) ? (0, import_react22.createElement)("option", { key: form.model, value: form.model }, t("{ref} (not served now)", { ref: form.model })) : null
+            )
+          ),
+          (0, import_react22.createElement)(
+            "label",
+            { className: "bc-field" },
+            t("Thinking level"),
+            (0, import_react22.createElement)(
+              "select",
+              { value: form.effort ?? "", onChange: (event) => handlers.onForm?.("effort", event.target.value) },
+              effortOptions.map((option) => (0, import_react22.createElement)("option", { key: option.value || "default", value: option.value }, option.label))
+            )
+          )
         ),
-        (0, import_react22.createElement)("small", null, t("The host refuses a Bot whose skills this DSH does not have. Marked skills are missing here."))
-      ),
-      failure ? (0, import_react22.createElement)("p", { className: "bc-exception", role: "alert" }, failure) : null,
+        (0, import_react22.createElement)(
+          "div",
+          { key: "skills", className: "bc-field" },
+          (0, import_react22.createElement)("span", null, t("Skills")),
+          (0, import_react22.createElement)(
+            "div",
+            { className: "bc-tpl-skills-edit" },
+            [.../* @__PURE__ */ new Set([...(roster.capabilities ?? []).map((item) => item.name), ...form.skills ?? []])].map((name) => (0, import_react22.createElement)("button", {
+              key: name,
+              type: "button",
+              className: "bc-chip",
+              "aria-pressed": (form.skills ?? []).includes(name),
+              onClick: () => handlers.onToggleSkill?.(name)
+            }, name))
+          ),
+          (0, import_react22.createElement)("small", null, t("The host refuses a Bot whose skills this DSH does not have. Marked skills are missing here."))
+        )
+      ],
+      failure && !failureField ? (0, import_react22.createElement)("p", { className: "bc-exception", role: "alert" }, failure) : null,
       (0, import_react22.createElement)(
         "div",
         { className: "bc-actions" },
@@ -11938,6 +11994,7 @@ function TemplatesPage(props) {
   const [archiveArmed, setArchiveArmed] = (0, import_react22.useState)(false);
   const [busy, setBusy] = (0, import_react22.useState)(false);
   const [failure, setFailure] = (0, import_react22.useState)("");
+  const [failureField, setFailureField] = (0, import_react22.useState)("");
   const [flash, setFlash] = (0, import_react22.useState)("");
   const [leavePrompt, setLeavePrompt] = (0, import_react22.useState)(null);
   const [formBase, setFormBase] = (0, import_react22.useState)(null);
@@ -11971,6 +12028,7 @@ function TemplatesPage(props) {
     setForm(null);
     setFormBase(null);
     setFailure("");
+    setFailureField("");
   };
   const cancelEdit = () => requestLeave(closeForm);
   const applySelect = (id) => {
@@ -11980,6 +12038,7 @@ function TemplatesPage(props) {
     setCopyOpen(false);
     setArchiveArmed(false);
     setFailure("");
+    setFailureField("");
     setFlash("");
   };
   const select = (id) => requestLeave(() => {
@@ -11990,11 +12049,14 @@ function TemplatesPage(props) {
     if (!onCommand) return;
     setBusy(true);
     setFailure("");
+    setFailureField("");
     try {
       await work();
       done?.();
     } catch (error) {
-      setFailure(templateErrorText(error));
+      const hint = kindFieldHint(error);
+      setFailureField(hint?.field ?? "");
+      setFailure(hint?.text ?? templateErrorText(error));
     } finally {
       setBusy(false);
     }
@@ -12002,6 +12064,7 @@ function TemplatesPage(props) {
   const startEdit = () => {
     if (!template) return;
     setFailure("");
+    setFailureField("");
     setCopyOpen(false);
     setArchiveArmed(false);
     const base = {
@@ -12015,25 +12078,37 @@ function TemplatesPage(props) {
     setForm(base);
     setFormBase({ ...base, skills: [...base.skills] });
   };
-  const saveEdit = () => run2(async () => {
-    if (!form) return;
-    await onCommand("template.update", templateUpdatePayload({
+  const editPayload = () => {
+    const isSoul = templateKind(template) === "soul";
+    return templateUpdatePayload({
       templateId: template.id,
       name: form.name.trim(),
-      role: form.role,
+      role: isSoul ? "" : form.role,
       instructions: form.instructions,
-      model: form.model,
-      effort: form.effort,
-      skills: form.skills
-    }));
-    setForm(null);
-    setFlash(t("The template was saved."));
-  });
+      model: isSoul ? "" : form.model,
+      effort: isSoul ? "" : form.effort,
+      skills: isSoul ? [] : form.skills
+    });
+  };
+  const saveEdit = () => {
+    if (!form) return;
+    if (templateKind(template) !== "soul" && !String(form.role ?? "").trim()) {
+      setFailureField("role");
+      setFailure(t("An agent template needs a job title, so this cannot stay empty."));
+      return;
+    }
+    return run2(async () => {
+      await onCommand("template.update", editPayload());
+      setForm(null);
+      setFlash(t("The template was saved."));
+    });
+  };
   const startCopy = () => {
     setCopyName("");
     setCopyOpen(true);
     setArchiveArmed(false);
     setFailure("");
+    setFailureField("");
   };
   const saveCopy = () => run2(async () => {
     const result = await onCommand("template.create", templateCopyPayload(template, copyName));
@@ -12119,16 +12194,9 @@ function TemplatesPage(props) {
     if (!prompt || !form || !onCommand) return;
     setBusy(true);
     setFailure("");
+    setFailureField("");
     try {
-      await onCommand("template.update", templateUpdatePayload({
-        templateId: template.id,
-        name: form.name.trim(),
-        role: form.role,
-        instructions: form.instructions,
-        model: form.model,
-        effort: form.effort,
-        skills: form.skills
-      }));
+      await onCommand("template.update", editPayload());
       setFlash(t("The template was saved."));
       dirtyRef.current = false;
       setForm(null);
@@ -12137,7 +12205,9 @@ function TemplatesPage(props) {
       prompt.proceed();
     } catch (error) {
       setLeavePrompt(null);
-      setFailure(templateErrorText(error));
+      const hint = kindFieldHint(error);
+      setFailureField(hint?.field ?? "");
+      setFailure(hint?.text ?? templateErrorText(error));
     } finally {
       setBusy(false);
     }
@@ -12198,6 +12268,7 @@ function TemplatesPage(props) {
     loading: props.loading,
     error: props.error,
     failure,
+    failureField,
     preview,
     flash,
     form,
@@ -12290,6 +12361,7 @@ var TEMPLATES_CSS = `
 .bc-tpl-copyrow .bc-actions{margin-top:0}
 .bc-tpl-foot{display:flex;align-items:center;gap:10px;margin-top:16px;padding-top:12px;border-top:1px solid var(--bt-line);min-height:32px}
 .bc-tpl-quiet{font-size:12px;line-height:17px;color:var(--bt-ink-3);border:0;background:none;padding:0}
+.bc-field-error{margin:0;font-size:12px;line-height:17px;font-weight:400;color:var(--bt-danger)}
 .bc-tpl-kind{display:inline-block;margin:6px 0 0;padding:1px 7px;border:1px solid var(--bt-line-2);border-radius:999px;font-size:11px;line-height:16px;color:var(--bt-ink-2)}
 .bc-tpl-preview{margin:12px 0 0;padding:10px 12px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-hover)}
 .bc-tpl-preview-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 6px;font-size:12px;line-height:17px;font-weight:600;color:var(--bt-ink-2)}
@@ -16117,7 +16189,7 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
       (0, import_react29.createElement)("span", { className: "bt-pill-name" }, name)
     ) : (0, import_react29.createElement)("span", { className: "bt-pill-name" }, away ? t("Back to chat") : bot?.name ?? room2?.name ?? (title || t("New chat"))),
     employee ? (0, import_react29.createElement)("span", { className: "bt-pill-sub" }, [employee.role, employee.status === "active" ? t("Online") : null, employee.project].filter(Boolean).join(" · ")) : null,
-    goalShown && goal.status !== "drafting" ? (0, import_react29.createElement)("span", { className: "bt-pill-count" }, `${view.done}/${view.count}`) : null,
+    goalShown && view?.number !== void 0 ? (0, import_react29.createElement)("span", { className: "bt-pill-count" }, `${view.number}/${view.count}`) : null,
     (0, import_react29.createElement)(MemoryNotice, { shown: memoryNotice }),
     (0, import_react29.createElement)("span", { className: "bt-pill-go", "aria-hidden": true }, (0, import_react29.createElement)(GoArrow))
   );

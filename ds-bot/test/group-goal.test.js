@@ -112,7 +112,7 @@ async function start(t, room, services, extraRooms) {
     return { content: post.content, source: post.source }
   }
   await tool('list_bots', {}, 'a')
-  return { home, ctx, agentOf, emit, tool, call, begin, finish, round, say, takePost, takeGoal }
+  return { home, ctx, rt, agentOf, emit, tool, call, begin, finish, round, say, takePost, takeGoal }
 }
 
 const settle = async (check) => {
@@ -648,4 +648,53 @@ test('a draft queued with another post still calls the admin on its note', async
   host.finish('gc', '[PASS]')
   await settle(() => result() !== undefined)
   assert.ok(logLines(host).some(line => line.who === 'User' && line.text === 'Build the site'))
+})
+
+test('a room on its second part relays on the current Session and blocks /goal there', async (t) => {
+  // The group's own Session moved on: r1 is an earlier part, r1p2 the current one.
+  const blocked = []
+  const goals = {
+    get: agent => agent.session?.id === 'r1p2' ? { id: 'g-dsh', revision: 3, phase: 'active' } : undefined,
+    block(agent, ref, reason) { blocked.push({ sessionId: agent.session?.id ?? agent.id, ref, reason }) },
+  }
+  const host = await start(t, { sessionId: 'r1p2', parts: [{ sessionId: 'r1', endedAt: 1 }] }, { goals })
+  await startGoal(host)
+  assert.equal((await host.call('goal-control', { roomId: 'r1', goalId: goal(host).id, action: 'pause' })).ok, true)
+  await host.call('goal-control', { roomId: 'r1', goalId: goal(host).id, action: 'resume' })
+  // The resume relay goes to the current part, never to the earlier one.
+  await settle(() => host.agentOf('r1p2').calls.some(call => call.source?.role === 'goal'))
+  assert.equal(host.agentOf('r1').calls.length, 0)
+  // A DSH /goal in the current part reads as the room's and is blocked.
+  host.emit('r1p2', 'goal/change', { goal: { phase: 'active' } })
+  await settle(() => blocked.length === 1)
+  assert.equal(blocked[0].sessionId, 'r1p2')
+  assert.equal(blocked[0].reason.message, 'Bot chats do not run /goal. To give a group a goal, use Set a goal in its + menu.')
+})
+
+test('a member still working at round end wakes the admin when its work settles', async (t) => {
+  const host = await start(t)
+  await startGoal(host)
+  // Member c's group turn is still running when the round ends — no check is queued.
+  host.emit('gc', 'turn/start', { turn: 1 })
+  const first = host.round('c1', host.say('@Chief go'))
+  await settle(() => host.agentOf('ga').calls.length === 1)
+  host.begin('ga')
+  host.finish('ga', 'on it')
+  await settle(() => first() !== undefined)
+  assert.equal(host.takeGoal(), undefined)
+  // The round is fully gone before c's work ends; the settle check then queues one goal check.
+  await settle(async () => (await host.call('room-progress', { roomId: 'r1' })).value?.length === 0)
+  host.emit('gc', 'assistant/message', { message: { content: [{ type: 'text', text: 'done' }] } })
+  host.emit('gc', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
+  await settle(() => host.agentOf('r1').calls.some(call => call.source?.role === 'goal'))
+  const nudge = host.takeGoal()
+  assert.ok(nudge !== undefined)
+  assert.match(text(nudge), /^\[Goal check\]$/)
+  // A second settle with no new work queues nothing while a round is running.
+  host.emit('gc', 'turn/start', { turn: 2 })
+  host.emit('gc', 'turn/end', { turn: 2, reason: { kind: 'completed' } })
+  await settle(async () => (await host.call('room-progress', { roomId: 'r1' })).value?.length === 0)
+  const left = host.agentOf('r1').calls.filter(call => call.source?.role === 'goal')
+  assert.ok(left.length <= 1, `settles queued ${left.length} extra checks`)
+  assert.equal(host.takeGoal(), undefined)
 })

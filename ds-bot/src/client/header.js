@@ -173,7 +173,7 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
         h('span', { className: 'bt-pill-name' }, name))
       : h('span', { className: 'bt-pill-name' }, away ? t('Back to chat') : bot?.name ?? room?.name ?? (title || t('New chat'))),
     employee ? h('span', { className: 'bt-pill-sub' }, [employee.role, employee.status === 'active' ? t('Online') : null, employee.project].filter(Boolean).join(' \u00b7 ')) : null,
-    goalShown && goal.status !== 'drafting' ? h('span', { className: 'bt-pill-count' }, `${view.done}/${view.count}`) : null,
+    goalShown && view?.number !== undefined ? h('span', { className: 'bt-pill-count' }, `${view.number}/${view.count}`) : null,
     h(MemoryNotice, { shown: memoryNotice }),
     h('span', { className: 'bt-pill-go', 'aria-hidden': true }, h(GoArrow)))
   return h('div', { className: 'bt-head' },
