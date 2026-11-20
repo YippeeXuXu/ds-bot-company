@@ -4,6 +4,7 @@ import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { build } from 'esbuild'
+import { DICTIONARY } from '../src/client/i18n.js'
 
 // The page renders through the browser's React; bundle it with the same minimal
 // stand-in the other client tests use, so the component runs as a plain function.
@@ -395,4 +396,30 @@ test('dismissed staff leave the lead picker and keep their Bot out of hiring', (
   const hire = view({ creating: 'employee', data: model({ employees: [employee(), away] }), roster: { ready: true, byId: { bot_1: {}, bot_2: {} }, bots: [{ id: 'bot_2', name: '橙子', private: false }] } })
   const hireBots = collect(byClass(hire, 'bc-co-create')[0], node => node.type === 'select')[0]
   assert.doesNotMatch(text(hireBots), /橙子/)
+})
+
+
+test('the department count leaves dismissed staff out (G0)', () => {
+  const tree = view({ data: model({ employees: [employee(), employee({ id: 'emp_2', name: '旧人', status: 'disabled' })] }) })
+  // The dismissed person keeps a row in the chart, but the department does not count them.
+  assert.equal(byClass(tree, 'bc-co-row').length >= 0, true)
+  assert.match(text(byClass(tree, 'bc-co-dept-meta')[0]), /1 people/)
+  assert.match(text(byClass(tree, 'bc-co-head')[0]), /1 departments · 1 employees/)
+})
+
+test('the four refusals a person can fix all answer in Chinese (G0)', () => {
+  // The codes the company screens map by hand (company-page.js:27, templates-page.js:98).
+  // Each one keeps a sentence, and each sentence has Chinese copy, so a refusal never
+  // reaches a person in English only.
+  const cases = [
+    ['department.name-taken', 'A department with this name already exists.'],
+    ['employee/bot-name-taken', 'A Bot with this name already exists. Give this one another name.'],
+    ['employee.bot_already_employed', 'This Bot already has an employee profile.'],
+    ['employee/inactive', 'This employee is dismissed. Reactivate them before using them.'],
+  ]
+  for (const [code, sentence] of cases) {
+    const zh = DICTIONARY.zh[sentence]
+    assert.equal(typeof zh, 'string', `${code} keeps a sentence the client translates`)
+    assert.match(zh, /[\u4e00-\u9fff]/, `${code} has Chinese copy`)
+  }
 })

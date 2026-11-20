@@ -40,6 +40,11 @@ function fakeGroups({ failSetMembers = false } = {}) {
       if (room === undefined) throw new Error(`No group chat ${roomId}.`)
       room.members = [...members]
     },
+    setAdmin: async (roomId, admin) => {
+      const room = rooms.get(roomId)
+      if (room === undefined) throw new Error(`No group chat ${roomId}.`)
+      room.admin = admin ?? null
+    },
   }
   return { groups, rooms }
 }
@@ -1066,5 +1071,27 @@ test('a Bot serves at most three live projects and the fourth door names the lim
   await run(commands, 'project.archive', { operation_key: key('limit-archive'), project_id: projects[0] })
   const freed = await run(commands, 'project.member.add', { operation_key: key('limit-add-after'), project_id: target, employee_id: seed_.alpha, role: 'coordinator' })
   assert.equal(freed.status, 'committed')
+  rmSync(home, { recursive: true, force: true })
+})
+
+
+test('moving the coordinator post moves the group admin with it (G0)', async () => {
+  const home = tempHome()
+  const { commands, rooms } = open(home)
+  const seed_ = await seed(commands, rooms)
+  const created = await run(commands, 'project.create', { operation_key: key('g0-admin-create'), ...draft(seed_) })
+  const project = created.body.project
+  assert.equal(rooms.get(project.group_chat_ref).admin, 'bot_a')
+
+  // Dropping the post drops the admin, so the group never keeps an admin nobody holds.
+  await run(commands, 'project.member.update', { operation_key: key('g0-admin-drop'), project_id: project.id, employee_id: seed_.alpha, role: 'executor' })
+  assert.equal(rooms.get(project.group_chat_ref).admin, null)
+  assert.equal(rooms.get(project.group_chat_ref).members.length, 1)
+
+  // Promoting her back puts the admin where it was, without adding a second member row.
+  const restored = await run(commands, 'project.member.update', { operation_key: key('g0-admin-raise'), project_id: project.id, employee_id: seed_.alpha, role: 'coordinator' })
+  assert.equal(rooms.get(project.group_chat_ref).admin, 'bot_a')
+  assert.equal(rooms.get(project.group_chat_ref).members.length, 1)
+  assert.equal(restored.body.member.role, 'coordinator')
   rmSync(home, { recursive: true, force: true })
 })
