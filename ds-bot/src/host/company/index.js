@@ -226,7 +226,27 @@ export function install(rt) {
   }
   // `rt.company` is what the HTTP layer and the tools call.
   rt.company = { dir, store, execute, commands: commands.commands, api, close: () => store.close() }
-  Object.assign(rt, { companyExecute: execute, companyStore: store, companyApi: api, companyState: () => store.state })
+  Object.assign(rt, {
+    companyExecute: execute, companyStore: store, companyApi: api, companyState: () => store.state,
+    // What project a Bot was working on at a moment, for the memory slices (M2 G4 4.1/4.2):
+    // the project of the latest Run handed to that Bot at or before then. A Bot with no Run
+    // yet gets null, and a company file that cannot be read answers null rather than failing
+    // the turn that asked.
+    memoryProjectOf: (botId, at) => {
+      let runs
+      try {
+        runs = Object.values(store.state?.runs ?? {})
+      } catch {
+        return null
+      }
+      let best
+      for (const run of runs) {
+        if (run?.bot_id !== botId || typeof run.dispatched_at !== 'number' || run.dispatched_at > at) continue
+        if (best === undefined || run.dispatched_at >= best.dispatched_at) best = run
+      }
+      return best?.project_id ?? null
+    },
+  })
   // Routes live exactly as long as the plugin: the channel's own route is disposed the
   // same way, and a host reload must not leave three stale handlers on the carrier.
   if (typeof rt.ctx?.connection?.fetch?.register === 'function') {
