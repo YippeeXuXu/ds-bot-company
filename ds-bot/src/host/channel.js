@@ -114,7 +114,37 @@ export function install(rt) {
   }
   // What a host that only reads the team may still answer.
   // Updates change the dsh profile, not the team, so a reading host may run them too.
-  const READS = new Set(['state', 'models', 'efforts', 'providers', 'provider-models', 'earlier', 'chat', 'run-stats', 'room-progress', 'exchange', 'exchange-text', 'file-text', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'thinking', 'avatar-library', 'company-model', 'company-events', 'company-todos'])
+  const READS = new Set(['state', 'models', 'efforts', 'providers', 'provider-models', 'earlier', 'chat', 'run-stats', 'room-progress', 'exchange', 'exchange-text', 'file-text', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'thinking', 'avatar-library', 'company-model', 'company-events', 'company-todos', 'memory-settings', 'memory-slices'])
+
+  // Memory slices, for the settings page: how many rows each Bot holds, and the newest
+  // few rows the page can delete one by one. Vectors are left out — a page that only
+  // needs to show and prune text must not carry a few thousand numbers per row.
+  const sliceSummary = () => {
+    const rows = rt.memorySlices?.list?.() ?? []
+    const bots = new Map()
+    for (const row of rows) bots.set(row.bot_id, (bots.get(row.bot_id) ?? 0) + 1)
+    return { count: rows.length, bots: [...bots].map(([bot_id, count]) => ({ bot_id, count })).sort((a, b) => b.count - a.count || String(a.bot_id).localeCompare(String(b.bot_id))) }
+  }
+  const sliceRows = body => {
+    const rows = rt.memorySlices?.list?.() ?? []
+    const limit = Number.isInteger(body.limit) && body.limit > 0 ? Math.min(body.limit, 100) : 20
+    const filtered = body.bot_id === undefined ? rows : rows.filter(row => row.bot_id === body.bot_id)
+    return { total: filtered.length, rows: filtered.slice(-limit).reverse().map(row => ({
+      id: row.id,
+      bot_id: row.bot_id,
+      project_id: row.project_id ?? null,
+      session_id: row.session_id ?? null,
+      kind: row.kind,
+      text: row.text,
+      tokens: row.tokens,
+      embedding_model: row.embedding_model ?? null,
+      has_embedding: Array.isArray(row.embedding) ? row.embedding.length > 0 : row.embedding !== null && row.embedding !== undefined,
+      created_at: row.created_at,
+      last_used_at: row.last_used_at ?? null,
+      uses: row.uses ?? 0,
+    })) }
+  }
+
 
   function setPrefs(body) {
     if (body.theme !== undefined) {
@@ -616,6 +646,37 @@ export function install(rt) {
         case 'company-todo-answer': {
           const result = await rt.companyApi.answer(body)
           return result.status === 200 ? ok(result.body) : { ok: false, error: result.body }
+        }
+        // Memory settings (M2 G4 4.6): the page reads the service, saves it, tests it, and
+        // manages the slices on the same window. A save reaches the running module at once,
+        // so the next slice already uses the new service — no restart.
+        case 'memory-settings':
+          return ok({ state: rt.memoryEmbedding?.state?.() ?? null, slices: sliceSummary() })
+        case 'memory-settings-save': {
+          if (rt.memoryEmbedding?.save === undefined) return fail('This build has no memory settings.', 'bot/not-found')
+          const patch = body.patch ?? body
+          if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) return fail('Nothing to save', 'bot/invalid')
+          return ok(rt.memoryEmbedding.save(patch))
+        }
+        case 'memory-test':
+          if (rt.memoryEmbedding?.test === undefined) return fail('This build has no memory service.', 'bot/not-found')
+          return ok(await rt.memoryEmbedding.test())
+        case 'memory-slices':
+          return ok(sliceRows(body))
+        case 'memory-slice-delete': {
+          if (typeof body.id !== 'string' || body.id === '') return fail('Nothing to delete', 'bot/invalid')
+          const before = rt.memorySlices?.list?.().length ?? 0
+          const kept = (await rt.memorySlices?.remove?.([body.id])) ?? before
+          return ok({ removed: Math.max(0, before - kept) })
+        }
+        case 'memory-slices-clear': {
+          if (body.bot_id !== undefined && (typeof body.bot_id !== 'string' || body.bot_id === '')) return fail('Nothing to clear', 'bot/invalid')
+          const rows = rt.memorySlices?.list?.() ?? []
+          const before = body.bot_id === undefined ? rows.length : rows.filter(row => row.bot_id === body.bot_id).length
+          const kept = (await rt.memorySlices?.clear?.(body.bot_id)) ?? rows.length
+          // `kept` counts every row left; with one Bot cleared, the rest of the file stays.
+          const left = body.bot_id === undefined ? kept : kept - (rows.length - before)
+          return ok({ removed: Math.max(0, before - left) })
         }
         default:
           return fail(`Unknown endpoint ${endpoint}`, 'bot/not-found')

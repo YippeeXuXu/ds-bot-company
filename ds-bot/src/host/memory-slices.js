@@ -168,9 +168,10 @@ export function createSliceStore({ dir, now = () => Date.now(), warn = () => {} 
     return writing
   }
 
+  // The settings page can clear one Bot or every Bot; no id means every row goes.
   const clear = (botId) => {
     writing = writing.then(async () => {
-      const kept = read().filter(row => row.bot_id !== botId)
+      const kept = botId === undefined ? [] : read().filter(row => row.bot_id !== botId)
       mkdirSync(dir, { recursive: true })
       const temp = `${file}.tmp`
       await writeFile(temp, kept.length === 0 ? '' : `${kept.map(row => JSON.stringify(row)).join('\n')}\n`)

@@ -146,6 +146,14 @@ export function teamActions({ call, after, partFor, roster, ui, live, cards, hel
     usage: () => call('usage', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
     // `summarize` starts a summary when the entries changed; `regenerate` always does.
     memoryView: (id, flags = {}) => call('memory-view', { ...memoryOf(id), ...flags }),
+    // The local memory service behind the slices (4.6): the page reads it, saves a field,
+    // tests it, and prunes the rows. A save answers with the state it left the host in.
+    memorySettings: () => call('memory-settings'),
+    memorySettingsSave: patch => call('memory-settings-save', { patch }),
+    memoryTest: () => call('memory-test'),
+    memorySlices: (flags = {}) => call('memory-slices', flags),
+    memorySliceDelete: id => call('memory-slice-delete', { id }),
+    memorySlicesClear: botId => call('memory-slices-clear', botId === undefined ? {} : { bot_id: botId }),
     memoryAsk: (id, text) => call('memory-ask', { ...memoryOf(id), text }),
     memoryForget: (id, entry) => call('memory-forget', { ...memoryOf(id), scope: entry.scope, topic: entry.topic, text: entry.text }),
     diagnostics: payload => call('diagnostics', payload),

@@ -1,5 +1,5 @@
-// Memory embeddings (M2 G4 4.3, the client side of it): a slice gets a vector as soon as a
-// local embedding service is configured. Until one is, nothing is called and the two
+// Memory embeddings (M2 G4 4.3, and the settings behind 4.6): a slice gets a vector as soon
+// as a local embedding service is configured. Until one is, nothing is called and the two
 // embedding fields stay null — the model choice is the user's, not this module's.
 //
 // Two service shapes are accepted, because the choice is still open:
@@ -11,14 +11,23 @@
 // slice queued for one more try, and says why in `state()`. The queue lives in memory: a
 // restart loses pending ids, and `scan()` (run at install) picks them up again from the
 // file, since a row without a vector is exactly what a pending slice looks like.
-import { existsSync, readFileSync } from 'node:fs'
+//
+// The settings page saves into `<home>/memory-embedding.json`, which wins over the plugin
+// config: a value typed in the window must not need a restart, and it must survive one.
+// `save()` writes the file and re-resolves in place, so the next slice of this running host
+// already uses the new service.
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export const EMBEDDING_ENDPOINTS = ['ollama', 'openai']
+export const SETTINGS_FILE = 'memory-embedding.json'
 export const DEFAULT_TIMEOUT_MS = 15_000
 export const DEFAULT_BATCH = 16
 // A failed round waits this long before trying again; the queue is not dropped.
 export const RETRY_MS = 60_000
+// A connectivity test is a person waiting on the page: shorter than a background round.
+export const TEST_TIMEOUT_MS = 10_000
+export const TEST_TEXT = 'memory connectivity test'
 
 const trimmed = value => (typeof value === 'string' ? value.trim() : '')
 const stripSlash = value => String(value).replace(/\/+$/, '')
@@ -49,13 +58,23 @@ export const embeddingsUrl = settings => {
 
 const isVector = value => Array.isArray(value) && value.length > 0 && value.every(number => typeof number === 'number' && Number.isFinite(number))
 
+// A person may be waiting on this call (the connectivity test), so a service that is not
+// there says so with the address and the reason — "fetch failed" alone names neither.
 const postJson = async (url, body, timeoutMs) => {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs),
-  })
+  let response
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+  } catch (error) {
+    const reason = error?.name === 'TimeoutError'
+      ? `no answer within ${Math.round(timeoutMs / 1000)} s`
+      : (error?.cause?.code ?? error?.cause?.message ?? error?.message ?? String(error))
+    throw new Error(`${url} could not be reached (${reason})`)
+  }
   const text = await response.text()
   if (!response.ok) throw new Error(`${url} answered ${response.status}`)
   try {
@@ -89,6 +108,7 @@ export async function embedTexts(settings, texts) {
 }
 
 const slicesPath = home => join(home, 'memory-slices', 'slices.jsonl')
+export const settingsPathOf = home => join(home, SETTINGS_FILE)
 
 // Slices in the file that still want a vector. Read straight from the file so a restart
 // (or a store that was not installed in this runtime) is no obstacle.
@@ -111,12 +131,73 @@ function unembeddedSlices(home) {
   return rows
 }
 
+// The saved settings, or nothing when the file is absent or unreadable. A broken file stays
+// on disk: the next save replaces it, and the warning says why it was ignored.
+export function readSavedSettings(home, warn) {
+  const file = settingsPathOf(home)
+  if (!existsSync(file)) return {}
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8'))
+    return parsed !== null && typeof parsed === 'object' ? parsed : {}
+  } catch (error) {
+    warn?.('ds-bot: %s cannot be read, the plugin config is used instead: %s', file, error?.message ?? String(error))
+    return {}
+  }
+}
+
+// Written through a temp file: a half-written JSON would be read as "no settings" on the
+// next start, and the service the user configured would look like it was never saved.
+export function writeSavedSettings(home, saved) {
+  mkdirSync(home, { recursive: true })
+  const file = settingsPathOf(home)
+  const temp = `${file}.tmp`
+  writeFileSync(temp, `${JSON.stringify(saved, null, 2)}\n`)
+  renameSync(temp, file)
+}
+
+// Only the keys the page owns, each checked alone so the page can point at one field.
+export function normalizeSettingsPatch(patch = {}) {
+  const next = {}
+  if ('enabled' in patch) {
+    if (typeof patch.enabled !== 'boolean') return { ok: false, field: 'enabled', message: 'the switch must be true or false' }
+    next.enabled = patch.enabled
+  }
+  if ('endpoint' in patch) {
+    if (!EMBEDDING_ENDPOINTS.includes(patch.endpoint)) return { ok: false, field: 'endpoint', message: `the service must be one of ${EMBEDDING_ENDPOINTS.join(', ')}` }
+    next.endpoint = patch.endpoint
+  }
+  if ('base_url' in patch) {
+    const url = trimmed(patch.base_url)
+    if (url !== '' && !/^https?:\/\/\S+$/i.test(url)) return { ok: false, field: 'base_url', message: 'the address must start with http:// or https://' }
+    next.base_url = url
+  }
+  if ('model' in patch) {
+    const model = trimmed(patch.model)
+    if (model.length > 80) return { ok: false, field: 'model', message: 'the model name is longer than 80 characters' }
+    next.model = model
+  }
+  if ('timeout_ms' in patch) {
+    if (!Number.isInteger(patch.timeout_ms) || patch.timeout_ms < 1_000 || patch.timeout_ms > 120_000) {
+      return { ok: false, field: 'timeout_ms', message: 'the timeout must be 1000–120000 ms' }
+    }
+    next.timeout_ms = patch.timeout_ms
+  }
+  if ('batch' in patch) {
+    if (!Number.isInteger(patch.batch) || patch.batch < 1 || patch.batch > 128) return { ok: false, field: 'batch', message: 'the batch size must be 1–128' }
+    next.batch = patch.batch
+  }
+  return { ok: true, next }
+}
+
 export function install(rt) {
-  const settings = resolveEmbeddingConfig(rt.config)
+  let saved = readSavedSettings(rt.home, rt.warn)
+  const merged = () => resolveEmbeddingConfig({ memoryEmbedding: { ...rt.config?.memoryEmbedding, ...saved } })
+  const settings = merged()
   const pending = new Map()
   const counts = { embedded: 0, failed: 0, rounds: 0 }
   let lastError = null
   let lastOkAt = null
+  let lastTest = null
   let retryAt = 0
   let timer = null
   let flushing = null
@@ -129,13 +210,18 @@ export function install(rt) {
     base_url: settings.baseUrl,
     model: settings.model,
     timeout_ms: settings.timeoutMs,
+    batch: settings.batch,
     pending: pending.size,
     embedded: counts.embedded,
     failed: counts.failed,
     rounds: counts.rounds,
     last_error: lastError,
     last_ok_at: lastOkAt,
+    last_test: lastTest,
     retry_at: retryAt,
+    // Whether the page saved anything: a switch that is off may still have values behind it.
+    saved: Object.keys(saved).length > 0,
+    settings_path: settingsPathOf(rt.home),
   })
 
   const schedule = delay => {
@@ -218,6 +304,52 @@ export function install(rt) {
     return flushing
   }
 
+  // One call to the configured service, for the page's test button. Never throws: a test
+  // that failed is an answer the page shows, not an error the page has to unwrap.
+  const test = async () => {
+    if (!settings.enabled) {
+      lastTest = { ok: false, error: settings.problem ?? 'the memory service is off', at: Date.now() }
+      return lastTest
+    }
+    const started = Date.now()
+    try {
+      const vectors = await embedTexts({ ...settings, timeoutMs: Math.min(settings.timeoutMs, TEST_TIMEOUT_MS) }, [TEST_TEXT])
+      lastTest = { ok: true, url: embeddingsUrl(settings), model: settings.model, latency_ms: Date.now() - started, dimensions: vectors[0].length, at: Date.now() }
+    } catch (error) {
+      lastTest = { ok: false, url: embeddingsUrl(settings), model: settings.model, latency_ms: Date.now() - started, error: error?.message ?? String(error), at: Date.now() }
+    }
+    return lastTest
+  }
+
+  // The page's save: file first, then the running module, so the next slice of this host
+  // already uses the new service. A refusal names the field it is about.
+  const save = patch => {
+    const checked = normalizeSettingsPatch(patch)
+    if (!checked.ok) return { ok: false, field: checked.field, message: checked.message, state: state() }
+    const next = { ...saved, ...checked.next }
+    try {
+      writeSavedSettings(rt.home, next)
+    } catch (error) {
+      return { ok: false, field: null, message: `the settings could not be written: ${error?.message ?? String(error)}`, state: state() }
+    }
+    saved = next
+    Object.assign(settings, merged())
+    retryAt = 0
+    lastError = null
+    if (timer !== null) {
+      clearTimeout(timer)
+      timer = null
+    }
+    if (settings.enabled) {
+      scan()
+      schedule(0)
+    } else {
+      // Off now: a queued slice must not be sent after the switch said not to.
+      pending.clear()
+    }
+    return { ok: true, state: state() }
+  }
+
   rt.ctx?.effect?.(() => () => {
     if (timer !== null) clearTimeout(timer)
     timer = null
@@ -230,7 +362,10 @@ export function install(rt) {
       queue,
       scan,
       flush,
+      test,
+      save,
       pending: () => pending.size,
+      saved: () => ({ ...saved }),
     },
   })
 
