@@ -121,6 +121,40 @@ export function createSliceStore({ dir, now = () => Date.now(), warn = () => {} 
     return writing
   }
 
+  // Fill fields in on rows that are already on disk (4.3 writes a vector this way). The
+  // whole file is rewritten, under the same chain the appends use.
+  const patch = (updates) => {
+    const byId = new Map()
+    for (const update of Array.isArray(updates) ? updates : [updates]) {
+      if (update === null || typeof update !== 'object' || typeof update.id !== 'string') continue
+      byId.set(update.id, update)
+    }
+    writing = writing.then(async () => {
+      if (byId.size === 0) return 0
+      const rows = read()
+      let changed = 0
+      const next = rows.map(row => {
+        const update = byId.get(row.id)
+        if (update === undefined) return row
+        const merged = { ...row }
+        for (const [field, value] of Object.entries(update)) {
+          if (field === 'id') continue
+          merged[field] = value
+        }
+        changed += 1
+        return merged
+      })
+      if (changed > 0) {
+        mkdirSync(dir, { recursive: true })
+        const temp = `${file}.tmp`
+        await writeFile(temp, `${next.map(row => JSON.stringify(row)).join('\n')}\n`)
+        await rename(temp, file)
+      }
+      return changed
+    })
+    return writing
+  }
+
   const remove = (ids) => {
     const wanted = new Set(ids)
     writing = writing.then(async () => {
@@ -146,7 +180,7 @@ export function createSliceStore({ dir, now = () => Date.now(), warn = () => {} 
     return writing
   }
 
-  return { dir, file, cursorsPath, read, readCursors, writeCursors, countOf, append, remove, clear, now, warn }
+  return { dir, file, cursorsPath, read, readCursors, writeCursors, countOf, append, patch, remove, clear, now, warn }
 }
 
 // One turn, cut into pieces. Newlines stay (they mark who spoke); a piece never passes
@@ -252,10 +286,19 @@ export function install(rt) {
     return turns.filter(turn => turn.lines.some(line => String(line.text ?? '').trim() !== ''))
   }
 
+  // The host hands lines back already prefixed ("User: …", "You: …"). A slice says who
+  // spoke in its own two words — `User:` and `Bot:` — so the host's prefix is dropped and
+  // the Bot's lines read the same whether the host called them "You" or "bot".
+  const HOST_PREFIX = /^(?:User|You|Bot|user|you|bot)\s*[:：]\s*/
+  const saidBy = line => {
+    const body = String(line.text ?? '').replace(HOST_PREFIX, '')
+    return `${line.who === 'user' ? 'User: ' : 'Bot: '}${body}`
+  }
+
   const rowsOf = ({ turns, botId, projectId, sessionId, kind }) => {
     const rows = []
     for (const turn of turns) {
-      const text = cleanTurnText(rt, turn.lines.map(line => `${line.who === 'bot' ? 'Bot: ' : ''}${line.text}`).join('\n'))
+      const text = cleanTurnText(rt, turn.lines.map(saidBy).join('\n'))
       for (const piece of chunkTurn(text)) {
         rows.push({
           bot_id: botId, project_id: projectId, session_id: sessionId, kind,
@@ -281,7 +324,7 @@ export function install(rt) {
     if (lines.length > 0) {
       const at = lines.at(-1).time ?? Date.now()
       const rows = rowsOf({ turns: turnsOf(lines), botId, projectId: projectTagOf(botId, at), sessionId, kind: 'chat' })
-      if (rows.length > 0) await store.append(rows)
+      if (rows.length > 0) offer(await store.append(rows))
     }
     const newest = Math.max(...lines.map(line => line.seq ?? 0), cursors[sessionId] ?? 0)
     if (newest > 0) cursors[sessionId] = newest
@@ -305,19 +348,26 @@ export function install(rt) {
     if (picked.length > 0) {
       const lines = picked.map(entry => ({
         who: entry.who === 'User' && entry.botId === undefined ? 'user' : 'bot',
-        text: `${entry.who === 'User' && entry.botId === undefined ? 'User' : entry.who}: ${entry.text}`,
+        text: `${entry.who === 'User' && entry.botId === undefined ? 'User' : entry.who === 'You' ? 'Bot' : entry.who}: ${String(entry.text).replace(HOST_PREFIX, '')}`,
         seq: entry.seq,
         time: entry.time,
       }))
       const sliceOwner = botId ?? rt.chatOwners?.get(sessionId) ?? null
       const at = lines.at(-1).time ?? Date.now()
       const rows = rowsOf({ turns: turnsOf(lines), botId: sliceOwner, projectId: projectTagOf(sliceOwner, at), sessionId: roomId, kind: 'group' })
-      if (rows.length > 0) await store.append(rows)
+      if (rows.length > 0) offer(await store.append(rows))
     }
     const newest = Math.max(...picked.map(entry => entry.seq ?? 0), since ?? 0)
     if (newest > 0) cursors[key] = newest
     await saveCursors()
     return picked.length
+  }
+
+  // A fresh slice is offered to the embedding queue (4.3) and then forgotten here: that
+  // module has its own retry and never makes this path wait for a model call.
+  const offer = rows => {
+    if (Array.isArray(rows) && rows.length > 0) rt.memoryEmbedding?.queue?.(rows)
+    return rows
   }
 
   const capture = (sessionId) => {
@@ -367,6 +417,7 @@ export function install(rt) {
       list: () => store.read(),
       count: botId => store.countOf(botId),
       remove: ids => store.remove(ids),
+      patch: updates => store.patch(updates),
       clear: botId => store.clear(botId),
       capture,
       pending: () => timers.size + running,

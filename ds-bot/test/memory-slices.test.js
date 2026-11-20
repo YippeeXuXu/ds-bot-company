@@ -220,3 +220,50 @@ test('4.2: clear drops one Bot\'s slices and keeps the others', async () => {
   assert.equal(kept, 1)
   assert.deepEqual(store.read().map(slice => slice.bot_id), ['bot_2'])
 })
+
+test('4.3: a vector is patched onto a slice that is already on disk', async () => {
+  const home = openHome()
+  const store = createSliceStore({ dir: join(home, 'memory-slices'), now: () => 1 })
+  const [first, second] = await store.append([row({ text: 'User: 第一条。' }), row({ text: 'User: 第二条。' })])
+  const changed = await store.patch([
+    { id: first.id, embedding: [0.1, 0.2, 0.3], embedding_model: 'bge-m3' },
+    { id: 'sl_missing', embedding: [9], embedding_model: 'bge-m3' },
+  ])
+  assert.equal(changed, 1)
+  const rows = store.read()
+  assert.deepEqual(rows[0].embedding, [0.1, 0.2, 0.3])
+  assert.equal(rows[0].embedding_model, 'bge-m3')
+  assert.equal(rows[0].text, 'User: 第一条。', 'patching a vector leaves the words alone')
+  assert.equal(rows[1].id, second.id)
+  assert.equal(rows[1].embedding, null)
+})
+
+test('4.3: the host\'s own name for the Bot is normalised, so a slice says Bot: once', async () => {
+  const home = openHome()
+  const lines = [
+    { seq: 1, who: 'user', text: 'User: 我们按蓝色做主色。', time: 1000 },
+    { seq: 2, who: 'bot', text: 'You: 好，主色定蓝色。', time: 1001 },
+  ]
+  const rt = runtimeFor({ home, lines })
+  install(rt)
+  await rt.memorySlices.capture('s_1')
+  const [slice] = rt.memorySlices.list()
+  assert.equal(slice.text, 'User: 我们按蓝色做主色。\nBot: 好，主色定蓝色。')
+  assert.equal(slice.text.includes('You:'), false)
+})
+
+test('4.3: a fresh slice is offered to the embedding queue without waiting for it', async () => {
+  const home = openHome()
+  const lines = [
+    { seq: 1, who: 'user', text: 'User: 今天写用量。', time: 1000 },
+    { seq: 2, who: 'bot', text: 'You: 好。', time: 1001 },
+  ]
+  const offered = []
+  const rt = runtimeFor({ home, lines })
+  rt.memoryEmbedding = { queue: rows => { offered.push(...rows); return rows.length } }
+  install(rt)
+  await rt.memorySlices.capture('s_1')
+  assert.equal(offered.length, 1)
+  assert.equal(offered[0].embedding, null)
+  assert.match(offered[0].text, /今天写用量/)
+})
