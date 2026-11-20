@@ -14,6 +14,8 @@ import { usageHandlers } from '../src/host/company/usage.js'
 
 const AT = Date.UTC(2026, 10, 20, 12, 0, 0)
 const DAY = 86_400_000
+// The host ledger's bucket width (src/host/usage.js). Call rows carry the bucket's start.
+const SLOT = 15 * 60_000
 
 const openHome = async () => {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-company-usage-'))
@@ -121,24 +123,27 @@ test('a project row is the latest Run dispatched to the Bot, and a call before t
     employees: { emp_1: employee('emp_1', '林小满', 'bot_1') },
     projects: { prj_1: project('prj_1', 'Alpha', 'room_1'), prj_2: project('prj_2', 'Beta', 'room_2') },
     runs: {
-      run_1: { id: 'run_1', project_id: 'prj_1', task_id: 'tsk_1', bot_id: 'bot_1', employee_id: 'emp_1', state: 'dispatched', dispatched_at: AT - 500, session_id: null },
-      run_2: { id: 'run_2', project_id: 'prj_2', task_id: 'tsk_2', bot_id: 'bot_1', employee_id: 'emp_1', state: 'dispatched', dispatched_at: AT - 100, session_id: null },
+      run_1: { id: 'run_1', project_id: 'prj_1', task_id: 'tsk_1', bot_id: 'bot_1', employee_id: 'emp_1', state: 'dispatched', dispatched_at: AT - 3 * SLOT, session_id: null },
+      run_2: { id: 'run_2', project_id: 'prj_2', task_id: 'tsk_2', bot_id: 'bot_1', employee_id: 'emp_1', state: 'dispatched', dispatched_at: AT - SLOT, session_id: null },
     },
   })
   const ledger = [
     // Before the first dispatch: the Bot's own chat, no project to name.
-    slice('bot_1', AT - 900, { input: 1 }),
-    // Between the two dispatches: the first Run.
-    slice('bot_1', AT - 400, { input: 2 }),
-    // After the second dispatch: the second Run, even though the first never ended.
-    slice('bot_1', AT - 50, { input: 4 }),
+    slice('bot_1', AT - 4 * SLOT, { input: 1 }),
+    // The slot a dispatch happens in: the ledger keeps only the slot start, so the dispatch
+    // must claim its own slot or a fresh Run would report its work as unattributed.
+    slice('bot_1', AT - 3 * SLOT, { input: 2 }),
+    // A later slot: still the first Run, since the second has not been dispatched yet.
+    slice('bot_1', AT - 2 * SLOT, { input: 3 }),
+    // The second dispatch's slot: the second Run, even though the first never ended.
+    slice('bot_1', AT - SLOT, { input: 4 }),
     // A group room's calls go to its project with no dispatch involved.
-    slice('room:room_2', AT - 300, { input: 8 }),
+    slice('room:room_2', AT - 2 * SLOT, { input: 8 }),
   ]
   const body = await summary(home, ledger, { by: 'project', from: AT - DAY, to: AT, time_zone: 'UTC' })
 
-  assert.deepEqual(body.rows.map(row => [row.project_id, row.input]), [['prj_2', 12], ['prj_1', 2]])
-  assert.equal(body.totals.input, 14)
+  assert.deepEqual(body.rows.map(row => [row.project_id, row.input]), [['prj_2', 12], ['prj_1', 5]])
+  assert.equal(body.totals.input, 17)
   assert.equal(body.unattributed.input, 1)
   assert.equal(body.unattributed.reason, 'no-run')
 })

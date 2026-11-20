@@ -7,12 +7,15 @@
 //
 //   person  — the employee whose Bot owns the Session (the ledger's owner is the Bot's id)
 //   project — a dispatch writes a Run on the Bot's Session, so a call belongs to the latest
-//             Run dispatched to that Bot at or before the call; a call inside a project's
-//             group room belongs to that project, never to one person
+//             Run dispatched to that Bot at or before the call's bucket; a call inside a
+//             project's group room belongs to that project, never to one person
 //   time    — the same calls cut by day in the caller's time zone
 //
 // A Run carries no end time until it fails (`run.fail`), so "the latest dispatch at or
 // before the call" is the rule instead of a window: a Bot works on what it was last handed.
+// The ledger buckets calls into 15-minute slots and keeps only the slot's start, so the
+// comparison uses the slot's end: a dispatch inside the same slot as the calls it caused
+// must still claim them, or a fresh dispatch would report its own work as unattributed.
 // A call no Run covers yet stays with the person and is reported as an unattributed project,
 // rather than invented into a project it may not belong to.
 //
@@ -24,6 +27,8 @@ export const USAGE_GROUPS = ['person', 'project', 'time']
 
 const DAY_MS = 86_400_000
 const DEFAULT_DAYS = 30
+// The ledger's bucket width (`SLOT_MS` in src/host/usage.js); call rows carry the slot start.
+const SLOT_MS = 15 * 60_000
 
 const isTimeZone = value => {
   if (typeof value !== 'string' || value.trim() === '') return false
@@ -103,11 +108,12 @@ function companyIndexes(state) {
   for (const list of runsByBot.values()) list.sort((left, right) => left.dispatched_at - right.dispatched_at)
   // The Run a Bot was working on at a moment: the last one handed to it, not an interval.
   // A Run that failed still names what the Bot spent its calls on before it was given up.
-  const projectOfCall = (botId, time) => {
+  const projectOfCall = (botId, slotStart) => {
     const list = runsByBot.get(botId)
     if (list === undefined) return null
+    const bucketEnd = slotStart + SLOT_MS
     for (let index = list.length - 1; index >= 0; index -= 1) {
-      if (list[index].dispatched_at <= time) return state.projects?.[list[index].project_id] ?? null
+      if (list[index].dispatched_at < bucketEnd) return state.projects?.[list[index].project_id] ?? null
     }
     return null
   }
