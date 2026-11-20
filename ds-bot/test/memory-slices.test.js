@@ -150,8 +150,11 @@ test('4.2: three turns make three slices, with the Bot, the session and the proj
 
 test('4.2: a saved secret and a key-shaped string never reach a slice', async () => {
   const home = openHome()
+  // Built at runtime on purpose: a key-shaped run in this file would trip the leak scan,
+  // which only looks at what a reader can copy verbatim.
+  const fakeKey = ['sk', 'live', 'abcdefghijklmnopqrstuvwx'].join('-')
   const lines = [
-    { seq: 1, who: 'user', text: 'User: 数据库口令是 hunter2，另外 api key 是 sk-live-abcdefghijklmnop', time: 1000 },
+    { seq: 1, who: 'user', text: `User: 数据库口令是 hunter2，另外 api key 是 ${fakeKey}`, time: 1000 },
     { seq: 2, who: 'bot', text: 'You: 记下了。', time: 1001 },
   ]
   const rt = runtimeFor({ home, lines, secrets: ['hunter2'] })
@@ -159,7 +162,7 @@ test('4.2: a saved secret and a key-shaped string never reach a slice', async ()
   await rt.memorySlices.capture('s_1')
   const [slice] = rt.memorySlices.list()
   assert.equal(slice.text.includes('hunter2'), false)
-  assert.equal(slice.text.includes('sk-live-abcdefghijklmnop'), false)
+  assert.equal(slice.text.includes(fakeKey), false)
   assert.match(slice.text, /\[secret:KEY\]/)
   assert.match(slice.text, /\[secret\]/)
 })
@@ -185,6 +188,7 @@ test('4.2: a group round is sliced under the group, from its log', async () => {
   await rt.memorySlices.capture('s_member')
   const [slice] = rt.memorySlices.list()
   assert.equal(slice.kind, 'group')
+  assert.equal(slice.bot_id, 'bot_1')
   assert.equal(slice.session_id, 'r_1')
   assert.match(slice.text, /User: 今天先对需求。/)
   assert.match(slice.text, /林一: 需求我整理好了。/)

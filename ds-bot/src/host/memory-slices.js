@@ -281,7 +281,7 @@ export function install(rt) {
   }
 
   // A group round: the group's log between two user messages, all members together.
-  async function captureGroup(sessionId, { roomId }) {
+  async function captureGroup(sessionId, { roomId, botId }) {
     const room = rt.roomOf?.(roomId)
     if (room === undefined) return 0
     const key = `group:${roomId}`
@@ -300,9 +300,9 @@ export function install(rt) {
         seq: entry.seq,
         time: entry.time,
       }))
-      const botId = rt.chatOwners?.get(sessionId) ?? null
+      const sliceOwner = botId ?? rt.chatOwners?.get(sessionId) ?? null
       const at = lines.at(-1).time ?? Date.now()
-      const rows = rowsOf({ turns: turnsOf(lines), botId, projectId: projectTagOf(botId, at), sessionId: roomId, kind: 'group' })
+      const rows = rowsOf({ turns: turnsOf(lines), botId: sliceOwner, projectId: projectTagOf(sliceOwner, at), sessionId: roomId, kind: 'group' })
       if (rows.length > 0) await store.append(rows)
     }
     const newest = Math.max(...picked.map(entry => entry.seq ?? 0), since ?? 0)
