@@ -12,6 +12,7 @@
 // (`readiness.blockers`), so the screen can show everything missing in one pass.
 import { randomUUID } from 'node:crypto'
 import { companyFail } from './store.js'
+import { actorKindOf, isOwnerActor } from './access.js'
 
 // Shared with the acceptance objects (acceptances.js): one id shape for the whole company.
 export const newId = prefix => `${prefix}_${randomUUID().replaceAll('-', '').slice(0, 12)}`
@@ -159,7 +160,14 @@ const acceptanceActorOf = (state, value, requirement, field = 'acceptance_actor'
     if (requirement === 'owner_only') throw companyFail('project/owner-required', 'owner_only acceptance belongs to the owner; set acceptance_actor to "user".', { field })
     return undefined
   }
-  if (value === 'user') return 'user'
+  const kind = actorKindOf(state, value)
+  if (kind === 'owner') return 'user'
+  if (kind === 'human') {
+    const human = state.actors[value]
+    if (human.status !== 'active') throw companyFail('actor/inactive', `Person ${human.name ?? value} is disabled; restore them before naming them as the acceptor.`, { field, actor_id: value })
+    if (requirement === 'owner_only') throw companyFail('project/owner-required', 'owner_only acceptance belongs to the owner, not to a person.', { field, actor_id: value })
+    return value
+  }
   const employee = employeeOf(state, text(value, field, { max: 120 }))
   if (employee.status !== 'active') throw companyFail('employee/inactive', `Employee ${employee.id} is dismissed; re-activate them before naming them as the acceptor.`, { field, employee_id: employee.id })
   if (requirement === 'owner_only') throw companyFail('project/owner-required', 'owner_only acceptance belongs to the owner, not to a Bot.', { field, employee_id: employee.id })
@@ -405,7 +413,7 @@ export function projectHandlers({ groups = {} } = {}) {
       // owner_only work can only be accepted by the owner, so owner_only can never be left
       // with a Bot or nobody as the actor — it would create a project that can never be
       // accepted.
-      if (nextRequirement === 'owner_only' && nextActor !== 'user') {
+      if (nextRequirement === 'owner_only' && !isOwnerActor(state, nextActor)) {
         throw companyFail('project/owner-required', 'owner_only acceptance belongs to the owner; set acceptance_actor to "user".', { field: 'acceptance_actor' })
       }
       if (payload.acceptance_requirement !== undefined) {
@@ -607,9 +615,12 @@ export function projectHandlers({ groups = {} } = {}) {
       }
       const requirement = project.acceptance_requirement
       if (requirement === 'owner_only') {
-        if (project.acceptance_actor !== 'user') blockers.push({ code: 'owner_required', field: 'acceptance_actor', message: 'owner_only acceptance belongs to the owner; set acceptance_actor to "user".' })
-      } else if (typeof project.acceptance_actor !== 'string' || project.acceptance_actor === 'user') {
+        if (!isOwnerActor(state, project.acceptance_actor)) blockers.push({ code: 'owner_required', field: 'acceptance_actor', message: 'owner_only acceptance belongs to the owner; set acceptance_actor to "user".' })
+      } else if (typeof project.acceptance_actor !== 'string' || isOwnerActor(state, project.acceptance_actor)) {
         blockers.push({ code: 'missing_input', field: 'acceptance_actor', message: 'Name the independent acceptance Bot.' })
+      } else if (actorKindOf(state, project.acceptance_actor) === 'human') {
+        const person = state.actors[project.acceptance_actor]
+        if (person?.status !== 'active') blockers.push({ code: 'missing_input', field: 'acceptance_actor', message: 'The acceptance reviewer is not an active person.' })
       } else {
         const acceptor = state.employees[project.acceptance_actor]
         if (acceptor === undefined || acceptor.status !== 'active') blockers.push({ code: 'missing_input', field: 'acceptance_actor', message: 'The acceptance Bot is not an active employee.' })

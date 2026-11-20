@@ -12,6 +12,7 @@
 // itself, retrying on its own.
 import { newId } from './projects.js'
 import { companyFail } from './store.js'
+import { actorKindOf, isOwnerActor } from './access.js'
 import { bump, employeeOf, memberOf, optionalText, projectOf, taskOf, taskView, text, unmetDependencies } from './tasks.js'
 
 // `task.dispatch` and `run.fail` are answered with the task's own revision: the card is
@@ -46,8 +47,10 @@ export const runView = run => ({
 })
 
 const acceptorName = (state, task) => {
-  if (task.acceptance_actor === 'user') return '老板本人'
-  return state.employees[task.acceptance_actor]?.name ?? task.acceptance_actor ?? '未指定'
+  const actor = task.acceptance_actor
+  if (isOwnerActor(state, actor)) return '老板本人'
+  if (actorKindOf(state, actor) === 'human') return state.actors[actor]?.name ?? actor
+  return state.employees[actor]?.name ?? actor ?? '未指定'
 }
 
 const instructionOf = (state, { project, task, employee, note, workspace = null }) => {

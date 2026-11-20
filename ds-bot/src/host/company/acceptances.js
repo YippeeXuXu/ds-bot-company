@@ -15,6 +15,7 @@
 import { newId } from './projects.js'
 import { companyFail } from './store.js'
 import { holdFor } from './tasks.js'
+import { actorKindOf, isOwnerActor } from './access.js'
 
 // The commands whose `expected_revision` names the object's own revision, not the company's.
 // A to-do row carries the acceptance revision (contract A12/B-2) and `acceptance.decide`
@@ -62,8 +63,14 @@ const activeEmployeeOf = (state, employeeId, field = 'requester_employee_id') =>
 const actorOf = (state, project, value) => {
   const actor = value === undefined || value === null || value === '' ? project.acceptance_actor : value
   if (actor === undefined || actor === null || actor === '') return null
-  if (actor === 'user') return 'user'
-  if (typeof actor !== 'string') throw companyFail('company/invalid', 'acceptance_actor must be "user" or an employee id.', { field: 'acceptance_actor' })
+  const kind = actorKindOf(state, actor)
+  if (kind === 'owner') return 'user'
+  if (kind === 'human') {
+    const human = state.actors[actor]
+    if (human.status !== 'active') throw companyFail('actor/inactive', `Person ${human.name ?? actor} is disabled; restore them before naming them as the acceptor.`, { field: 'acceptance_actor', actor_id: actor })
+    return actor
+  }
+  if (typeof actor !== 'string') throw companyFail('company/invalid', 'acceptance_actor must be the owner, a person id or an employee id.', { field: 'acceptance_actor' })
   const employee = activeEmployeeOf(state, actor, 'acceptance_actor')
   if (!activeMemberOf(state, project.id, employee.id)) {
     throw companyFail('project/member-not-found', `Employee ${employee.id} is not a member of project ${project.id}.`, { project_id: project.id, employee_id: employee.id })
@@ -91,7 +98,7 @@ export function createPendingForTask(state, task, payload, project, now) {
     ? task.acceptance_actor
     : actorOf(state, project, payload.acceptance_actor)
   const ownerOnly = task.acceptance_requirement === 'owner_only'
-  if (ownerOnly && actor !== 'user') {
+  if (ownerOnly && !isOwnerActor(state, actor)) {
     throw companyFail('owner_only_requires_user', 'An owner_only acceptance belongs to the owner; set acceptance_actor to "user".', { project_id: project.id, acceptance_actor: actor })
   }
   const checks = task.acceptance_checks ?? []
@@ -149,7 +156,7 @@ export function acceptanceHandlers() {
       // Submission-side enforcement (owner decision 10:34): a project that only the owner
       // may accept cannot be submitted for a Bot, even if the caller asks for one. Nothing
       // is written when this fails.
-      if (ownerOnly && actor !== 'user') {
+      if (ownerOnly && !isOwnerActor(state, actor)) {
         throw companyFail('owner_only_requires_user', 'An owner_only acceptance belongs to the owner; set acceptance_actor to "user".', { project_id: project.id, acceptance_actor: actor })
       }
       // v1.12 allows a task link on an independently submitted acceptance (§5 row 183).
