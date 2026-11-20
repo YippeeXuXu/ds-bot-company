@@ -171,25 +171,35 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false, 
       return { aggregate_id: company?.id ?? null, mutates: false, body: { company } }
     },
 
-    // The company's mode is the default for every new Session (M1b-2.5). Sessions already
-    // started keep theirs; the host refuses a preset change mid-session.
+    // The company's name and its mode are both edited here. The mode is the default for
+    // every new Session (M1b-2.5): Sessions already started keep theirs, and the host
+    // refuses a preset change mid-session. Either field may be sent alone; a call that
+    // changes nothing is not a write, so it leaves the revision and the event log alone.
     'company.update': ({ state, payload, now }) => {
       const company = companyOf(state)
-      if (payload.conversation_mode === undefined) {
-        throw companyFail('company/invalid', 'Nothing to change: conversation_mode was not given.', { field: 'conversation_mode' })
+      if (payload.name === undefined && payload.conversation_mode === undefined) {
+        throw companyFail('company/invalid', 'Nothing to change: give name or conversation_mode.', { field: 'conversation_mode', fields: ['name', 'conversation_mode'] })
       }
-      const mode = conversationMode(payload.conversation_mode, COMPANY_MODES, 'conversation_mode')
-      const changed = company.conversation_mode !== mode
-      if (changed) {
-        company.conversation_mode = mode
+      const changed = {}
+      if (payload.name !== undefined) {
+        const name = text(payload.name, 'name', { max: 80 })
+        if (name !== company.name) changed.name = name
+      }
+      if (payload.conversation_mode !== undefined) {
+        const mode = conversationMode(payload.conversation_mode, COMPANY_MODES, 'conversation_mode')
+        if (mode !== company.conversation_mode) changed.conversation_mode = mode
+      }
+      const fields = Object.keys(changed)
+      if (fields.length > 0) {
+        Object.assign(company, changed)
         company.revision += 1
         company.updated_at = now()
       }
       return {
         aggregate_id: company.id,
-        ...(changed ? {} : { mutates: false }),
+        ...(fields.length > 0 ? {} : { mutates: false }),
         body: { company },
-        ...(changed ? { events: [{ type: 'company.updated', data: { conversation_mode: mode } }] } : {}),
+        ...(fields.length > 0 ? { events: [{ type: 'company.updated', data: changed }] } : {}),
       }
     },
 
