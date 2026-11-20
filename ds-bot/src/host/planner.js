@@ -217,9 +217,18 @@ export function install(rt) {
     })
   }
 
-  // First in the waterfall: the plan must exist before sections are rendered.
-  ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
+  // First in the waterfall: the plan must exist before sections are rendered. The
+  // assembly's sections have already been rendered by the time this runs, so a section's
+  // own `text` callback is empty here: the plan fills its registered slot in the assembly.
+  ctx.on('system-prompt/assemble', async (assembly, context, next) => {
     try { await ensurePlan(context) } catch { /* planning never blocks a turn */ }
+    const text = planTextFor(context?.agent?.id)
+    if (text !== '') {
+      const sections = Array.isArray(assembly?.sections) ? assembly.sections : undefined
+      const slot = sections?.find(section => section?.name === 'bot-plan')
+      if (slot !== undefined) slot.text = text
+      else if (sections !== undefined) sections.push({ name: 'bot-plan', text, interpolate: false })
+    }
     return next()
   })
 

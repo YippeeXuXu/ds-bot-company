@@ -9,6 +9,7 @@ import { install } from '../src/host/planner.js'
 function harness({ planner = { provider: 'strong', model: 'deep' }, executor = 'fast/quick', plan = 'First read the card, then answer in two lines.', fail = false } = {}) {
   const listeners = new Map()
   const sections = []
+  const assemblies = []
   const calls = []
   const warnings = []
   const on = (name, fn) => {
@@ -46,7 +47,7 @@ function harness({ planner = { provider: 'strong', model: 'deep' }, executor = '
     warn: (...args) => warnings.push(args.join(' ')),
   }
   install(rt)
-  return { ctx, listeners, sections, calls, warnings, rt }
+  return { ctx, listeners, sections, assemblies, calls, warnings, rt }
 }
 
 const emit = async (listeners, name, ...args) => {
@@ -57,10 +58,24 @@ const claimed = (h, { sessionId = 's1', turn = 3, text = 'Add the missing test f
   turn,
   agent: { id: sessionId, session: { id: sessionId, header } },
 })
+// DSH renders every registered section before the `system-prompt/assemble` waterfall runs,
+// so the hook must fill the plan into that already-rendered assembly, not into the
+// section's `text` callback. This helper copies that order: render first, then emit.
+const assemblyFor = (h, context) => ({
+  sections: h.sections.map(section => ({
+    name: section.name,
+    text: typeof section.text === 'function' ? section.text(context) : section.text,
+    ...section.interpolate !== undefined ? { interpolate: section.interpolate } : {},
+  })),
+})
 const assemble = async (h, { sessionId = 's1', header = {} } = {}) => {
   let ran = 0
-  await emit(h.listeners, 'system-prompt/assemble', {}, { agent: { id: sessionId, session: { id: sessionId, header } } }, async () => { ran += 1 })
+  const context = { agent: { id: sessionId, session: { id: sessionId, header } } }
+  const assembly = assemblyFor(h, context)
+  await emit(h.listeners, 'system-prompt/assemble', assembly, context, async () => { ran += 1 })
   assert.equal(ran, 1, 'the section renderer still runs after planning')
+  h.assemblies.push(assembly)
+  return assembly
 }
 const planText = (h) => h.sections.find(section => section.name === 'bot-plan')?.text({ agent: { id: 's1' } }) ?? ''
 
@@ -75,6 +90,12 @@ test('a stored planner asks its model once before the turn, and the plan becomes
   assert.match(h.calls[0].system ?? '', /plan one turn/)
   assert.match(JSON.stringify(h.calls[0].messages), /Add the missing test for acceptances/)
   assert.match(planText(h), /First read the card/)
+  // The rendered assembly carries the plan in the registered slot: this is what the real
+  // host sends, so a plan that only reached `planText` here would never reach a turn.
+  const slot = h.assemblies.at(-1).sections.find(section => section.name === 'bot-plan')
+  assert.match(slot.text, /^\[Turn plan from strong\/deep — written before you act\./, 'the plan text replaces the empty slot')
+  assert.match(slot.text, /First read the card/)
+  assert.equal(slot.interpolate, false)
   // The section is injected, not the transcript: nothing else was written.
   assert.equal(h.sections.length, 1)
   assert.equal(h.sections[0].order, 646)
