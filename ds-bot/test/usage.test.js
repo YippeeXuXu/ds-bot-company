@@ -29,7 +29,31 @@ test('each billed attempt is one row, on the model its request named', () => {
     message(2, 1, undefined),
   ])
   assert.deepEqual(rows.map(tokens), [['v4-flash', 10, 0, 0], ['v4-flash', 20, 5, 3], ['v4-flash', 30, 2, 4], ['v4-pro', 7, 0, 7]])
-  assert.deepEqual(state, { provider: 'deepseek', model: 'v4-pro', retry: { turn: 1, step: 0, count: 1 } })
+  assert.deepEqual(state, { provider: 'deepseek', model: 'v4-pro', retry: { turn: 1, step: 0, count: 1 }, turn: 0, trigger: '' })
+})
+
+// A turn is what the message that opened it asked for: the user, a Bot's relay, a
+// scheduled task, or a goal. A steer joins the same turn without replacing that.
+const user = (turn, source, text = 'ask') => ({ type: 'user/message', time: 0, data: { turn, content: [{ type: 'text', text }], source } })
+
+test('each turn is attributed to the message that asked for it (batch 2)', () => {
+  const { rows, state } = foldCalls([
+    header('deepseek', 'v4-pro'),
+    { type: 'turn/start', data: { turn: 1 } },
+    user(1, { kind: 'user' }),
+    streamed('assistant/message', 1, 0, usage(10, 1)),
+    { type: 'turn/start', data: { turn: 2 } },
+    user(2, { kind: 'bot', senderName: '小蓝' }),
+    streamed('assistant/message', 2, 0, usage(20, 2)),
+    // A steer in the same turn does not become a second trigger.
+    user(2, { kind: 'user' }),
+    streamed('assistant/message', 2, 1, usage(30, 3)),
+    { type: 'turn/start', data: { turn: 3 } },
+    user(3, { kind: 'schedule' }),
+    streamed('assistant/message', 3, 0, usage(40, 4)),
+  ])
+  assert.deepEqual(rows.map(row => [row.key, row.trigger]), [['1:0:0', 'user'], ['2:0:0', 'bot:小蓝'], ['2:1:0', 'bot:小蓝'], ['3:0:0', 'schedule']])
+  assert.equal(state.trigger, 'schedule')
 })
 
 test('a fold goes on from where the last read stopped', () => {
@@ -155,6 +179,10 @@ test('the usage view counts every Session under its owner, by hour in the asked 
   assert.deepEqual(view.rows.map(row => row[0]), ['1970-01-01 08', '1970-01-01 09', '1970-01-01 09', '1970-01-01 09', '1970-01-01 10'])
   assert.deepEqual(view.models.map(model => model.key).sort(), ['deepseek/v4-flash', 'deepseek/v4-pro', 'kimi/k3'])
   assert.equal(view.scanning, false)
+  // These logs carry no turn/start, so every row is unattributed; the trigger column is
+  // still one per row and points into the view's own label list.
+  assert.deepEqual(view.triggers, [''])
+  assert.ok(view.rows.every(row => row[9] === 0))
   assert.ok(!pages.includes('s-empty'))
 
   // A Session's own requests are in its log, so the meter lets them through untouched.

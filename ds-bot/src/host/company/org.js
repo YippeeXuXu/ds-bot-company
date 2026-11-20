@@ -23,6 +23,27 @@ const conversationMode = (value, allowed, field) => {
   return mode
 }
 
+// Planner (batch 2): the stronger model that writes the plan for a turn before the
+// employee's own model runs. The pair is stored as given; whether it is served is
+// settled when a turn asks for it, so a provider that starts later still fits.
+const plannerSetting = (value) => {
+  if (value === null || value === '') return null
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw companyFail('company/invalid', 'planner is an object with provider and model, or null.', { field: 'planner' })
+  }
+  const provider = text(value.provider, 'planner.provider', { max: 120 })
+  const model = text(value.model, 'planner.model', { max: 200 })
+  const effort = value.reasoning_effort === undefined || value.reasoning_effort === null || value.reasoning_effort === ''
+    ? undefined
+    : text(value.reasoning_effort, 'planner.reasoning_effort', { max: 60 })
+  return {
+    enabled: value.enabled !== false,
+    provider,
+    model,
+    ...(effort === undefined ? {} : { reasoning_effort: effort }),
+  }
+}
+
 const newId = prefix => `${prefix}_${randomUUID().replaceAll('-', '').slice(0, 12)}`
 
 const text = (value, field, { max = 120, min = 1 } = {}) => {
@@ -361,6 +382,7 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false, 
         throw companyFail('employee.bot_already_employed', `Bot ${botId} already holds an active employee profile.`, { field: 'bot_id', bot_id: botId })
       }
       const id = newId('emp')
+      const planner = payload.planner === undefined ? null : plannerSetting(payload.planner)
       state.employees[id] = {
         id,
         company_id: company.id,
@@ -372,6 +394,7 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false, 
         // M1b-2.5: `follow` keeps the profile in step with the company default; a pinned
         // value is for the one employee who needs the other mode.
         conversation_mode: payload.conversation_mode === undefined ? 'follow' : conversationMode(payload.conversation_mode, EMPLOYEE_MODES, 'conversation_mode'),
+        ...(planner === null ? {} : { planner }),
         status: 'active',
         // Filled by the project commands (M1a-3). Since contract v1.18 one employee may serve
         // several projects: `project_ids` is the list, and `project_id` stays the first entry
@@ -423,6 +446,11 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false, 
       }
       if (payload.acceptance_role !== undefined) profile.acceptance_role = acceptanceRole(payload.acceptance_role)
       if (payload.conversation_mode !== undefined) profile.conversation_mode = conversationMode(payload.conversation_mode, EMPLOYEE_MODES, 'conversation_mode')
+      if (payload.planner !== undefined) {
+        const next = plannerSetting(payload.planner)
+        if (next === null) delete profile.planner
+        else profile.planner = next
+      }
       if (payload.status !== undefined) {
         const next = text(payload.status, 'status', { max: 20 })
         if (!EMPLOYEE_STATUS.includes(next)) throw companyFail('company/invalid', `status is one of ${EMPLOYEE_STATUS.join(', ')}.`, { field: 'status', allowed: EMPLOYEE_STATUS })

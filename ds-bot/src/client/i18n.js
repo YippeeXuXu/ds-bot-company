@@ -890,6 +890,8 @@ const ZH = {
   'Nothing in this range.': '这段时间没有用量。',
   'Who used it': '谁在用',
   'What for': '用途',
+  'Triggered by': '触发者',
+  Goal: '目标',
   Activity: '活跃度',
   'Time range': '时间范围',
   'All usage': '全部用量',
