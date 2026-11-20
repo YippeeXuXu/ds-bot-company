@@ -162,6 +162,11 @@ test('a model that fails skips the group and leaves no half-written row', async 
   assert.equal(existsSync(store.archivePath), false)
   assert.match(warnings.join('\n'), /memory summary skipped a group/)
   assert.match(rt.memorySummary.state().problem, /could not be reached|ECONNREFUSED|fetch failed/)
+  // Once the page clears the address, the state names the missing field again instead of
+  // repeating the older run's failure.
+  rt.memorySummary.save({ base_url: '' })
+  assert.equal(rt.memorySummary.state().configured, false)
+  assert.equal(rt.memorySummary.state().problem, 'base_url is not set')
 })
 
 test('a configured model writes the summary it answers, and the prompt carries the sources', async (t) => {

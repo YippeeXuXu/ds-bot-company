@@ -401,7 +401,9 @@ export function install(rt) {
     return {
       ...state,
       configured: options.configured,
-      problem: state.problem ?? options.problem,
+      // A missing field is what the page must say, even when an older run failed: the user
+      // has to fix the address or the model name before anything else can work.
+      problem: options.problem ?? state.problem,
       endpoint: options.endpoint,
       base_url: options.baseUrl,
       model: options.model,
