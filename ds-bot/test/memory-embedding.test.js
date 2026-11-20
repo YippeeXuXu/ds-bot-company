@@ -1,6 +1,6 @@
 // The embedding client of G4 4.3: it must stay dark until someone configures a service,
 // speak both shapes the two candidates use, and never lose a slice because a call failed.
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -223,6 +223,53 @@ test('embedTexts answers nothing for nothing, without touching the service', asy
     const settings = resolveEmbeddingConfig({ memoryEmbedding: settingsFor(service.base) })
     assert.deepEqual(await embedTexts(settings, []), [])
     assert.equal(service.seen.length, 0)
+  } finally {
+    await service.close()
+  }
+})
+
+// The page saves to <home>/memory-embedding.json; a host that starts later must pick those
+// values up and queue what has no vector yet, without anyone reopening the page.
+const sliceFile = (home, rows) => {
+  mkdirSync(join(home, 'memory-slices'), { recursive: true })
+  writeFileSync(join(home, 'memory-slices', 'slices.jsonl'), rows.map(row => JSON.stringify(row)).join('\n') + '\n')
+}
+const savedFile = (home, settings) => writeFileSync(join(home, 'memory-embedding.json'), `${JSON.stringify(settings, null, 2)}\n`)
+
+test('a saved settings file is re-read on start and the slices without a vector are queued', () => {
+  const home = openHome()
+  savedFile(home, { enabled: true, base_url: 'http://127.0.0.1:9', model: 'bge-m3' })
+  sliceFile(home, [
+    { id: 'sl_1', text: '我们把主色定成蓝色。', embedding: null },
+    { id: 'sl_2', text: '周五上线。', embedding: [0.1, 0.2], embedding_model: 'bge-m3' },
+    { id: 'sl_3', text: '第二个待办。', embedding: undefined },
+  ])
+  const { rt } = runtimeFor({ home })
+  const state = rt.memoryEmbedding.state()
+  assert.equal(state.saved, true)
+  assert.equal(state.enabled, true, 'the file turns the switch on, the plugin config stays empty')
+  assert.equal(state.base_url, 'http://127.0.0.1:9')
+  assert.equal(state.model, 'bge-m3')
+  assert.equal(state.settings_path, join(home, 'memory-embedding.json'))
+  assert.equal(rt.memoryEmbedding.pending(), 2, 'only the rows without a vector wait')
+  rt.memoryEmbedding.save({ enabled: false })
+})
+
+test('save writes the file, re-resolves on the spot, and queues what is still unembedded', async () => {
+  const service = await mockService(() => ({ embedding: [0.5, 0.25] }))
+  const home = openHome()
+  sliceFile(home, [{ id: 'sl_1', text: '我们把主色定成蓝色。', embedding: null }])
+  try {
+    const { rt } = runtimeFor({ home })
+    assert.equal(rt.memoryEmbedding.state().enabled, false)
+    const answer = rt.memoryEmbedding.save({ enabled: true, base_url: service.base, model: 'bge-m3' })
+    assert.equal(answer.ok, true)
+    assert.equal(answer.state.enabled, true, 'no restart: the same runtime is on')
+    assert.equal(rt.memoryEmbedding.pending(), 1, 'the slice written before the switch is picked up')
+    const written = JSON.parse(readFileSync(join(home, 'memory-embedding.json'), 'utf8'))
+    assert.deepEqual(written, { enabled: true, base_url: service.base, model: 'bge-m3' })
+    const flushed = await rt.memoryEmbedding.flush()
+    assert.equal(flushed.embedded, 1)
   } finally {
     await service.close()
   }
