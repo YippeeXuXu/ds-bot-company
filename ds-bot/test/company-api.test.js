@@ -145,6 +145,27 @@ test('the read model carries the conversation modes (M1b-2.5)', async () => {
   rmSync(home, { recursive: true, force: true })
 })
 
+test('company.update renames over HTTP and a blank name is refused on the name field (P1-11)', async () => {
+  const home = tempHome()
+  const { api, rooms } = open(home)
+  await seed(api, rooms)
+  const before = api.model({}).body.revision
+
+  const renamed = await command(api, 'company.update', { name: '星海科技' })
+  assert.equal(renamed.status, 200)
+  assert.equal(renamed.body.body.company.name, '星海科技')
+  assert.equal(renamed.body.body.company.conversation_mode, 'standard')
+  assert.equal(renamed.body.revision, before + 1)
+  assert.equal(api.model({}).body.company.name, '星海科技')
+
+  const blank = await command(api, 'company.update', { name: '   ' })
+  assert.equal(blank.status, 422)
+  assert.equal(blank.body.code, 'company/invalid')
+  assert.equal(blank.body.details.field, 'name')
+  assert.equal(api.model({}).body.company.name, '星海科技')
+  rmSync(home, { recursive: true, force: true })
+})
+
 test('the read model lists the templates and says which are builtin', async () => {
   const home = tempHome()
   const { api, store, rooms } = open(home)

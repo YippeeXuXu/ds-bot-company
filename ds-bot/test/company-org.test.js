@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -36,6 +36,67 @@ test('company.init is idempotent and reports the existing company', async () => 
   assert.equal(second.aggregate_id, first.aggregate_id)
   assert.equal(second.body.existing, true)
   assert.equal(second.body.company.name, 'DS Bot Company')
+  assert.equal(store.state.revision, 1)
+  rmSync(home, { recursive: true, force: true })
+})
+
+const eventsOf = home => readFileSync(join(home, 'company', 'events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
+
+test('company.update renames the company and leaves the mode alone (P1-11)', async () => {
+  const home = tempHome()
+  const { store, commands } = open(home)
+  const created = await company(commands)
+  const renamed = await run(commands, 'company.update', { operation_key: 'k-rename', name: '  星海科技  ' })
+  // The name is trimmed like every other name field, and the mode the row already has stays.
+  assert.equal(renamed.body.company.name, '星海科技')
+  assert.equal(renamed.body.company.conversation_mode, 'standard')
+  assert.equal(store.state.revision, 2)
+  assert.equal(store.state.companies[created.aggregate_id].revision, 2)
+  assert.deepEqual(eventsOf(home).filter(event => event.type === 'company.updated').map(event => event.data), [{ name: '星海科技' }])
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('company.update takes a name and a mode in one call, and a repeat is not a write (P1-11)', async () => {
+  const home = tempHome()
+  const { store, commands } = open(home)
+  const created = await company(commands)
+  const both = await run(commands, 'company.update', { operation_key: 'k-both', name: '星海科技', conversation_mode: 'ptc' })
+  assert.equal(both.body.company.name, '星海科技')
+  assert.equal(both.body.company.conversation_mode, 'ptc')
+  assert.equal(store.state.revision, 2)
+  assert.deepEqual(eventsOf(home).filter(event => event.type === 'company.updated').map(event => event.data), [{ name: '星海科技', conversation_mode: 'ptc' }])
+
+  // Sending the values the company already holds changes nothing, so the revision and the
+  // event log stay put and the screen is told there was no write.
+  const same = await run(commands, 'company.update', { operation_key: 'k-same', name: '星海科技', conversation_mode: 'ptc' })
+  assert.equal(same.body.company.name, '星海科技')
+  assert.equal(same.body.company.conversation_mode, 'ptc')
+  // A non-write is not recorded in the replay log: asking again simply reads again.
+  assert.equal(store.state.operation_log['k-same'], undefined)
+  assert.equal(store.state.revision, 2)
+  assert.equal(store.state.companies[created.aggregate_id].revision, 2)
+  assert.equal(eventsOf(home).filter(event => event.type === 'company.updated').length, 1)
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('company.update refuses an empty name and keeps an empty call on the mode field (P1-11)', async () => {
+  const home = tempHome()
+  const { store, commands } = open(home)
+  await company(commands)
+  await assert.rejects(
+    run(commands, 'company.update', { operation_key: 'k-blank', name: '   ' }),
+    error => error.code === 'company/invalid' && error.details.field === 'name',
+  )
+  await assert.rejects(
+    run(commands, 'company.update', { operation_key: 'k-long', name: 'x'.repeat(81) }),
+    error => error.code === 'company/invalid' && error.details.field === 'name',
+  )
+  // A call with neither editable field keeps naming the mode, which is what existing
+  // callers and the conversation-mode screen already expect.
+  await assert.rejects(
+    run(commands, 'company.update', { operation_key: 'k-nothing' }),
+    error => error.code === 'company/invalid' && error.details.field === 'conversation_mode',
+  )
   assert.equal(store.state.revision, 1)
   rmSync(home, { recursive: true, force: true })
 })
