@@ -13,9 +13,16 @@
 // what was attached and deletes the Bot; a Bot that cannot be deleted is reported in the
 // error instead of being left behind quietly.
 //
+// Since contract v1.18 a Bot is made from two templates: one `soul` (character, voice, values)
+// and one `agent` (the job). The Bot's instructions are the soul paragraph, a blank line, then
+// the agent paragraph — the exact text `employee.preview-from-template` answers, so a preview
+// and the Bot made from it cannot drift. A job that names no soul takes the company's default
+// soul; a company that has none yet is hired from with the agent text alone.
+//
 // `employee.create` is reused rather than reimplemented: the one-active-profile rule, the
 // acceptance roles and the conversation-mode rules stay in the module that owns them.
 import { companyFail } from './store.js'
+import { kindOfRow, soulOf, templateView } from './templates.js'
 
 const str = (value, field, { max = 120, min = 1 } = {}) => {
   const trimmed = typeof value === 'string' ? value.trim() : ''
@@ -48,11 +55,68 @@ const departmentOf = (state, id) => {
   return department
 }
 
+// The company soul a hire takes when the caller names none: builtin first, then the oldest,
+// then by id, so the same row wins on every call.
+const defaultSoul = (state, companyId) => {
+  const souls = Object.values(state.templates)
+    .filter(template => template.company_id === companyId && template.status !== 'archived' && kindOfRow(template) === 'soul')
+    // A total order, not a mixed one: builtin rows first, then oldest, then id. Without the
+    // last key two souls made in the same millisecond could swap places between calls.
+    .sort((left, right) => (left.source === 'builtin' ? 0 : 1) - (right.source === 'builtin' ? 0 : 1)
+      || (left.created_at ?? 0) - (right.created_at ?? 0)
+      || String(left.id).localeCompare(String(right.id)))
+  return souls[0]
+}
+
+const soulFor = (state, companyId, payload) => {
+  if (payload.soul_template_id === undefined || payload.soul_template_id === null || payload.soul_template_id === '') return defaultSoul(state, companyId)
+  return soulOf(state, companyId, str(payload.soul_template_id, 'soul_template_id', { max: 120 }))
+}
+
+// The one place the two paragraphs become a Bot's instructions. Everything that answers a
+// preview or writes a Bot goes through it: a trimmed soul, one blank line, a trimmed job.
+export const instructionsWithSoul = (soul, agent) => {
+  const job = (agent?.instructions ?? '').trim()
+  const soulText = soul === undefined || soul === null ? '' : (soul.instructions ?? '').trim()
+  if (soulText === '') return job
+  if (job === '') return soulText
+  return `${soulText}\n\n${job}`
+}
+
 // The host calls this command cannot make itself. `create` returns the new Bot; `undo`
 // detaches the given capabilities in reverse and deletes the Bot, answering whether the Bot
 // is still there — the one fact the error body must not guess.
 export function spawnHandlers({ roster = {}, createEmployee, warn = () => {} } = {}) {
   return {
+    // What the hire screen shows before anything is written. It answers the two paragraphs and
+    // the exact instructions the Bot would get, through the same function the hire uses, so a
+    // preview cannot promise wording the Bot does not receive. It writes nothing and needs no
+    // Bot name: the name is decided on the same screen, and a preview must not fail because a
+    // name is taken — that is the hire's refusal to make.
+    'employee.preview-from-template': ({ state, payload }) => {
+      const company = companyOf(state)
+      const agent = templateOf(state, str(payload.template_id, 'template_id', { max: 120 }))
+      if (agent.status === 'archived') {
+        throw companyFail('template/archived', `Template ${agent.name} is archived; pick another one.`, { template_id: agent.id })
+      }
+      if (kindOfRow(agent) !== 'agent') {
+        throw companyFail('template/kind-mismatch', `Template ${agent.name} is a ${kindOfRow(agent)} template; pick an agent template to hire from.`, { template_id: agent.id, field: 'template_id', kind: kindOfRow(agent) })
+      }
+      const soul = soulFor(state, company.id, payload)
+      return {
+        aggregate_id: agent.id,
+        mutates: false,
+        body: {
+          soul: soul === undefined ? null : templateView(soul),
+          agent: templateView(agent),
+          // The screen shows `name` as the employee's name and may edit it; it is not checked
+          // here because the hire checks it against the roster and the profile rules.
+          name: optionalText(payload.name, 'name', 80) ?? agent.name,
+          instructions: instructionsWithSoul(soul, agent),
+        },
+      }
+    },
+
     'employee.create-from-template': async ({ state, payload, now }) => {
       if (typeof createEmployee !== 'function') {
         throw companyFail('company/unsupported', 'This dsh cannot write employee profiles.', {})
@@ -62,6 +126,11 @@ export function spawnHandlers({ roster = {}, createEmployee, warn = () => {} } =
       if (template.status === 'archived') {
         throw companyFail('template/archived', `Template ${template.name} is archived; pick another one.`, { template_id: template.id })
       }
+      // A job is made from an agent template; a soul is chosen beside it, never in its place.
+      if (kindOfRow(template) !== 'agent') {
+        throw companyFail('template/kind-mismatch', `Template ${template.name} is a ${kindOfRow(template)} template; pick an agent template to hire from.`, { template_id: template.id, field: 'template_id', kind: kindOfRow(template) })
+      }
+      const soul = soulFor(state, company.id, payload)
       const department = departmentOf(state, str(payload.department_id, 'department_id', { max: 120 }))
 
       // The employee is named for the screen; the Bot's own name is what the team shows and
@@ -100,7 +169,7 @@ export function spawnHandlers({ roster = {}, createEmployee, warn = () => {} } =
         bot = await roster.create({
           name: botName,
           role: template.role ?? '',
-          instructions: template.instructions ?? '',
+          instructions: instructionsWithSoul(soul, template),
           ...(template.model ? { model: template.model } : {}),
           // An empty thinking level is an explicit Default, not a missing pick: passing
           // undefined here would let each create inherit the profile default as it
@@ -162,11 +231,15 @@ export function spawnHandlers({ roster = {}, createEmployee, warn = () => {} } =
 
       return {
         aggregate_id: made.aggregate_id,
-        body: { employee: made.body.employee, bot: { id: bot.id, name: bot.name, skills: attached } },
+        body: {
+          employee: made.body.employee,
+          bot: { id: bot.id, name: bot.name, skills: attached, instructions: instructionsWithSoul(soul, template) },
+          soul_template_id: soul?.id ?? null,
+        },
         // One `employee.created`, tagged with the template it came from: the audit line says
         // both what was made and why these settings.
         events: (made.events ?? [{ type: 'employee.created', data: { bot_id: bot.id, department_id: department.id } }])
-          .map(event => ({ ...event, data: { ...event.data, template_id: template.id, company_id: company.id } })),
+          .map(event => ({ ...event, data: { ...event.data, template_id: template.id, soul_template_id: soul?.id ?? null, company_id: company.id } })),
       }
     },
   }

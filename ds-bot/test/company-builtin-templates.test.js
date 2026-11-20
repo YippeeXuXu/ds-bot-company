@@ -53,15 +53,19 @@ test('a company gets the nine builtin templates, in the order of the job list (M
   const state = stateOf()
   const added = seedBuiltinTemplates(state, () => 1000)
 
-  assert.equal(BUILTIN_TEMPLATES.length, 9)
-  assert.equal(added.length, 9)
+  // v1.18: the nine jobs plus the one company soul every hire starts from.
+  assert.equal(BUILTIN_TEMPLATES.length, 10)
+  assert.equal(added.length, 10)
   assert.deepEqual(Object.values(state.templates).map(template => template.name), [
     '项目统筹', '产品设计师', '前端工程师', '代码开发工程师', '测试工程师',
-    '独立审查员', '资料研究员', '工作助理', '记忆整理员',
+    '独立审查员', '资料研究员', '工作助理', '记忆整理员', '公司默认语气',
   ])
   assert.deepEqual(Object.values(state.templates).map(template => template.role), [
-    '统筹', '产品设计', '前端开发', '代码开发', '测试', '独立审查', '资料', '助理', '记忆整理',
+    '统筹', '产品设计', '前端开发', '代码开发', '测试', '独立审查', '资料', '助理', '记忆整理', null,
   ])
+  // Nine of them are jobs and exactly one is the character; the split is what a hire reads.
+  assert.deepEqual(Object.values(state.templates).map(template => template.kind).filter(kind => kind === 'agent').length, 9)
+  assert.deepEqual(Object.values(state.templates).filter(template => template.kind === 'soul').map(template => template.name), ['公司默认语气'])
   // The row is what `template.create` would have written, minus everything a Bot owns:
   // no model, no effort, no skills — the host decides those, and a new machine has no
   // capability library to point at.
@@ -83,7 +87,7 @@ test('a company gets the nine builtin templates, in the order of the job list (M
 
 test('seeding twice adds nothing: a start cannot duplicate the rows (M1b-3.6b)', () => {
   const state = stateOf()
-  assert.equal(seedBuiltinTemplates(state, () => 1000).length, 9)
+  assert.equal(seedBuiltinTemplates(state, () => 1000).length, 10)
   const before = JSON.stringify(state.templates)
   assert.deepEqual(seedBuiltinTemplates(state, () => 2000), [])
   assert.equal(JSON.stringify(state.templates), before)
@@ -105,12 +109,18 @@ test('an archived company is left alone, and a name already in use keeps its tem
   }
   const added = seedBuiltinTemplates(state, () => 1000)
 
-  assert.equal(added.length, 8)
+  assert.equal(added.length, 9)
   assert.equal(Object.values(state.templates).filter(template => template.company_id === 'cmp_2').length, 0)
   // The company's own row wins: one name appears once in the list.
   assert.equal(state.templates['tpl_mine'].instructions, '我自己的。')
   assert.equal(state.templates[builtinTemplateId('cmp_1', 'project-lead')], undefined)
   assert.equal(state.templates[builtinTemplateId('cmp_1', 'memory-keeper')].name, '记忆整理员')
+  // The company soul is not a name the company used, so it still arrives.
+  assert.equal(state.templates[builtinTemplateId('cmp_1', 'company-soul')].kind, 'soul')
+  // A row from before the split is read as a job and gains its kind in place, without a
+  // version step the user never made.
+  assert.equal(state.templates['tpl_mine'].kind, 'agent')
+  assert.equal(state.templates['tpl_mine'].version, 1)
 })
 
 test('a new company comes with the nine, and a builtin is read-only (M1b-3.6b)', async () => {
@@ -123,9 +133,10 @@ test('a new company comes with the nine, and a builtin is read-only (M1b-3.6b)',
   assert.equal(created.body.company.name, 'DS Bot Company')
 
   const listed = await rt.companyExecute('template.list', { operation_key: 'k-list' })
-  assert.equal(listed.body.templates.length, 9)
+  assert.equal(listed.body.templates.length, 10)
   assert.equal(listed.body.templates.every(template => template.source === 'builtin'), true)
   assert.equal(listed.body.templates[0].name, '项目统筹')
+  assert.equal(listed.body.templates.filter(template => template.kind === 'soul').length, 1)
 
   const id = listed.body.templates[0].id
   assert.equal(await codeOf(rt.companyExecute('template.update', { operation_key: 'k-edit', template_id: id, role: '换一个' })), 'template/builtin-readonly')
@@ -141,7 +152,7 @@ test('a new company comes with the nine, and a builtin is read-only (M1b-3.6b)',
   assert.equal(edited.body.template.local_overrides.role, true)
   const again = await rt.companyExecute('template.list', { operation_key: 'k-list-2' })
   assert.equal(again.body.templates.find(template => template.id === id).role, '统筹')
-  assert.equal(again.body.templates.length, 10)
+  assert.equal(again.body.templates.length, 11)
 
   rt.company.close()
   rmSync(home, { recursive: true, force: true })
@@ -172,14 +183,14 @@ test('a version 3 company file is migrated once and its templates topped up (M1b
     try {
       const current = JSON.parse(readFileSync(stateFile, 'utf8'))
       const events = readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean)
-      return current.version === 5 && Object.keys(current.templates).length === 9 && events.length === 2
+      return current.version === 5 && Object.keys(current.templates).length === 10 && events.length === 2
     } catch {
       return false
     }
   })
 
   const saved = JSON.parse(readFileSync(stateFile, 'utf8'))
-  assert.equal(Object.keys(saved.templates).length, 9)
+  assert.equal(Object.keys(saved.templates).length, 10)
   assert.equal(Object.values(saved.templates).every(template => template.source === 'builtin' && template.company_id === 'cmp_1'), true)
   // An upgrade is not a company change: a client's expected_revision still matches.
   assert.equal(saved.version, 5)
@@ -187,7 +198,7 @@ test('a version 3 company file is migrated once and its templates topped up (M1b
   const events = readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
   assert.deepEqual(events.map(event => event.type), ['company/migrated', 'company/builtin-templates-seeded'])
   assert.deepEqual(events[0].data, { from: 3, to: 5 })
-  assert.deepEqual(events[1].data, { count: 9 })
+  assert.deepEqual(events[1].data, { count: 10 })
   rt.company.close()
 
   // A second start finds all nine and writes nothing.

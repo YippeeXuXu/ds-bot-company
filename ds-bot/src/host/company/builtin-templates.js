@@ -1,6 +1,10 @@
-// The nine builtin job templates (M1b-3.6b). They ship with the plugin, are read-only, and
-// are the rows a new company starts from; changing one means saving a copy (`template.create`
-// with `from_template_id`). The wording lives in
+// The nine builtin job templates (M1b-3.6b) plus the one company soul (M2 batch 1). They
+// ship with the plugin, are read-only, and are the rows a new company starts from; changing
+// one means saving a copy (`template.create` with `from_template_id`).
+//
+// Since contract v1.18 the nine are `agent` templates — the job — and there is exactly one
+// `soul` template per company: the character and voice every employee starts from, unless a
+// job saves its own soul later (the structure allows it; this batch does not ship one). The wording lives in
 // `company/bots/清单-内置岗位模板.md` — 266 lines, 19,837 bytes, sha256 `dc431ac8…` — and is
 // copied here paragraph for paragraph: edit the list, then copy again, so there is one place
 // where the wording is decided.
@@ -10,6 +14,7 @@
 export const BUILTIN_TEMPLATES = [
   {
     key: 'project-lead',
+    kind: 'agent',
     name: '项目统筹',
     role: '统筹',
     instructions: `你负责把一个目标拆成别人能直接开工的活，并盯到交付。你交出的是任务卡、负责人、截止时间和验收标准；文档和代码由对应岗位写。
@@ -24,6 +29,7 @@ export const BUILTIN_TEMPLATES = [
   },
   {
     key: 'product-designer',
+    kind: 'agent',
     name: '产品设计师',
     role: '产品设计',
     instructions: `你负责把一句需求变成研发能直接开工、老板能验收的产品说明。你交出 PRD 与交互说明：谁在什么场景做什么、界面长什么样、什么算做完。
@@ -38,6 +44,7 @@ export const BUILTIN_TEMPLATES = [
   },
   {
     key: 'frontend-engineer',
+    kind: 'agent',
     name: '前端工程师',
     role: '前端开发',
     instructions: `你负责把已定的需求做成能点、能看的界面。你交出可运行的页面与组件，并在真实浏览器里走过一遍主流程。
@@ -52,6 +59,7 @@ export const BUILTIN_TEMPLATES = [
   },
   {
     key: 'code-engineer',
+    kind: 'agent',
     name: '代码开发工程师',
     role: '代码开发',
     instructions: `你负责把已定的需求写成能跑的代码。你交出可运行的实现、跑过的测试和改动说明。
@@ -66,6 +74,7 @@ export const BUILTIN_TEMPLATES = [
   },
   {
     key: 'test-engineer',
+    kind: 'agent',
     name: '测试工程师',
     role: '测试',
     instructions: `你负责判断做完的东西是不是真的能用。你交出用例清单、执行结果和可复现的缺陷。
@@ -80,6 +89,7 @@ export const BUILTIN_TEMPLATES = [
   },
   {
     key: 'reviewer',
+    kind: 'agent',
     name: '独立审查员',
     role: '独立审查',
     instructions: `你负责在东西交出去之前挑出阻断问题。你交出结论先行的审查意见：通过还是打回，以及必须改的几条。
@@ -96,6 +106,7 @@ export const BUILTIN_TEMPLATES = [
   },
   {
     key: 'researcher',
+    kind: 'agent',
     name: '资料研究员',
     role: '资料',
     instructions: `你负责把外部信息查实并整理成能直接引用的材料。你交出带来源、时间和可信度标记的条目。
@@ -110,6 +121,7 @@ export const BUILTIN_TEMPLATES = [
   },
   {
     key: 'assistant',
+    kind: 'agent',
     name: '工作助理',
     role: '助理',
     instructions: `你负责把老板交来的零散事务推进成能直接用的结果。你交出整理好的材料、写好的文案、排好的安排，以及下一步该做什么。
@@ -124,6 +136,7 @@ export const BUILTIN_TEMPLATES = [
   },
   {
     key: 'memory-keeper',
+    kind: 'agent',
     name: '记忆整理员',
     role: '记忆整理',
     instructions: `你负责把项目跑出来的成果和决定整理成能复用的记忆，并守住它们彼此不打架。你交出候选清单、每条的依据与归属、冲突与待复核项，以及归档与恢复建议。
@@ -138,20 +151,46 @@ export const BUILTIN_TEMPLATES = [
 
 你的权限到此为止：不自动获得 Main Bot 权限，不改别人的个人记忆（own memory），不物理删除任何条目，也不改宿主权限。普通员工的提交不覆盖有效记忆；人类修订要留版本和理由。清理敏感内容走用户指定的受控入口，并说清哪些副本实际清不掉。`,
   },
+  {
+    key: 'company-soul',
+    kind: 'soul',
+    name: '公司默认语气',
+    role: null,
+    instructions: `你说话像一位靠得住的同事：先给结论，再给依据；一句话能说清就不铺三段。
+
+遇到不确定的事，直接说哪里不确定、打算怎么核实，不用「可能」「大概」把整句话填满。核实不了就说核实不了。
+
+对老板说人话。内部术语、英文错误码、缩写都不往外露；必须提的时候先用一句中文说清它是什么。
+
+别人做了事只说结果，不评价人品。出了错指向具体动作和影响，不追是谁的责任。
+
+不为了显得热情加感叹号和客套，也不为了显得严谨给每句话加限定。该短就短。
+
+有分歧就把事实和代价摆出来，等对方定；定完就照办，不反复解释自己的判断。`,
+  },
 ]
 
 export const builtinTemplateId = (companyId, key) => `tplb_${companyId}_${key}`
 
 // Adds the builtin rows a company is missing, in place, and answers their ids. Called with a
 // draft that is about to be saved (a new company, or the one startup upgrade), never from a
-// read: a builtin whose row is already there is left exactly as it is.
+// read: a builtin whose row is already there keeps its wording.
+//
+// One thing is written into a row that is already there: its `kind`, when a company file was
+// made before contract v1.18 and the row has none. That is a structure upgrade, not an edit —
+// `version`, `revision` and `updated_at` are left alone, so a saved copy still tracks its
+// origin and the screen shows no version step the user never made.
 export function seedBuiltinTemplates(state, now = Date.now) {
   const added = []
   for (const company of Object.values(state.companies)) {
     if (company.status === 'archived') continue
     BUILTIN_TEMPLATES.forEach((entry, index) => {
       const id = builtinTemplateId(company.id, entry.key)
-      if (state.templates[id] !== undefined) return
+      const existing = state.templates[id]
+      if (existing !== undefined) {
+        if (existing.kind === undefined) existing.kind = entry.kind
+        return
+      }
       // A template the company already made under this name keeps it: the builtin is skipped
       // rather than the list showing one name twice.
       const named = Object.values(state.templates).some(template => template.company_id === company.id
@@ -164,7 +203,8 @@ export function seedBuiltinTemplates(state, now = Date.now) {
         id,
         company_id: company.id,
         name: entry.name,
-        role: entry.role,
+        kind: entry.kind,
+        role: entry.role ?? null,
         instructions: entry.instructions,
         model: null,
         effort: null,
@@ -180,6 +220,13 @@ export function seedBuiltinTemplates(state, now = Date.now) {
       }
       added.push(id)
     })
+    // A company's own rows from before the split get the same reading the builtin rows do.
+    // Only the field is written; version, revision and updated_at stay as they were, because
+    // this is a structure upgrade rather than an edit anyone made.
+    for (const template of Object.values(state.templates)) {
+      if (template.company_id !== company.id || template.kind !== undefined) continue
+      template.kind = 'agent'
+    }
   }
   return added
 }

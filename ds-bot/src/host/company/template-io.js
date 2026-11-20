@@ -8,9 +8,13 @@
 // disagreeing about one job description is a silent loss of whichever edit came second.
 import { randomUUID } from 'node:crypto'
 import { companyFail } from './store.js'
+import { TEMPLATE_KINDS } from './templates.js'
 
 export const TEMPLATE_FILE_FORMAT = 'ds-company/templates'
-export const TEMPLATE_FILE_VERSION = 1
+// v2 adds `kind` to every entry (contract v1.18). A v1 file still imports: its rows were all
+// job templates, so they are read as `agent`. Export always writes the current version.
+export const TEMPLATE_FILE_VERSION = 2
+export const TEMPLATE_FILE_VERSIONS = [1, 2]
 
 const MAX_FILE_TEMPLATES = 200
 
@@ -32,6 +36,7 @@ const activeTemplates = (state, companyId) => Object.values(state.templates)
 // the plugin's builtin rows belong to the profile it ships in.
 const entryOf = template => ({
   name: template.name,
+  kind: TEMPLATE_KINDS.includes(template.kind) ? template.kind : 'agent',
   role: template.role,
   instructions: template.instructions,
   model: template.model,
@@ -68,11 +73,20 @@ const skillsOf = (value, index) => {
   return names
 }
 
+const kindOf = (raw, index) => {
+  if (raw === undefined || raw === null || raw === '') return 'agent'
+  const field = `templates[${index}].kind`
+  const kind = textOf(raw, index, field, { max: 40 })
+  if (!TEMPLATE_KINDS.includes(kind)) bad(index, field, `${field} must be one of ${TEMPLATE_KINDS.join(', ')}.`)
+  return kind
+}
+
 const templateOf = (raw, index) => {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) bad(index, 'templates[]', 'Each template is an object.')
   const at = field => `templates[${index}].${field}`
   return {
     name: textOf(raw.name, index, at('name'), { max: 40 }),
+    kind: kindOf(raw.kind, index),
     role: optionalTextOf(raw.role, index, at('role'), 24),
     instructions: raw.instructions === undefined || raw.instructions === null ? '' : textOf(raw.instructions, index, at('instructions'), { min: 0, max: 8000 }),
     model: optionalTextOf(raw.model, index, at('model'), 120),
@@ -98,8 +112,8 @@ const fileOf = (payload) => {
   if (file.format !== TEMPLATE_FILE_FORMAT) {
     throw companyFail('template/import-invalid', `The file format must be ${TEMPLATE_FILE_FORMAT}.`, { index: null, field: 'format', expected: TEMPLATE_FILE_FORMAT })
   }
-  if (file.version !== TEMPLATE_FILE_VERSION) {
-    throw companyFail('template/import-invalid', `The file version must be ${TEMPLATE_FILE_VERSION}.`, { index: null, field: 'version', expected: TEMPLATE_FILE_VERSION })
+  if (!TEMPLATE_FILE_VERSIONS.includes(file.version)) {
+    throw companyFail('template/import-invalid', `The file version must be ${TEMPLATE_FILE_VERSIONS.join(' or ')}.`, { index: null, field: 'version', expected: TEMPLATE_FILE_VERSION })
   }
   if (!Array.isArray(file.templates)) {
     throw companyFail('template/import-invalid', 'The file has no templates list.', { index: null, field: 'templates' })
@@ -167,6 +181,7 @@ export function templateIoHandlers() {
           id,
           company_id: company.id,
           name: entry.name,
+          kind: entry.kind,
           role: entry.role,
           instructions: entry.instructions,
           model: entry.model,
@@ -181,7 +196,7 @@ export function templateIoHandlers() {
           updated_at: now(),
           revision: 1,
         }
-        imported.push({ template_id: id, name: entry.name })
+        imported.push({ template_id: id, name: entry.name, kind: entry.kind })
       })
       const body = { imported, skipped }
       if (imported.length === 0) return { aggregate_id: company.id, body, mutates: false }

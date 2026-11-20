@@ -373,7 +373,10 @@ export function orgHandlers({ botOf = () => undefined, isPrivate = () => false, 
         // value is for the one employee who needs the other mode.
         conversation_mode: payload.conversation_mode === undefined ? 'follow' : conversationMode(payload.conversation_mode, EMPLOYEE_MODES, 'conversation_mode'),
         status: 'active',
-        // Filled by the project commands (M1a-3): the profile itself has no project.
+        // Filled by the project commands (M1a-3). Since contract v1.18 one employee may serve
+        // several projects: `project_ids` is the list, and `project_id` stays the first entry
+        // for the screens that still read one.
+        project_ids: [],
         project_id: null,
         created_at: now(),
         updated_at: now(),

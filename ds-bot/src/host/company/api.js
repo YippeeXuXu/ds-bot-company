@@ -61,9 +61,12 @@ const STATUS = new Map([
   // Template files (M1b-3.5): one bad row refuses the whole file, so a half-imported set of
   // jobs never looks like success on the second profile.
   ['template/import-invalid', 422],
+  // v1.18: a soul template cannot be the job a Bot is hired from, and vice versa.
+  ['template/kind-mismatch', 422],
   ['employee.bot_already_employed', 409],
   ['project/member-exists', 409],
   ['project/member-busy', 409],
+  ['project/member-limit', 422],
   // The coordinator post is one: promoting a second member is a conflict, not a server error.
   ['project/coordinator-exists', 409],
   ['project/state-conflict', 409],
