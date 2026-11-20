@@ -2,9 +2,11 @@
 // enough to embed and to recall later, apart from the Markdown memory that a Bot writes
 // on purpose (src/host/memory.js).
 //
-//   <home>/memory-slices/slices.jsonl   one JSON object per line, the 12 fields of the
+//   <home>/memory-slices/slices.jsonl   one JSON object per line, the 13 fields of the
 //                                       contract, never inside state.json
 //   <home>/memory-slices/cursors.json   how far each conversation has been sliced
+//   <home>/memory-slices/archive.jsonl  originals of a merged summary (4.5), kept so a
+//                                       merge can be undone without losing what was said
 //
 // A slice is written when a turn ends, not while it runs: the `agent/status` hook turns
 // to idle, the new lines of that turn are read from the conversation, every saved secret
@@ -26,6 +28,7 @@ import { looksLikeKey } from './memory.js'
 export const SLICE_FIELDS = [
   'id', 'bot_id', 'project_id', 'session_id', 'kind', 'text',
   'tokens', 'embedding', 'embedding_model', 'created_at', 'last_used_at', 'uses',
+  'summary_of',
 ]
 export const SLICE_KINDS = ['chat', 'group']
 // A piece aims at 600 characters and never goes past 800; the content decides.
@@ -47,6 +50,7 @@ const estimateTokens = text => Math.ceil(text.length / 4)
 export function createSliceStore({ dir, now = () => Date.now(), warn = () => {} }) {
   const file = join(dir, 'slices.jsonl')
   const cursorsPath = join(dir, 'cursors.json')
+  const archivePath = join(dir, 'archive.jsonl')
   let writing = Promise.resolve()
 
   const read = () => {
@@ -181,7 +185,76 @@ export function createSliceStore({ dir, now = () => Date.now(), warn = () => {} 
     return writing
   }
 
-  return { dir, file, cursorsPath, read, readCursors, writeCursors, countOf, append, patch, remove, clear, now, warn }
+  // Merge a group of slices into one summary row (4.5). The summary names its sources in
+  // `summary_of`, so how many rows went in is never lost; the originals are written to the
+  // archive first, so a crash in between leaves them twice rather than gone. A source that
+  // is gone by the time this runs cancels the merge — the caller planned on stale rows.
+  const merge = ({ summary, sourceIds }) => {
+    writing = writing.then(async () => {
+      if (summary === null || typeof summary !== 'object' || !Array.isArray(sourceIds) || sourceIds.length === 0) {
+        return { merged: 0, reason: 'nothing-to-merge' }
+      }
+      const rows = read()
+      const wanted = new Set(sourceIds)
+      const originals = rows.filter(row => wanted.has(row.id))
+      if (originals.length !== wanted.size) return { merged: 0, reason: 'sources-changed' }
+      const line = { id: summary.id ?? sliceId() }
+      for (const field of SLICE_FIELDS) {
+        if (field === 'id') continue
+        line[field] = summary[field] === undefined ? null : summary[field]
+      }
+      line.created_at = line.created_at ?? now()
+      line.last_used_at = line.last_used_at ?? line.created_at
+      line.uses = line.uses ?? 0
+      mkdirSync(dir, { recursive: true })
+      const archived = originals.map(row => ({ ...row, archived_at: now(), summary_id: line.id }))
+      await appendFile(archivePath, `${archived.map(row => JSON.stringify(row)).join('\n')}\n`)
+      const kept = rows.filter(row => !wanted.has(row.id))
+      const temp = `${file}.tmp`
+      await writeFile(temp, `${[...kept, line].map(row => JSON.stringify(row)).join('\n')}\n`)
+      await rename(temp, file)
+      return { merged: originals.length, summary: line }
+    })
+    return writing
+  }
+
+  // Undo one merge: take the summary out and put its originals back from the archive.
+  const restore = (summaryId) => {
+    writing = writing.then(async () => {
+      const rows = read()
+      const summary = rows.find(row => row.id === summaryId)
+      if (summary === undefined || !Array.isArray(summary.summary_of) || summary.summary_of.length === 0) {
+        return { restored: 0, reason: 'not-a-summary' }
+      }
+      const wanted = new Set(summary.summary_of)
+      const byId = new Map()
+      if (existsSync(archivePath)) {
+        for (const line of readFileSync(archivePath, 'utf8').split('\n')) {
+          if (line.trim() === '') continue
+          try {
+            const row = JSON.parse(line)
+            if (row !== null && typeof row === 'object' && wanted.has(row.id)) byId.set(row.id, row)
+          } catch {
+            warn('ds-bot: memory slice archive line cannot be parsed')
+          }
+        }
+      }
+      if (byId.size !== wanted.size) return { restored: 0, reason: 'archive-incomplete' }
+      const restored = [...wanted].map((id) => {
+        const { archived_at: _archivedAt, summary_id: _summaryId, ...row } = byId.get(id)
+        return row
+      })
+      const kept = rows.filter(row => row.id !== summaryId)
+      mkdirSync(dir, { recursive: true })
+      const temp = `${file}.tmp`
+      await writeFile(temp, `${[...kept, ...restored].map(row => JSON.stringify(row)).join('\n')}\n`)
+      await rename(temp, file)
+      return { restored: restored.length }
+    })
+    return writing
+  }
+
+  return { dir, file, cursorsPath, archivePath, read, readCursors, writeCursors, countOf, append, patch, remove, clear, merge, restore, now, warn }
 }
 
 // One turn, cut into pieces. Newlines stay (they mark who spoke); a piece never passes
@@ -414,8 +487,10 @@ export function install(rt) {
 
   Object.assign(rt, {
     memorySlices: {
-      dir, file: store.file, cursorsPath: store.cursorsPath,
+      dir, file: store.file, cursorsPath: store.cursorsPath, archivePath: store.archivePath,
       list: () => store.read(),
+      merge: plan => store.merge(plan),
+      restore: summaryId => store.restore(summaryId),
       count: botId => store.countOf(botId),
       remove: ids => store.remove(ids),
       patch: updates => store.patch(updates),
