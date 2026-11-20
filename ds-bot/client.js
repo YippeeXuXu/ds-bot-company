@@ -10658,7 +10658,7 @@ var COMPANY_USAGE_CSS = `
 .bc-co-usage-seg{display:inline-flex;padding:2px;border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card)}
 .bc-co-usage-seg-btn{border:0;background:none;padding:4px 10px;border-radius:6px;font:500 12px/18px var(--bt-font);color:var(--bt-ink-2);cursor:pointer}
 .bc-co-usage-seg-btn:hover{background:var(--bt-hover);color:var(--bt-ink)}
-.bc-co-usage-seg-btn.is-on{background:var(--bt-ink);color:var(--bt-bg)}
+.bc-co-usage-seg-btn.is-on{background:var(--bt-ink);color:var(--bt-card)}
 .bc-co-usage-seg-btn:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}
 .bc-co-usage-body{flex:1;min-height:0;overflow:auto;padding:4px 18px 12px}
 .bc-co-usage-table{width:100%;border-collapse:collapse;font:400 13px/20px var(--bt-font);color:var(--bt-ink)}
