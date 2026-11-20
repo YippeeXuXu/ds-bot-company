@@ -47,6 +47,7 @@ import { noteClientError, quietly } from './diagnostics.js'
 import { RIGHTBAR_ATTRIBUTES, columnOpened, createSwitchWindow, drawerOpened, rightColumnOpen } from './right-panel.js'
 import { ErrorToast, FEEDBACK_CSS } from './feedback.js'
 import { ABOUT_CSS } from './about.js'
+import { PEOPLE_CSS } from './people-settings.js'
 import { MEMBER_CSS, MemberDock } from './member-status.js'
 import { GOAL_CSS } from './goal.js'
 import { USER_MESSAGE_CSS, UserMessageCell, canDrawUserMessages } from './user-message.js'
@@ -944,6 +945,7 @@ export function apply(ctx) {
     () => installCompiledStyles(SCHEDULE_CSS, 'schedules'),
     () => installCompiledStyles(FEEDBACK_CSS, 'feedback'),
     () => installCompiledStyles(ABOUT_CSS, 'about'),
+    () => installCompiledStyles(PEOPLE_CSS, 'people'),
     () => installCompiledStyles(MEMBER_CSS, 'members'),
     () => installCompiledStyles(GOAL_CSS, 'goal'),
     () => installCompiledStyles(USER_MESSAGE_CSS, 'user-messages'),
