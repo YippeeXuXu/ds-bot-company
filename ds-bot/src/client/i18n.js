@@ -1294,6 +1294,7 @@ Object.assign(ZH, HOST_ZH, {
   'Create company': '创建公司',
   'Name your company first; departments and employees come after.': '先给公司起个名字；创建后就能添加部门和员工。',
   'Company name': '公司名称', Continue: '继续', 'Saving…': '保存中…',
+  'Rename company': '修改公司名称', 'Name cannot be empty.': '名称不能为空。',
   'Choose source departments. Add their employees from the project page after creation.': '选择来源部门；创建后在项目页添加成员。',
   'No departments yet. Add one below.': '暂无部门，请在下方添加。',
   'New department': '新建部门', 'Department name': '部门名称',

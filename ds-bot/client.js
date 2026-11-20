@@ -1431,6 +1431,8 @@ Object.assign(ZH, HOST_ZH, {
   "Company name": "公司名称",
   Continue: "继续",
   "Saving…": "保存中…",
+  "Rename company": "修改公司名称",
+  "Name cannot be empty.": "名称不能为空。",
   "Choose source departments. Add their employees from the project page after creation.": "选择来源部门；创建后在项目页添加成员。",
   "No departments yet. Add one below.": "暂无部门，请在下方添加。",
   "New department": "新建部门",
@@ -11475,8 +11477,49 @@ function CompanyPageView(props) {
         (0, import_react20.createElement)(
           "div",
           { className: "bc-co-co-card" },
-          (0, import_react20.createElement)("strong", null, data.company.name),
-          (0, import_react20.createElement)("span", { className: "bc-co-sub" }, companyLine(departments, employees, projects))
+          props.renaming ? (0, import_react20.createElement)(
+            "div",
+            { className: "bc-co-rename" },
+            (0, import_react20.createElement)("input", {
+              type: "text",
+              className: "bc-co-rename-input",
+              value: props.renameName,
+              maxLength: 80,
+              autoFocus: true,
+              "aria-label": t("Company name"),
+              onChange: (event) => props.onRenameName(event.target.value),
+              onKeyDown: (event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  props.onRenameSave();
+                }
+                if (event.key === "Escape") {
+                  event.stopPropagation();
+                  props.onRenameCancel();
+                }
+              }
+            }),
+            (0, import_react20.createElement)(
+              "div",
+              { className: "bc-co-rename-actions" },
+              (0, import_react20.createElement)("button", { type: "button", className: "bc-button bc-primary bc-button-sm", disabled: props.renameBusy, onClick: props.onRenameSave }, props.renameBusy ? t("Saving…") : t("Save")),
+              (0, import_react20.createElement)("button", { type: "button", className: "bc-button bc-button-sm", disabled: props.renameBusy, onClick: props.onRenameCancel }, t("Cancel"))
+            )
+          ) : (0, import_react20.createElement)(
+            "button",
+            {
+              type: "button",
+              className: "bc-co-co-name",
+              title: props.canEdit ? t("Rename company") : void 0,
+              "aria-label": props.canEdit ? t("Rename {name}", { name: data.company.name }) : void 0,
+              disabled: !props.canEdit,
+              onClick: props.canEdit ? props.onRenameOpen : void 0
+            },
+            (0, import_react20.createElement)("strong", null, data.company.name),
+            props.canEdit ? (0, import_react20.createElement)("span", { className: "bc-co-rename-mark", "aria-hidden": true }, "✎") : null
+          ),
+          (0, import_react20.createElement)("span", { className: "bc-co-sub" }, companyLine(departments, employees, projects)),
+          props.renameError ? (0, import_react20.createElement)("p", { className: "bc-exception bc-co-rename-error", role: "alert" }, props.renameError) : null
         ),
         props.onOpenProjects ? (0, import_react20.createElement)("button", { type: "button", className: "bc-co-co-link", onClick: props.onOpenProjects }, `${t("View projects")} ›`) : null
       ),
@@ -11833,6 +11876,10 @@ function CompanyPage(props) {
   const [companyName, setCompanyName] = (0, import_react20.useState)("");
   const [companyBusy, setCompanyBusy] = (0, import_react20.useState)(false);
   const [companyError, setCompanyError] = (0, import_react20.useState)("");
+  const [renaming, setRenaming] = (0, import_react20.useState)(false);
+  const [renameName, setRenameName] = (0, import_react20.useState)("");
+  const [renameBusy, setRenameBusy] = (0, import_react20.useState)(false);
+  const [renameError, setRenameError] = (0, import_react20.useState)("");
   const [pan, setPan] = (0, import_react20.useState)({ x: 0, y: 0 });
   const [dragging, setDragging] = (0, import_react20.useState)(false);
   const canvasRef = (0, import_react20.useRef)(null);
@@ -11848,8 +11895,45 @@ function CompanyPage(props) {
     closeDraft();
     setCreating(kind);
   };
+  const closeRename = () => {
+    setRenaming(false);
+    setRenameError("");
+  };
+  const openRename = () => {
+    setRenameName(props.data?.company?.name ?? "");
+    setRenameError("");
+    setRenaming(true);
+  };
+  const saveRename = async () => {
+    if (!props.onCommand || renameBusy || !renaming) return;
+    const name = renameName.trim();
+    const current = props.data?.company?.name ?? "";
+    if (!name) {
+      setRenameError(t("Name cannot be empty."));
+      return;
+    }
+    if (name === current) {
+      closeRename();
+      return;
+    }
+    setRenameBusy(true);
+    setRenameError("");
+    try {
+      await props.onCommand("company.update", { name });
+      setRenameName(name);
+      setRenaming(false);
+    } catch (failure) {
+      setRenameError(companyErrorText(failure));
+    } finally {
+      setRenameBusy(false);
+    }
+  };
   if (escapeGuard) {
     escapeGuard.current = () => {
+      if (renaming) {
+        closeRename();
+        return true;
+      }
       if (editing !== null) {
         closeEdit();
         return true;
@@ -11999,6 +12083,14 @@ function CompanyPage(props) {
     companyName,
     companyBusy,
     companyError,
+    renaming,
+    renameName,
+    renameBusy,
+    renameError,
+    onRenameOpen: openRename,
+    onRenameName: setRenameName,
+    onRenameSave: () => void saveRename(),
+    onRenameCancel: closeRename,
     onCompanyName: setCompanyName,
     onCreateCompany: () => void createCompany(),
     onEditOpen: openEdit,
@@ -12056,6 +12148,19 @@ var COMPANY_PAGE_CSS = `
 .bc-co-co{display:flex;flex-direction:column;align-items:center;gap:4px}
 .bc-co-co-card{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:230px;padding:10px 16px;border:1px solid var(--bt-line-2);border-radius:10px;background:var(--bt-card);box-shadow:var(--bc-shadow-raised)}
 .bc-co-co-card strong{font:600 14px/20px var(--bt-font);color:var(--bt-ink)}
+.bc-co-co-name{display:inline-flex;align-items:center;gap:5px;max-width:100%;border:0;background:none;padding:1px 6px;margin:0;border-radius:6px;font:inherit;color:inherit;cursor:pointer}
+.bc-co-co-name:hover{background:var(--bt-hover)}
+.bc-co-co-name:hover strong{text-decoration:underline;text-underline-offset:2px}
+.bc-co-co-name:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}
+.bc-co-co-name:disabled{background:none;cursor:default}
+.bc-co-co-name:disabled:hover strong{text-decoration:none}
+.bc-co-rename-mark{font-size:10px;line-height:1;color:var(--bt-ink-3)}
+.bc-co-rename{display:flex;flex-direction:column;align-items:center;gap:6px}
+.bc-co-rename-input{width:190px;max-width:100%;padding:3px 8px;border:1px solid var(--bt-line-2);border-radius:6px;background:var(--bt-card);font:600 14px/20px var(--bt-font);color:var(--bt-ink);text-align:center}
+.bc-co-rename-input:focus{outline:2px solid var(--bt-accent);outline-offset:1px}
+.bc-co-rename-actions{display:flex;gap:6px}
+.bc-button-sm{min-height:24px;padding:2px 10px;font-size:12px}
+.bc-co-rename-error{max-width:260px;margin:2px 0 0;text-align:center}
 .bc-co-co-link{align-self:center;border:0;background:none;padding:2px 6px;min-height:24px;font:600 12px var(--bt-font);color:var(--bt-ink-2);cursor:pointer;border-radius:6px}
 .bc-co-co-link:hover{background:var(--bt-hover);color:var(--bt-ink)}
 .bc-co-cols{position:relative;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:20px;margin-top:30px;padding-top:20px;border-top:1px solid var(--bt-line)}

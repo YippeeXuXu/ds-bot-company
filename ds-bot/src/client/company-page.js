@@ -161,8 +161,36 @@ export function CompanyPageView(props) {
     h('div', { className: 'bc-co-band', style: { transform: `translate(${pan.x}px, ${pan.y}px)` } },
       h('div', { className: 'bc-co-co' },
         h('div', { className: 'bc-co-co-card' },
-          h('strong', null, data.company.name),
-          h('span', { className: 'bc-co-sub' }, companyLine(departments, employees, projects))),
+          props.renaming
+            ? h('div', { className: 'bc-co-rename' },
+              h('input', {
+                type: 'text',
+                className: 'bc-co-rename-input',
+                value: props.renameName,
+                maxLength: 80,
+                autoFocus: true,
+                'aria-label': t('Company name'),
+                onChange: event => props.onRenameName(event.target.value),
+                onKeyDown: event => {
+                  if (event.key === 'Enter') { event.preventDefault(); props.onRenameSave() }
+                  if (event.key === 'Escape') { event.stopPropagation(); props.onRenameCancel() }
+                },
+              }),
+              h('div', { className: 'bc-co-rename-actions' },
+                h('button', { type: 'button', className: 'bc-button bc-primary bc-button-sm', disabled: props.renameBusy, onClick: props.onRenameSave }, props.renameBusy ? t('Saving…') : t('Save')),
+                h('button', { type: 'button', className: 'bc-button bc-button-sm', disabled: props.renameBusy, onClick: props.onRenameCancel }, t('Cancel'))))
+            : h('button', {
+              type: 'button',
+              className: 'bc-co-co-name',
+              title: props.canEdit ? t('Rename company') : undefined,
+              'aria-label': props.canEdit ? t('Rename {name}', { name: data.company.name }) : undefined,
+              disabled: !props.canEdit,
+              onClick: props.canEdit ? props.onRenameOpen : undefined,
+            },
+              h('strong', null, data.company.name),
+              props.canEdit ? h('span', { className: 'bc-co-rename-mark', 'aria-hidden': true }, '✎') : null),
+          h('span', { className: 'bc-co-sub' }, companyLine(departments, employees, projects)),
+          props.renameError ? h('p', { className: 'bc-exception bc-co-rename-error', role: 'alert' }, props.renameError) : null),
         props.onOpenProjects
           ? h('button', { type: 'button', className: 'bc-co-co-link', onClick: props.onOpenProjects }, `${t('View projects')} ›`)
           : null),
@@ -410,6 +438,10 @@ export function CompanyPage(props) {
   const [companyName, setCompanyName] = useState('')
   const [companyBusy, setCompanyBusy] = useState(false)
   const [companyError, setCompanyError] = useState('')
+  const [renaming, setRenaming] = useState(false)
+  const [renameName, setRenameName] = useState('')
+  const [renameBusy, setRenameBusy] = useState(false)
+  const [renameError, setRenameError] = useState('')
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
   const canvasRef = useRef(null)
@@ -417,10 +449,33 @@ export function CompanyPage(props) {
 
   const closeDraft = () => { setCreating(null); setDraftError(''); setDraftName(''); setDraftBot(''); setDraftDept('') }
   const openCreate = kind => { closeDraft(); setCreating(kind) }
+  // The company name is edited in place on the chart's company card: the button shows
+  // the name, the input replaces it, and the write goes through the same command path
+  // as every other change (so the reload and the company-changed broadcast follow).
+  const closeRename = () => { setRenaming(false); setRenameError('') }
+  const openRename = () => { setRenameName(props.data?.company?.name ?? ''); setRenameError(''); setRenaming(true) }
+  const saveRename = async () => {
+    if (!props.onCommand || renameBusy || !renaming) return
+    const name = renameName.trim()
+    const current = props.data?.company?.name ?? ''
+    if (!name) { setRenameError(t('Name cannot be empty.')); return }
+    if (name === current) { closeRename(); return }
+    setRenameBusy(true)
+    setRenameError('')
+    try {
+      await props.onCommand('company.update', { name })
+      setRenameName(name)
+      setRenaming(false)
+    } catch (failure) {
+      // Keep the field open on a refusal so the typed name is not lost.
+      setRenameError(companyErrorText(failure))
+    } finally { setRenameBusy(false) }
+  }
   // The surface owns Escape for the whole panel; the overview and the create panel take
   // one level each so the first Escape closes them instead of the page.
   if (escapeGuard) {
     escapeGuard.current = () => {
+      if (renaming) { closeRename(); return true }
       if (editing !== null) { closeEdit(); return true }
       if (creating) { closeDraft(); return true }
       if (openDept !== null) { setOpenDept(null); return true }
@@ -551,6 +606,14 @@ export function CompanyPage(props) {
     companyName,
     companyBusy,
     companyError,
+    renaming,
+    renameName,
+    renameBusy,
+    renameError,
+    onRenameOpen: openRename,
+    onRenameName: setRenameName,
+    onRenameSave: () => void saveRename(),
+    onRenameCancel: closeRename,
     onCompanyName: setCompanyName,
     onCreateCompany: () => void createCompany(),
     onEditOpen: openEdit,
@@ -606,6 +669,19 @@ export const COMPANY_PAGE_CSS = `
 .bc-co-co{display:flex;flex-direction:column;align-items:center;gap:4px}
 .bc-co-co-card{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:230px;padding:10px 16px;border:1px solid var(--bt-line-2);border-radius:10px;background:var(--bt-card);box-shadow:var(--bc-shadow-raised)}
 .bc-co-co-card strong{font:600 14px/20px var(--bt-font);color:var(--bt-ink)}
+.bc-co-co-name{display:inline-flex;align-items:center;gap:5px;max-width:100%;border:0;background:none;padding:1px 6px;margin:0;border-radius:6px;font:inherit;color:inherit;cursor:pointer}
+.bc-co-co-name:hover{background:var(--bt-hover)}
+.bc-co-co-name:hover strong{text-decoration:underline;text-underline-offset:2px}
+.bc-co-co-name:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}
+.bc-co-co-name:disabled{background:none;cursor:default}
+.bc-co-co-name:disabled:hover strong{text-decoration:none}
+.bc-co-rename-mark{font-size:10px;line-height:1;color:var(--bt-ink-3)}
+.bc-co-rename{display:flex;flex-direction:column;align-items:center;gap:6px}
+.bc-co-rename-input{width:190px;max-width:100%;padding:3px 8px;border:1px solid var(--bt-line-2);border-radius:6px;background:var(--bt-card);font:600 14px/20px var(--bt-font);color:var(--bt-ink);text-align:center}
+.bc-co-rename-input:focus{outline:2px solid var(--bt-accent);outline-offset:1px}
+.bc-co-rename-actions{display:flex;gap:6px}
+.bc-button-sm{min-height:24px;padding:2px 10px;font-size:12px}
+.bc-co-rename-error{max-width:260px;margin:2px 0 0;text-align:center}
 .bc-co-co-link{align-self:center;border:0;background:none;padding:2px 6px;min-height:24px;font:600 12px var(--bt-font);color:var(--bt-ink-2);cursor:pointer;border-radius:6px}
 .bc-co-co-link:hover{background:var(--bt-hover);color:var(--bt-ink)}
 .bc-co-cols{position:relative;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:20px;margin-top:30px;padding-top:20px;border-top:1px solid var(--bt-line)}
