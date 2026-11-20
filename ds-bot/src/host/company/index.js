@@ -22,6 +22,7 @@ import { RUN_ROW_REVISION_COMMANDS, runHandlers } from './runs.js'
 import { templateHandlers } from './templates.js'
 import { nameProblem } from '../../shared/mentions.js'
 import { templateIoHandlers } from './template-io.js'
+import { usageHandlers } from './usage.js'
 
 // The roster side of a project group. `members` returns undefined when the group is gone,
 // which is how the project commands tell "missing" from "drifted".
@@ -146,6 +147,8 @@ export function install(rt) {
       // one-active-profile rule and the role lists have one implementation.
       ...spawnHandlers({ roster: botRoster(rt, warn), createEmployee: org['employee.create'], warn }),
       ...templateIoHandlers(),
+      // Usage is read from the host's ledger; the company only knows who a call was for.
+      ...usageHandlers({ rt }),
     },
   })
   const execute = commands.execute
