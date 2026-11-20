@@ -698,3 +698,18 @@ test('a member still working at round end wakes the admin when its work settles'
   assert.ok(left.length <= 1, `settles queued ${left.length} extra checks`)
   assert.equal(host.takeGoal(), undefined)
 })
+
+test('a null goal on the room reads as no goal instead of crashing', async (t) => {
+  const host = await start(t)
+  host.rt.roomOf('r1').goal = null
+  // The room line in list_bots used to dereference whatever the room held.
+  const listed = await host.tool('list_bots', {}, 'a')
+  assert.doesNotMatch(listed, /goal: "/)
+  // The panel's commands answer "no goal" rather than throwing on goal.id.
+  const controlled = await host.call('goal-control', { roomId: 'r1', goalId: 'goal-null', action: 'pause' })
+  assert.equal(controlled.ok, false)
+  // A fresh draft replaces the null cleanly, as it would a missing goal.
+  const drafted = await host.call('goal-draft', { roomId: 'r1', text: 'Ship the thing' })
+  assert.equal(drafted.ok, true)
+  assert.equal(host.rt.roomOf('r1').goal.status, 'drafting')
+})

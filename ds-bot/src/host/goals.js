@@ -52,7 +52,7 @@ export function touchGoal(goal, event, now = Date.now(), { keepNudges = false } 
 
 export function archiveGoal(room) {
   const goal = room.goal
-  if (goal === undefined) return
+  if (goal == null) return
   room.pastGoals = [...(room.pastGoals ?? []), goal].slice(-PAST_MAX)
   delete room.goal
 }
@@ -156,7 +156,7 @@ function buildStage(goal, stage, position, previous, status) {
 
 export function draftGoal(room, { brief = '', title, by = 'user' } = {}, now = Date.now()) {
   const goal = room.goal
-  if (goal !== undefined && (goal.status === 'active' || goal.status === 'paused')) {
+  if (goal != null && (goal.status === 'active' || goal.status === 'paused')) {
     return { error: wrongState(room, goal, 'draft', 'new or drafting') }
   }
   const text = String(brief ?? '').trim()
@@ -179,7 +179,7 @@ export function draftGoal(room, { brief = '', title, by = 'user' } = {}, now = D
 
 export function startGoal(room, input, by, memberOf, memberNames, now = Date.now()) {
   const goal = room.goal
-  if (goal !== undefined && (goal.status === 'active' || goal.status === 'paused')) {
+  if (goal != null && (goal.status === 'active' || goal.status === 'paused')) {
     return { error: wrongState(room, goal, 'start', 'new or drafting') }
   }
   const objective = String(input.objective ?? '').trim()
@@ -216,7 +216,7 @@ export function startGoal(room, input, by, memberOf, memberNames, now = Date.now
 
 export function reviseGoal(room, input, by, memberOf, memberNames, now = Date.now()) {
   const goal = room.goal
-  if (goal === undefined) return { error: noGoal(room) }
+  if (goal == null) return { error: noGoal(room) }
   if (goal.status !== 'active' && goal.status !== 'paused') return { error: wrongState(room, goal, 'revise', 'active or paused') }
   const reason = String(input.reason ?? '').trim()
   if (reason === '') return { error: required('reason', 'revise') }
@@ -254,7 +254,7 @@ export function reviseGoal(room, input, by, memberOf, memberNames, now = Date.no
 
 export function taskGoal(room, input, by, memberOf, memberNames, now = Date.now()) {
   const goal = room.goal
-  if (goal === undefined) return { error: noGoal(room) }
+  if (goal == null) return { error: noGoal(room) }
   if (goal.status !== 'active') return { error: wrongState(room, goal, 'task', 'active') }
   const number = input.stage === undefined ? goal.current + 1 : Number(input.stage)
   const stage = Number.isInteger(number) ? goal.stages[number - 1] : undefined
@@ -280,7 +280,7 @@ export function taskGoal(room, input, by, memberOf, memberNames, now = Date.now(
 
 export function passGoal(room, input, by, now = Date.now()) {
   const goal = room.goal
-  if (goal === undefined) return { error: noGoal(room) }
+  if (goal == null) return { error: noGoal(room) }
   if (goal.status === 'paused') return { error: pausedRun(room) }
   if (goal.status !== 'active') return { error: wrongState(room, goal, 'pass', 'active') }
   const stage = goal.stages[goal.current]
@@ -301,7 +301,7 @@ export function passGoal(room, input, by, now = Date.now()) {
 
 export function reworkGoal(room, input, by, memberOf, memberNames, now = Date.now()) {
   const goal = room.goal
-  if (goal === undefined) return { error: noGoal(room) }
+  if (goal == null) return { error: noGoal(room) }
   if (goal.status === 'paused') return { error: pausedRun(room) }
   if (goal.status !== 'active') return { error: wrongState(room, goal, 'rework', 'active') }
   const stage = goal.stages[goal.current]
@@ -328,7 +328,7 @@ export function reworkGoal(room, input, by, memberOf, memberNames, now = Date.no
 
 export function completeGoal(room, input, by, now = Date.now()) {
   const goal = room.goal
-  if (goal === undefined) return { error: noGoal(room) }
+  if (goal == null) return { error: noGoal(room) }
   if (goal.status === 'paused') return { error: pausedRun(room) }
   if (goal.status !== 'active') return { error: wrongState(room, goal, 'complete', 'active') }
   const open = goal.stages.findIndex(stage => stage.status !== 'passed')
@@ -349,7 +349,7 @@ export function completeGoal(room, input, by, now = Date.now()) {
 
 export function pauseGoal(room, by, now = Date.now()) {
   const goal = room.goal
-  if (goal === undefined) return { error: noGoal(room) }
+  if (goal == null) return { error: noGoal(room) }
   if (goal.status !== 'active') return { error: wrongState(room, goal, 'pause', 'active') }
   goal.status = 'paused'
   goal.pausedBy = by
@@ -359,7 +359,7 @@ export function pauseGoal(room, by, now = Date.now()) {
 
 export function resumeGoal(room, by, now = Date.now()) {
   const goal = room.goal
-  if (goal === undefined) return { error: noGoal(room) }
+  if (goal == null) return { error: noGoal(room) }
   if (goal.status !== 'paused') return { error: wrongState(room, goal, 'resume', 'paused') }
   goal.status = 'active'
   delete goal.pausedBy
@@ -369,7 +369,7 @@ export function resumeGoal(room, by, now = Date.now()) {
 
 export function stopGoal(room, reason, by, now = Date.now()) {
   const goal = room.goal
-  if (goal === undefined) return { error: noGoal(room) }
+  if (goal == null) return { error: noGoal(room) }
   if (!['drafting', 'active', 'paused'].includes(goal.status)) {
     return { error: wrongState(room, goal, 'stop', 'drafting, active or paused') }
   }
@@ -475,7 +475,7 @@ export function install(rt) {
   // after it for the admin. No block at all with no goal or a finished one.
   function goalBlock(room, member, { nudge = false, resume = false } = {}) {
     const goal = room.goal
-    if (goal === undefined || goal.status === 'complete' || goal.status === 'stopped') return ''
+    if (goal == null || goal.status === 'complete' || goal.status === 'stopped') return ''
     const isAdmin = rt.isAdminOf(room, member.id)
     let block
     if (goal.status === 'drafting') {
@@ -496,7 +496,7 @@ export function install(rt) {
   // The tool's answer: the ledger as the caller sees it, without the block's tags.
   function goalLedger(room, member) {
     const goal = room.goal
-    if (goal === undefined) return noGoal(room)
+    if (goal == null) return noGoal(room)
     if (goal.status === 'complete') return `Goal "${goal.title}" is complete.`
     if (goal.status === 'stopped') return `Goal "${goal.title}" was stopped${goal.reason ? `: ${goal.reason}` : ''}.`
     if (goal.status === 'drafting') {
@@ -536,7 +536,7 @@ export function install(rt) {
     if (input === '' || input.length > BRIEF_MAX) return { error: 'Write what this group should achieve, in at most 2000 characters.', code: 'bot/invalid' }
     const admin = room.members.map(rt.botOf).filter(Boolean).find(bot => rt.isAdminOf(room, bot.id))
     if (admin === undefined) return { error: 'This group has no admin. Set one in the group settings first.' }
-    if (room.goal !== undefined && (room.goal.status === 'active' || room.goal.status === 'paused')) {
+    if (room.goal != null && (room.goal.status === 'active' || room.goal.status === 'paused')) {
       return { error: 'This group already has a goal. Stop it first.' }
     }
     const result = draftGoal(room, { brief: input, by: 'user' })
@@ -553,7 +553,7 @@ export function install(rt) {
     const room = rt.roomOf(roomId)
     if (room === undefined) return { error: 'Unknown group chat' }
     const goal = room.goal
-    if (goal === undefined || goal.id !== String(body.goalId ?? '')) return { error: 'The goal has changed. Look again.', code: 'bot/stale' }
+    if (goal == null || goal.id !== String(body.goalId ?? '')) return { error: 'The goal has changed. Look again.', code: 'bot/stale' }
     const action = String(body.action ?? '')
     if (action === 'pause') {
       if (goal.status !== 'active') return { error: wrongState(room, goal, 'pause', 'active') }
@@ -599,7 +599,7 @@ export function install(rt) {
   async function goalDrive(room, round) {
     const goal = room.goal
     const admin = room.admin === undefined || room.admin === null ? undefined : rt.botOf(room.admin)
-    if (goal === undefined || goal.status !== 'active' || goal.idle === true || admin === undefined || !room.members.includes(admin.id)) return
+    if (goal == null || goal.status !== 'active' || goal.idle === true || admin === undefined || !room.members.includes(admin.id)) return
     // A round nobody spoke in — e.g. a stop notice or a stale check — never nudges.
     if (round.stoppedOnly === true || round.slots.length === 0) return
     if (round.userMessage === true || round.slots.some(slot => slot.worked === true && slot.id !== admin.id)) goal.nudges = 0
@@ -656,7 +656,7 @@ export function install(rt) {
   // out of its idle wait and resets the count of fruitless wakes.
   const goalUserMessage = (roomId) => {
     const goal = rt.roomOf(roomId)?.goal
-    if (goal === undefined || (goal.idle === undefined && goal.nudges === 0)) return
+    if (goal == null || (goal.idle === undefined && goal.nudges === 0)) return
     delete goal.idle
     goal.nudges = 0
     goal.revision += 1

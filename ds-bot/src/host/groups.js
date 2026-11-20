@@ -887,8 +887,8 @@ export function install(rt) {
       // a goal that was written or stopped keeps only its user line.
       for (const post of [...posts]) {
         if (post.goal === 'nudge' || post.goal === 'resume') {
-          if (room.goal?.id !== post.goalId || room.goal.status !== 'active' || (post.goal === 'nudge' && room.goal.idle === true)) posts.splice(posts.indexOf(post), 1)
-        } else if (post.goal === 'draft' && (room.goal?.id !== post.goalId || room.goal.status !== 'drafting')) {
+          if (room.goal?.id !== post.goalId || room.goal?.status !== 'active' || (post.goal === 'nudge' && room.goal?.idle === true)) posts.splice(posts.indexOf(post), 1)
+        } else if (post.goal === 'draft' && (room.goal?.id !== post.goalId || room.goal?.status !== 'drafting')) {
           delete post.goal
           delete post.goalId
         }
