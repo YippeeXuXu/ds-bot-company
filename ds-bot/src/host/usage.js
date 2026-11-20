@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 
-const LEDGER_VERSION = 3
+const LEDGER_VERSION = 4
 const PAGE_MESSAGES = 400
 const PAGE_TIMEOUT_MS = 20_000
 const SCAN_TIMEOUT_MS = 180_000
@@ -45,13 +45,28 @@ const tokensOf = usage => ({
   output: count(usage.outputTokens),
 })
 
+// What asked for the turn, as one label the page can group by: the user, the Bot whose
+// message or group post woke this turn, a scheduled task, or the goal that started it.
+const triggerOf = (event) => {
+  const source = event?.data?.source
+  const kind = typeof source?.kind === 'string' ? source.kind : ''
+  if (kind === 'user' || kind === 'user-question-reply') return 'user'
+  if (kind === 'bot') {
+    const name = typeof source.senderName === 'string' ? source.senderName.trim() : ''
+    return name === '' ? 'bot' : `bot:${name}`
+  }
+  if (kind === 'schedule') return 'schedule'
+  if (kind === 'goal') return 'goal'
+  return ''
+}
+
 // Folds Session events, oldest first, into one row per billed attempt, as DSH's own
 // tokenUsage projection counts them: a later sample of one attempt replaces the earlier
 // one, and `llm/retry-started` begins a new attempt. The model is the one the latest
 // request header named. A fork's events up to its inherited cut are the parent's, so
 // the cut drops the rows before it (`reset`).
 export function foldCalls(events, from = {}) {
-  const state = { provider: from.provider ?? '', model: from.model ?? '', retry: from.retry ?? null }
+  const state = { provider: from.provider ?? '', model: from.model ?? '', retry: from.retry ?? null, turn: from.turn ?? 0, trigger: from.trigger ?? '' }
   const rows = new Map()
   let reset = false
   for (const event of events) {
@@ -64,6 +79,18 @@ export function foldCalls(events, from = {}) {
       }
       case 'request/context':
         if (data.provider && data.model) Object.assign(state, { provider: data.provider, model: data.model })
+        break
+      case 'turn/start':
+        if (Number.isSafeInteger(data.turn)) state.turn = data.turn
+        state.trigger = ''
+        break
+      case 'user/message':
+        // The first message that answers the new turn names what asked for it; a steer
+        // that joins the same turn does not become a second trigger.
+        if (state.trigger === '') {
+          const trigger = triggerOf(event)
+          if (trigger !== '') state.trigger = trigger
+        }
         break
       case 'llm/retry-started':
         state.retry = state.retry?.turn === data.turn && state.retry.step === data.step
@@ -82,7 +109,7 @@ export function foldCalls(events, from = {}) {
         if (usage === undefined || usage === null) break
         const attempt = state.retry?.turn === data.turn && state.retry.step === data.step ? state.retry.count : 0
         const key = `${data.turn}:${data.step}:${attempt}`
-        rows.set(key, { key, time: Number.isFinite(event.time) ? event.time : 0, provider: state.provider, model: state.model, ...tokensOf(usage) })
+        rows.set(key, { key, time: Number.isFinite(event.time) ? event.time : 0, provider: state.provider, model: state.model, trigger: state.trigger, ...tokensOf(usage) })
         break
       }
       default:
@@ -92,11 +119,12 @@ export function foldCalls(events, from = {}) {
   return { rows: [...rows.values()], state, reset }
 }
 
-// One aggregate per Session, model, use, and quarter hour.
+// One aggregate per Session, model, use, trigger, and quarter hour.
 function addTo(groups, row) {
   const slot = Math.floor(row.time / SLOT_MS)
-  const id = `${row.session}\n${row.provider}\n${row.model}\n${row.kind}\n${slot}`
-  const group = groups.get(id) ?? { session: row.session, provider: row.provider, model: row.model, kind: row.kind, slot, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, calls: 0 }
+  const trigger = row.trigger ?? ''
+  const id = `${row.session}\n${row.provider}\n${row.model}\n${row.kind}\n${trigger}\n${slot}`
+  const group = groups.get(id) ?? { session: row.session, provider: row.provider, model: row.model, kind: row.kind, trigger, slot, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, calls: 0 }
   group.input += row.input
   group.cacheRead += row.cacheRead
   group.cacheWrite += row.cacheWrite
@@ -143,17 +171,21 @@ function sqliteLedger(DatabaseSync, path) {
     // briefly, and the timeout must be armed before the WAL pragma can block.
     db.exec('PRAGMA busy_timeout = 5000')
     db.exec('PRAGMA journal_mode = WAL')
-    const version = db.prepare('PRAGMA user_version').get().user_version
-    // Version 2 lacks only the seal's watermark, so its rows are kept and gain the column.
-    // Desktop and Web may open it at once: the version is read again under the write lock.
-    if (version === 2) {
+    let version = db.prepare('PRAGMA user_version').get().user_version
+    // Older versions gain only the columns they lack, so their rows are kept. Desktop and
+    // Web may open the file at once: each version is read again under the write lock.
+    if (version === 2 || version === 3) {
       db.exec('BEGIN IMMEDIATE')
       try {
-        if (db.prepare('PRAGMA user_version').get().user_version === 2) {
-          db.exec(`ALTER TABLE marks ADD COLUMN listed INTEGER;
-            PRAGMA user_version = ${LEDGER_VERSION};`)
-        }
+        const locked = db.prepare('PRAGMA user_version').get().user_version
+        const hasColumn = (table, column) => db.prepare(`PRAGMA table_info(${table})`).all().some(row => row.name === column)
+        if (locked === 2 && !hasColumn('marks', 'listed')) db.exec('ALTER TABLE marks ADD COLUMN listed INTEGER;')
+        // Version 3 stores each call's trigger beside it (batch 2). A version 2 file may
+        // already have the column when an older reader of this build wrote it first.
+        if (!hasColumn('calls', 'trigger')) db.exec("ALTER TABLE calls ADD COLUMN trigger TEXT NOT NULL DEFAULT '';")
+        db.exec(`PRAGMA user_version = ${LEDGER_VERSION};`)
         db.exec('COMMIT')
+        version = LEDGER_VERSION
       } catch (error) {
         db.exec('ROLLBACK')
         throw error
@@ -164,14 +196,14 @@ function sqliteLedger(DatabaseSync, path) {
         DROP TABLE IF EXISTS marks;
         DROP TABLE IF EXISTS owners;
         DROP TABLE IF EXISTS kinds;
-        CREATE TABLE calls (key TEXT PRIMARY KEY, session TEXT NOT NULL, time INTEGER NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, kind TEXT NOT NULL, live INTEGER NOT NULL, input INTEGER NOT NULL, cache_read INTEGER NOT NULL, cache_write INTEGER NOT NULL, output INTEGER NOT NULL);
+        CREATE TABLE calls (key TEXT PRIMARY KEY, session TEXT NOT NULL, time INTEGER NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, kind TEXT NOT NULL, trigger TEXT NOT NULL DEFAULT '', live INTEGER NOT NULL, input INTEGER NOT NULL, cache_read INTEGER NOT NULL, cache_write INTEGER NOT NULL, output INTEGER NOT NULL);
         CREATE INDEX calls_session ON calls (session);
         CREATE TABLE marks (session TEXT PRIMARY KEY, through INTEGER NOT NULL, fold TEXT NOT NULL, sealed INTEGER NOT NULL, listed INTEGER);
         CREATE TABLE owners (session TEXT PRIMARY KEY, owner TEXT NOT NULL, name TEXT NOT NULL);
         CREATE TABLE kinds (session TEXT PRIMARY KEY, kind TEXT NOT NULL);
         PRAGMA user_version = ${LEDGER_VERSION};`)
     }
-    const put = db.prepare('INSERT OR REPLACE INTO calls (key, session, time, provider, model, kind, live, input, cache_read, cache_write, output) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    const put = db.prepare('INSERT OR REPLACE INTO calls (key, session, time, provider, model, kind, trigger, live, input, cache_read, cache_write, output) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     const dropLogged = db.prepare('DELETE FROM calls WHERE session = ? AND live = 0')
     const getMark = db.prepare('SELECT through, fold, sealed, listed FROM marks WHERE session = ?')
     const setMark = db.prepare('INSERT OR REPLACE INTO marks (session, through, fold, sealed, listed) VALUES (?, ?, ?, ?, ?)')
@@ -179,8 +211,8 @@ function sqliteLedger(DatabaseSync, path) {
     const putOwner = db.prepare('INSERT OR REPLACE INTO owners (session, owner, name) VALUES (?, ?, ?)')
     const allKinds = db.prepare('SELECT session, kind FROM kinds')
     const putKind = db.prepare('INSERT OR REPLACE INTO kinds (session, kind) VALUES (?, ?)')
-    const grouped = db.prepare(`SELECT session, provider, model, kind, time / ${SLOT_MS} AS slot, SUM(input) AS input, SUM(cache_read) AS cacheRead, SUM(cache_write) AS cacheWrite, SUM(output) AS output, COUNT(*) AS calls FROM calls GROUP BY session, provider, model, kind, slot`)
-    const insert = (row, live) => put.run(row.key, row.session, row.time, row.provider, row.model, row.kind, live ? 1 : 0, row.input, row.cacheRead, row.cacheWrite, row.output)
+    const grouped = db.prepare(`SELECT session, provider, model, kind, trigger, time / ${SLOT_MS} AS slot, SUM(input) AS input, SUM(cache_read) AS cacheRead, SUM(cache_write) AS cacheWrite, SUM(output) AS output, COUNT(*) AS calls FROM calls GROUP BY session, provider, model, kind, trigger, slot`)
+    const insert = (row, live) => put.run(row.key, row.session, row.time, row.provider, row.model, row.kind, row.trigger ?? '', live ? 1 : 0, row.input, row.cacheRead, row.cacheWrite, row.output)
     return {
       mark(session) {
         const row = getMark.get(session)
@@ -543,14 +575,26 @@ export function install(rt) {
       }
       return kindIndex.get(kind)
     }
+    // What asked for each call, as the fold recorded it: `user`, `bot:<name>`, `schedule`,
+    // `goal`, or empty for a call outside any turn (a checkpoint, the planner).
+    const triggers = []
+    const triggerIndex = new Map()
+    const triggerOfRow = (trigger) => {
+      const key = trigger === undefined ? '' : trigger
+      if (!triggerIndex.has(key)) {
+        triggerIndex.set(key, triggers.length)
+        triggers.push(key)
+      }
+      return triggerIndex.get(key)
+    }
     const groupSessions = inGroup()
     const buckets = new Map()
     const storedKinds = ledger.kinds()
     for (const group of ledger.groups()) {
       const kind = group.kind === 'turn' ? (groupSessions.has(group.session) || storedKinds.get(group.session) === 'group' ? 'group' : 'chat') : group.kind
       const row = [hourOf(group.slot * SLOT_MS), ownerOf(group.session), modelOf(group.provider, group.model), kindOf(kind)]
-      const id = row.join('\n')
-      const bucket = buckets.get(id) ?? [...row, 0, 0, 0, 0, 0]
+      const id = [...row, group.trigger ?? ''].join('\n')
+      const bucket = buckets.get(id) ?? [...row, 0, 0, 0, 0, 0, triggerOfRow(group.trigger)]
       bucket[4] += group.input
       bucket[5] += group.cacheRead
       bucket[6] += group.cacheWrite
@@ -562,7 +606,8 @@ export function install(rt) {
       owners,
       models,
       kinds,
-      // [hour, owner, model, kind, input, cacheRead, cacheWrite, output, calls]
+      triggers,
+      // [hour, owner, model, kind, input, cacheRead, cacheWrite, output, calls, trigger]
       rows: [...buckets.values()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
       now: hourOf(Date.now()),
       scanning: scanning !== undefined,
@@ -612,9 +657,9 @@ export function install(rt) {
       try { journal(book, sessionId) } catch (error) { rt.warn('ds-bot: usage could not journal %s: %s', sessionId, error) }
     })()
   }
-  function record({ sessionId, kind, provider, model, usage }) {
+  function record({ sessionId, kind, provider, model, usage, trigger }) {
     noteSession(sessionId)
-    const row = { key: `live:${randomUUID()}`, session: sessionId ?? '', time: Date.now(), provider: provider ?? '', model: model ?? '', kind, ...tokensOf(usage) }
+    const row = { key: `live:${randomUUID()}`, session: sessionId ?? '', time: Date.now(), provider: provider ?? '', model: model ?? '', kind, trigger: trigger ?? '', ...tokensOf(usage) }
     if (ledger !== undefined) {
       try { ledger.add(row) } catch (error) { rt.warn('ds-bot: usage could not record a call: %s', error) }
       return

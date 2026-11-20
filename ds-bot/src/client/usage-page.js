@@ -135,6 +135,14 @@ function kindLabel(kind, botFocus) {
   return labels[kind] ?? kind
 }
 
+function triggerLabel(trigger) {
+  if (trigger === 'user') return t('You')
+  if (trigger === 'goal') return t('Goal')
+  if (trigger === 'schedule') return t('Scheduled task')
+  if (typeof trigger === 'string' && trigger.startsWith('bot:')) return trigger.slice(4) || t('Bot')
+  return t('Other')
+}
+
 // Buttons on a track; a thumb slides to the chosen one.
 function Tabs({ label, value, options, onChange, boxRef }) {
   const names = options.map(([, text]) => text).join('\n')
@@ -547,6 +555,7 @@ export function UsagePage({ roster, actions, focusId }) {
     const kinds = ranked(part.kinds)
     const usedModels = ranked(part.models)
     const owners = ranked(part.owners)
+    const triggers = ranked(part.triggers)
     body = [
       h(Profile, { key: 'profile', face, range, share: all.total.total > 0 ? whole / all.total.total : 0 }),
       h('div', { key: 'sheet', className: 'bt-us-sheet' },
@@ -560,6 +569,10 @@ export function UsagePage({ roster, actions, focusId }) {
             kinds.length > 0
               ? kinds.map(([at, sum], index) => h(Row, { key: at, name: kindLabel(view.kinds[at], ownerAt >= 0 && isBot(ownerAt)), sum, whole, index, fill: soften(face.paint, 0.8) }))
               : nothing)),
+        h(ListCard, { key: 'triggers', title: t('Triggered by'), count: triggers.length, index: 5 },
+          triggers.length > 0
+            ? triggers.map(([at, sum], index) => h(Row, { key: `t${at}`, name: triggerLabel(view.triggers?.[at] ?? ''), sum, whole, index, fill: soften(face.paint, 0.8) }))
+            : nothing),
         h(Heat, { key: 'heat', view, keep, paint: face.paint, index: 4 })),
     ]
   } else {

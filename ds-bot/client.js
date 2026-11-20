@@ -938,6 +938,8 @@ var ZH = {
   "Nothing in this range.": "这段时间没有用量。",
   "Who used it": "谁在用",
   "What for": "用途",
+  "Triggered by": "触发者",
+  Goal: "目标",
   Activity: "活跃度",
   "Time range": "时间范围",
   "All usage": "全部用量",
@@ -20842,6 +20844,7 @@ var HOUR4 = 0;
 var OWNER = 1;
 var MODEL = 2;
 var KIND = 3;
+var TRIGGER = 9;
 var HOUR_MS = 36e5;
 var DAY_MS = 864e5;
 var RANGES = [
@@ -20932,7 +20935,7 @@ function summarize(view, range, keep = () => true, seriesOf = () => "all") {
     return week;
   };
   const current = buckets.map((bucket) => ({ ...bucket, sum: blank2(), stacks: /* @__PURE__ */ new Map() }));
-  const result = { buckets: current, total: blank2(), previous: 0, owners: /* @__PURE__ */ new Map(), models: /* @__PURE__ */ new Map(), kinds: /* @__PURE__ */ new Map() };
+  const result = { buckets: current, total: blank2(), previous: 0, owners: /* @__PURE__ */ new Map(), models: /* @__PURE__ */ new Map(), kinds: /* @__PURE__ */ new Map(), triggers: /* @__PURE__ */ new Map() };
   for (const row of view.rows) {
     const hour = row[HOUR4];
     if (hour < before || hour > to || !keep(row)) continue;
@@ -20950,6 +20953,7 @@ function summarize(view, range, keep = () => true, seriesOf = () => "all") {
     addTo(result.owners, row[OWNER], row);
     addTo(result.models, row[MODEL], row);
     addTo(result.kinds, row[KIND], row);
+    addTo(result.triggers, row[TRIGGER] ?? 0, row);
   }
   return result;
 }
@@ -21085,6 +21089,13 @@ function ownerFace(owner, roster) {
 function kindLabel(kind, botFocus) {
   const labels = { chat: botFocus ? t("Own chat") : t("Conversations"), group: t("Group chats"), compaction: t("Compaction and handoff"), image: t("Image reading"), memory: t("Memory"), "session-title": t("Titles"), btw: t("Side chat"), side: t("Side chat"), other: t("Other") };
   return labels[kind] ?? kind;
+}
+function triggerLabel(trigger) {
+  if (trigger === "user") return t("You");
+  if (trigger === "goal") return t("Goal");
+  if (trigger === "schedule") return t("Scheduled task");
+  if (typeof trigger === "string" && trigger.startsWith("bot:")) return trigger.slice(4) || t("Bot");
+  return t("Other");
 }
 function Tabs({ label: label2, value, options, onChange, boxRef }) {
   const names = options.map(([, text]) => text).join("\n");
@@ -21615,6 +21626,7 @@ function UsagePage({ roster, actions, focusId }) {
     const kinds = ranked(part.kinds);
     const usedModels = ranked(part.models);
     const owners = ranked(part.owners);
+    const triggers = ranked(part.triggers);
     body = [
       (0, import_react48.createElement)(Profile, { key: "profile", face, range, share: all.total.total > 0 ? whole / all.total.total : 0 }),
       (0, import_react48.createElement)(
@@ -21631,6 +21643,11 @@ function UsagePage({ roster, actions, focusId }) {
             { title: t("What for"), index: 3 },
             kinds.length > 0 ? kinds.map(([at, sum], index) => (0, import_react48.createElement)(Row2, { key: at, name: kindLabel(view.kinds[at], ownerAt >= 0 && isBot(ownerAt)), sum, whole, index, fill: soften(face.paint, 0.8) })) : nothing
           )
+        ),
+        (0, import_react48.createElement)(
+          ListCard,
+          { key: "triggers", title: t("Triggered by"), count: triggers.length, index: 5 },
+          triggers.length > 0 ? triggers.map(([at, sum], index) => (0, import_react48.createElement)(Row2, { key: `t${at}`, name: triggerLabel(view.triggers?.[at] ?? ""), sum, whole, index, fill: soften(face.paint, 0.8) })) : nothing
         ),
         (0, import_react48.createElement)(Heat, { key: "heat", view, keep, paint: face.paint, index: 4 })
       )

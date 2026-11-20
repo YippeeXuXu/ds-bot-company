@@ -1,10 +1,11 @@
 // The Usage page's numbers: the host's hourly rows, summed by hour, day, week, or month.
 
-// A view row: [hour, owner, model, kind, input, cacheRead, cacheWrite, output, calls].
+// A view row: [hour, owner, model, kind, input, cacheRead, cacheWrite, output, calls, trigger].
 export const HOUR = 0
 export const OWNER = 1
 export const MODEL = 2
 export const KIND = 3
+export const TRIGGER = 9
 
 export const HOUR_MS = 3_600_000
 export const DAY_MS = 86_400_000
@@ -118,7 +119,7 @@ export function summarize(view, range, keep = () => true, seriesOf = () => 'all'
     return week
   }
   const current = buckets.map(bucket => ({ ...bucket, sum: blank(), stacks: new Map() }))
-  const result = { buckets: current, total: blank(), previous: 0, owners: new Map(), models: new Map(), kinds: new Map() }
+  const result = { buckets: current, total: blank(), previous: 0, owners: new Map(), models: new Map(), kinds: new Map(), triggers: new Map() }
   for (const row of view.rows) {
     const hour = row[HOUR]
     if (hour < before || hour > to || !keep(row)) continue
@@ -136,6 +137,7 @@ export function summarize(view, range, keep = () => true, seriesOf = () => 'all'
     addTo(result.owners, row[OWNER], row)
     addTo(result.models, row[MODEL], row)
     addTo(result.kinds, row[KIND], row)
+    addTo(result.triggers, row[TRIGGER] ?? 0, row)
   }
   return result
 }

@@ -182,6 +182,41 @@ test('employee.update moves department and name but never the Bot', async () => 
   rmSync(home, { recursive: true, force: true })
 })
 
+test('employee.planner stores the pair, can be turned off, and can be cleared (batch 2)', async () => {
+  const home = tempHome()
+  const { commands } = open(home)
+  await company(commands)
+  const dep = await department(commands)
+  const hired = await run(commands, 'employee.create', { operation_key: 'k-hire', bot_id: 'bot_a', department_id: dep.aggregate_id, name: '小蓝' })
+  const second = await run(commands, 'employee.create', {
+    operation_key: 'k-hire-planner',
+    bot_id: 'bot_b',
+    department_id: dep.aggregate_id,
+    name: '键盘',
+    planner: { provider: 'ollama', model: 'kimi-k3' },
+  })
+  assert.deepEqual(second.body.employee.planner, { enabled: true, provider: 'ollama', model: 'kimi-k3' })
+  const set = await run(commands, 'employee.update', {
+    operation_key: 'k-planner',
+    employee_id: hired.aggregate_id,
+    planner: { provider: 'deepseek', model: 'deepseek-v4-pro', reasoning_effort: 'high' },
+  })
+  assert.deepEqual(set.body.employee.planner, { enabled: true, provider: 'deepseek', model: 'deepseek-v4-pro', reasoning_effort: 'high' })
+  const off = await run(commands, 'employee.update', {
+    operation_key: 'k-planner-off',
+    employee_id: hired.aggregate_id,
+    planner: { enabled: false, provider: 'deepseek', model: 'deepseek-v4-pro' },
+  })
+  assert.equal(off.body.employee.planner.enabled, false)
+  const cleared = await run(commands, 'employee.update', { operation_key: 'k-planner-clear', employee_id: hired.aggregate_id, planner: null })
+  assert.equal(cleared.body.employee.planner, undefined)
+  await assert.rejects(
+    run(commands, 'employee.update', { operation_key: 'k-planner-bad', employee_id: hired.aggregate_id, planner: { provider: 'deepseek' } }),
+    error => error.code === 'company/invalid' && error.details.field === 'planner.model',
+  )
+  rmSync(home, { recursive: true, force: true })
+})
+
 test('an unknown acceptance_role is refused', async () => {
   const home = tempHome()
   const { commands } = open(home)
