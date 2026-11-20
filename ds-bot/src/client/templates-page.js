@@ -39,6 +39,31 @@ export const sortedTemplates = templates => [...(templates ?? [])]
   .filter(item => item.status !== 'archived')
   .sort((left, right) => STATUS_ORDER(left) - STATUS_ORDER(right) || (left.created_at ?? 0) - (right.created_at ?? 0))
 
+// Two kinds of template: an agent template says what the work is, a soul
+// template says how the Bot talks and behaves. Rows written before kinds
+// existed read as agent templates.
+export const templateKind = template => (template?.kind === 'soul' ? 'soul' : 'agent')
+
+// The left column shows a template's first sentence, so it can be recognised
+// without opening it.
+export const firstSentence = (text, limit = 42) => {
+  const body = String(text ?? '').replace(/\s+/g, ' ').trim()
+  if (!body) return ''
+  const end = body.search(/[。！？.!?]/)
+  const sentence = end >= 0 ? body.slice(0, end + 1) : body
+  return sentence.length > limit ? `${sentence.slice(0, limit - 1)}…` : sentence
+}
+
+// The preview is asked for, not composed here: the host returns the exact text a
+// Bot would be created with, soul paragraph first.
+export const previewPayload = ({ templateId, soulTemplateId, name }) => {
+  const payload = { template_id: templateId }
+  if (soulTemplateId) payload.soul_template_id = soulTemplateId
+  const wanted = String(name ?? '').trim()
+  if (wanted) payload.name = wanted
+  return payload
+}
+
 const fieldLabels = () => ({
   role: t('Job title'),
   instructions: t('Instructions'),
@@ -81,8 +106,9 @@ export const templateCopyPayload = (template, name) => {
 // 3.4: one command makes the Bot, attaches the skills and writes the employee
 // record. The department is the only field the host cannot infer; the employee
 // name defaults to the template's own name, and the Bot name to the employee name.
-export const createBotPayload = ({ templateId, departmentId, name, botName, acceptanceRole }) => {
+export const createBotPayload = ({ templateId, soulTemplateId, departmentId, name, botName, acceptanceRole }) => {
   const payload = { template_id: templateId, department_id: departmentId }
+  if (soulTemplateId) payload.soul_template_id = soulTemplateId
   const employee = String(name ?? '').trim()
   if (employee) payload.name = employee
   const bot = String(botName ?? '').trim()
@@ -114,6 +140,10 @@ export const templateErrorText = failure => {
         : t('The Bot was made but “{skill}” could not be attached. It was removed again, so nothing is left behind.', { skill: details.skill })
     case 'employee/bot-create-failed':
       return t('The Bot could not be made: {message}', { message: failure.message })
+    case 'template/kind-mismatch':
+      return details.field === 'soul_template_id'
+        ? t('An agent template was given where a soul template was expected. Pick a soul template for the voice.')
+        : t('That is a soul template, not an agent template. Pick an agent template for the work.')
     case 'company/invalid':
       return failure.message
         ? t('The Bot could not be made: {message}', { message: failure.message })
@@ -183,7 +213,7 @@ export function TemplatesPageView(props) {
   const {
     templates = [], template = null, departments = [], roster = {}, loading = false,
     error = '', failure = '', preview = false, flash = '', form = null,
-    copyOpen = false, copyName = '', botDialog = null, archiveArmed = false, busy = false,
+    copyOpen = false, copyName = '', botDialog = null, botPreview = null, archiveArmed = false, busy = false,
     effortOptions = [], leavePrompt = false, handlers = {},
   } = props
   const title = template ? template.source === 'builtin' ? t('Builtin template') : t('Saved copy') : ''
@@ -212,10 +242,13 @@ export function TemplatesPageView(props) {
 
   const sheet = () => {
     if (!template) return null
+    const isSoul = templateKind(template) === 'soul'
     const actions = preview
       ? null
       : h('div', { className: 'bc-tpl-actions' },
-        h('button', { type: 'button', className: 'bc-button bc-primary', onClick: () => handlers.onStartBot?.() }, t('Make a Bot')),
+        isSoul
+          ? null
+          : h('button', { type: 'button', className: 'bc-button bc-primary', onClick: () => handlers.onStartBot?.() }, t('Make a Bot')),
         template.source === 'builtin'
           ? h('button', { type: 'button', className: 'bc-button', onClick: () => handlers.onStartCopy?.() }, t('Save a copy'))
           : [
@@ -263,6 +296,7 @@ export function TemplatesPageView(props) {
         h('div', { className: 'bc-tpl-sheet-title' },
           h('span', { className: 'bc-kicker' }, title),
           h('h2', null, template.name),
+          h('p', { className: 'bc-tpl-kind' }, isSoul ? t('Soul template') : t('Agent template')),
           template.source === 'builtin'
             ? h('p', { className: 'bc-tpl-note' }, t('This builtin template is read-only. Save a copy to change it.'))
             : h('p', { className: 'bc-tpl-note' }, origin
@@ -275,10 +309,13 @@ export function TemplatesPageView(props) {
       form ? editForm() : h('div', null,
         h('dl', { className: 'bc-tpl-spec' },
           h('div', null, h('dt', null, t('Job title')), h('dd', null, template.role || t('Not set'))),
-          h('div', null, h('dt', null, t('Model')), h('dd', null, modelName(template.model))),
-          h('div', null, h('dt', null, t('Thinking level')), h('dd', null, effortLabel(template.effort))),
+          isSoul ? null : h('div', null, h('dt', null, t('Model')), h('dd', null, modelName(template.model))),
+          isSoul ? null : h('div', null, h('dt', null, t('Thinking level')), h('dd', null, effortLabel(template.effort))),
           h('div', null, h('dt', null, t('Version')), h('dd', null, `v${template.version ?? 1}`)),
-          h('div', { className: 'is-wide' }, h('dt', null, t('Skills')), h('dd', null, skillsBlock()))),
+          isSoul ? null : h('div', { className: 'is-wide' }, h('dt', null, t('Skills')), h('dd', null, skillsBlock()))),
+        isSoul
+          ? h('p', { className: 'bc-tpl-note' }, t('A soul template carries the voice only: no model, no skills. The Bot is hired from an agent template, and this text comes before that one.'))
+          : null,
         h('section', { className: 'bc-tpl-doc' },
           h('h3', { className: 'bc-detail-label' }, t('Instructions')),
           template.instructions
@@ -355,14 +392,49 @@ export function TemplatesPageView(props) {
 
   function botModal() {
     const dialog = botDialog
-    const canMake = !busy && Boolean(dialog.departmentId) && Boolean(String(dialog.name ?? '').trim())
+    const agents = templates.filter(item => templateKind(item) === 'agent')
+    const souls = templates.filter(item => templateKind(item) === 'soul')
+    const chosenAgent = agents.find(item => item.id === dialog.templateId) ?? null
+    const canMake = !busy && Boolean(dialog.templateId) && Boolean(dialog.departmentId) && Boolean(String(dialog.name ?? '').trim())
+    const previewBody = botPreview?.loading
+      ? h('p', { className: 'bc-tpl-quiet' }, t('Reading the preview…'))
+      : botPreview?.error
+        ? h('p', { className: 'bc-exception', role: 'alert' }, botPreview.error)
+        : botPreview?.data
+          ? (String(botPreview.data.instructions ?? '').trim()
+            ? h('pre', { className: 'bc-tpl-preview-body' }, botPreview.data.instructions)
+            : h('p', { className: 'bc-tpl-quiet' }, t('This pair gives the Bot no instructions yet.')))
+          : h('p', { className: 'bc-tpl-quiet' }, t('Pick both templates to see the text the Bot will be given.'))
+    const previewNames = [botPreview?.data?.soul?.name, botPreview?.data?.agent?.name].filter(Boolean).join(' + ')
     return h('div', { className: 'bc-tpl-modal' },
-      h('div', { className: 'bc-tpl-modal-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('Make a Bot from this template'), ref: modalCard },
+      h('div', { className: 'bc-tpl-modal-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('Make a Bot from templates'), ref: modalCard },
         h('div', { className: 'bc-co-pop-head' },
-          h('strong', null, t('Make a Bot from this template')),
-          h('span', { className: 'bc-co-pop-name' }, template?.name ?? ''),
+          h('strong', null, t('Make a Bot from templates')),
+          chosenAgent ? h('span', { className: 'bc-co-pop-name' }, chosenAgent.name) : null,
           h('button', { type: 'button', className: 'bc-co-pop-close', 'aria-label': t('Close'), onClick: () => handlers.onBotCancel?.() }, '×')),
-        h('p', { className: 'bc-tpl-note' }, t('The Bot is made in the department you choose, with this template’s instructions, model and skills.')),
+        h('p', { className: 'bc-tpl-note' }, t('The work first, the voice second: the Bot gets the agent template’s instructions, then the soul template’s text, and the two are joined word for word.')),
+        h('div', { className: 'bc-co-create-fields' },
+          h('label', { className: 'bc-field' }, t('Agent template'),
+            h('select', {
+              value: dialog.templateId ?? '', 'aria-label': t('Agent template'),
+              onChange: event => handlers.onBotField?.('templateId', event.target.value),
+            },
+              h('option', { value: '' }, t('Choose an agent template')),
+              agents.map(item => h('option', { key: item.id, value: item.id }, item.name)))),
+          h('label', { className: 'bc-field' }, t('Soul template'),
+            souls.length === 0
+              ? h('span', { className: 'bc-tpl-quiet' }, t('This company has no soul template yet, so the Bot is hired with the work text alone.'))
+              : h('select', {
+                value: dialog.soulTemplateId ?? '', 'aria-label': t('Soul template'),
+                onChange: event => handlers.onBotField?.('soulTemplateId', event.target.value),
+              },
+                h('option', { value: '' }, t('Company default')),
+                souls.map(item => h('option', { key: item.id, value: item.id }, item.name))))),
+        h('section', { className: 'bc-tpl-preview', 'aria-label': t('Preview') },
+          h('div', { className: 'bc-tpl-preview-head' },
+            h('span', null, t('What the Bot will be told')),
+            previewNames ? h('span', { className: 'bc-tpl-preview-sub' }, previewNames) : null),
+          previewBody),
         h('div', { className: 'bc-co-create-fields' },
           h('label', { className: 'bc-field' }, t('Department'), h('select', {
             value: dialog.departmentId, onChange: event => handlers.onBotField?.('departmentId', event.target.value),
@@ -398,6 +470,8 @@ export function TemplatesPage(props) {
   const [copyOpen, setCopyOpen] = useState(false)
   const [copyName, setCopyName] = useState('')
   const [botDialog, setBotDialog] = useState(null)
+  const [botPreview, setBotPreview] = useState(null)
+  const previewSeq = useRef(0)
   const [archiveArmed, setArchiveArmed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState('')
@@ -505,16 +579,56 @@ export function TemplatesPage(props) {
     setFlash(t('Saved as “{name}”.', { name: created?.name ?? copyName.trim() }))
   })
 
+  // The dialog picks the two templates itself, so it also opens from a soul
+  // template: the work comes from the first agent template in that case.
   const startBot = () => {
     setFailure('')
-    setBotDialog({
+    const agents = templates.filter(item => templateKind(item) === 'agent')
+    const souls = templates.filter(item => templateKind(item) === 'soul')
+    const chosen = templateKind(template) === 'agent' ? template : agents[0] ?? null
+    const dialog = {
+      templateId: chosen?.id ?? '',
+      soulTemplateId: souls[0]?.id ?? '',
       departmentId: departments[0]?.id ?? '',
-      name: template?.name ?? '',
+      name: chosen?.name ?? '',
       botName: '',
       acceptanceRole: 'executor',
       error: '',
       errorField: '',
-    })
+    }
+    setBotDialog(dialog)
+    loadPreview(dialog)
+  }
+
+  // The preview is asked for, not composed here: the host returns the exact text
+  // the Bot would be created with. Only the answer to the last request is kept.
+  const loadPreview = async dialog => {
+    if (!onCommand || !dialog?.templateId) { setBotPreview(null); return }
+    const seq = previewSeq.current + 1
+    previewSeq.current = seq
+    setBotPreview({ loading: true, error: '', data: null })
+    try {
+      const result = await onCommand('employee.preview-from-template', previewPayload(dialog))
+      if (previewSeq.current !== seq) return
+      setBotPreview({ loading: false, error: '', data: result?.body ?? null })
+    } catch (error) {
+      if (previewSeq.current !== seq) return
+      setBotPreview({ loading: false, error: templateErrorText(error), data: null })
+    }
+  }
+
+  const botField = (field, value) => {
+    const current = botDialog
+    if (!current) return
+    const next = { ...current, [field]: value, error: '', errorField: '' }
+    setBotDialog(next)
+    if (field === 'templateId' || field === 'soulTemplateId') loadPreview(next)
+  }
+
+  const botCancel = () => {
+    previewSeq.current += 1
+    setBotPreview(null)
+    setBotDialog(null)
   }
   // 3.4: the dialog stays open when the host refuses, so the reason is read next to
   // the values it is about; a success closes it and says what the team now has.
@@ -524,13 +638,16 @@ export function TemplatesPage(props) {
     setBotDialog(current => current ? { ...current, error: '' } : current)
     try {
       const result = await onCommand('employee.create-from-template', createBotPayload({
-        templateId: template.id,
+        templateId: botDialog.templateId,
+        soulTemplateId: botDialog.soulTemplateId,
         departmentId: botDialog.departmentId,
         name: botDialog.name,
         botName: botDialog.botName,
         acceptanceRole: botDialog.acceptanceRole,
       }))
       const bot = result?.body?.bot
+      previewSeq.current += 1
+      setBotPreview(null)
       setBotDialog(null)
       setFlash(t('“{name}” is on the team with {count} skills.', { name: bot?.name ?? botDialog.name.trim(), count: (bot?.skills ?? []).length }))
     } catch (error) {
@@ -620,6 +737,7 @@ export function TemplatesPage(props) {
     copyOpen,
     copyName,
     botDialog,
+    botPreview,
     archiveArmed,
     busy,
     effortOptions,
@@ -641,8 +759,8 @@ export function TemplatesPage(props) {
       onCopyName: setCopyName,
       onCopy: saveCopy,
       onStartBot: startBot,
-      onBotCancel: () => setBotDialog(null),
-      onBotField: (field, value) => setBotDialog(current => current ? { ...current, [field]: value } : current),
+      onBotCancel: botCancel,
+      onBotField: botField,
       onCreateBot: createBot,
       onArchiveArm: setArchiveArmed,
       onArchive: archive,
@@ -701,6 +819,11 @@ export const TEMPLATES_CSS = `
 .bc-tpl-copyrow .bc-actions{margin-top:0}
 .bc-tpl-foot{display:flex;align-items:center;gap:10px;margin-top:16px;padding-top:12px;border-top:1px solid var(--bt-line);min-height:32px}
 .bc-tpl-quiet{font-size:12px;line-height:17px;color:var(--bt-ink-3);border:0;background:none;padding:0}
+.bc-tpl-kind{display:inline-block;margin:6px 0 0;padding:1px 7px;border:1px solid var(--bt-line-2);border-radius:999px;font-size:11px;line-height:16px;color:var(--bt-ink-2)}
+.bc-tpl-preview{margin:12px 0 0;padding:10px 12px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-hover)}
+.bc-tpl-preview-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 6px;font-size:12px;line-height:17px;font-weight:600;color:var(--bt-ink-2)}
+.bc-tpl-preview-sub{font-weight:400;color:var(--bt-ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bc-tpl-preview-body{margin:0;max-height:20vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:12px;line-height:1.65;color:var(--bt-ink)}
 .bc-tpl-dangerbtn{color:var(--bt-danger);font-weight:600;cursor:pointer;border-radius:6px;padding:6px 2px}
 .bc-tpl-dangerbtn:hover{background:var(--bt-hover)}
 .bc-tpl-archive{display:flex;align-items:center;gap:8px;flex-wrap:wrap}

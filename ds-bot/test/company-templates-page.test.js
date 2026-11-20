@@ -10,7 +10,7 @@ import { build } from 'esbuild'
 const PLUGIN = dirname(dirname(fileURLToPath(import.meta.url)))
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { TemplatesPage, TemplatesPageView, TEMPLATES_CSS, sortedTemplates, overrideText, formDirty, templateUpdatePayload, templateCopyPayload, createBotPayload, templateErrorText } from './src/client/templates-page.js'\nexport { askLeave } from './src/client/leave-guard.js'",
+    contents: "export { TemplatesPage, TemplatesPageView, TEMPLATES_CSS, sortedTemplates, overrideText, formDirty, templateUpdatePayload, templateCopyPayload, createBotPayload, templateErrorText, templateKind, firstSentence, previewPayload } from './src/client/templates-page.js'\nexport { askLeave } from './src/client/leave-guard.js'",
     resolveDir: PLUGIN,
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -29,6 +29,7 @@ runInNewContext(outputFiles[0].text, sandbox)
 const {
   TemplatesPageView, TEMPLATES_CSS, sortedTemplates,
   templateUpdatePayload, templateCopyPayload, createBotPayload, templateErrorText,
+  templateKind, firstSentence, previewPayload,
 } = module.exports
 
 const text = node => {
@@ -268,32 +269,35 @@ test('a refused archive says so on the sheet, not only in the form', () => {
 // --- making a Bot ------------------------------------------------------------
 
 test('the make-a-Bot dialog names the department, the employee and the Bot', () => {
-  const dialog = { departmentId: 'dep_rd', name: '小前', botName: '', acceptanceRole: 'executor', error: '' }
+  const dialog = { templateId: 'tpl_builtin', soulTemplateId: '', departmentId: 'dep_rd', name: '小前', botName: '', acceptanceRole: 'executor', error: '' }
   const tree = TemplatesPageView(props({ botDialog: dialog }))
   assert.equal(byClass(tree, 'bc-tpl-modal').length, 1)
-  assert.match(text(byClass(tree, 'bc-tpl-modal-card')[0]), /Make a Bot from this template/)
+  assert.match(text(byClass(tree, 'bc-tpl-modal-card')[0]), /Make a Bot from templates/)
   const selects = collect(byClass(tree, 'bc-tpl-modal-card')[0], node => node.type === 'select')
-  assert.equal(selects[0].props.value, 'dep_rd')
-  assert.equal(selects[1].props.value, 'executor')
+  assert.equal(selects[0].props.value, 'tpl_builtin')
+  assert.equal(selects[1].props.value, 'dep_rd')
+  assert.equal(selects[2].props.value, 'executor')
   assert.equal(button(tree, 'Make the Bot').props.disabled, false)
 })
 
 test('the dialog will not submit without a department or a name', () => {
-  const missingDept = TemplatesPageView(props({ botDialog: { departmentId: '', name: '小前', botName: '', acceptanceRole: 'executor', error: '' } }))
+  const missingDept = TemplatesPageView(props({ botDialog: { templateId: 'tpl_builtin', soulTemplateId: '', departmentId: '', name: '小前', botName: '', acceptanceRole: 'executor', error: '' } }))
   assert.equal(button(missingDept, 'Make the Bot').props.disabled, true)
-  const missingName = TemplatesPageView(props({ botDialog: { departmentId: 'dep_rd', name: '  ', botName: '', acceptanceRole: 'executor', error: '' } }))
+  const missingName = TemplatesPageView(props({ botDialog: { templateId: 'tpl_builtin', soulTemplateId: '', departmentId: 'dep_rd', name: '  ', botName: '', acceptanceRole: 'executor', error: '' } }))
   assert.equal(button(missingName, 'Make the Bot').props.disabled, true)
+  const missingTemplate = TemplatesPageView(props({ botDialog: { templateId: '', soulTemplateId: '', departmentId: 'dep_rd', name: '小前', botName: '', acceptanceRole: 'executor', error: '' } }))
+  assert.equal(button(missingTemplate, 'Make the Bot').props.disabled, true)
 })
 
 test('a refusal stays in the dialog, next to the values it is about', () => {
-  const dialog = { departmentId: 'dep_rd', name: '小前', botName: '', acceptanceRole: 'executor', error: 'A Bot with this name already exists. Give this one another name.' }
+  const dialog = { templateId: 'tpl_builtin', soulTemplateId: '', departmentId: 'dep_rd', name: '小前', botName: '', acceptanceRole: 'executor', error: 'A Bot with this name already exists. Give this one another name.' }
   const tree = TemplatesPageView(props({ botDialog: dialog }))
   assert.match(text(byClass(tree, 'bc-tpl-modal-card')[0]), /A Bot with this name already exists/)
 })
 
 test('a taken Bot name is shown under the Bot name field', () => {
   const dialog = {
-    departmentId: 'dep_rd', name: '小前', botName: '键盘', acceptanceRole: 'executor',
+    templateId: 'tpl_builtin', soulTemplateId: '', departmentId: 'dep_rd', name: '小前', botName: '键盘', acceptanceRole: 'executor',
     error: 'A Bot with this name already exists. Give this one another name.', errorField: 'bot_name',
   }
   const tree = TemplatesPageView(props({ botDialog: dialog }))
@@ -315,6 +319,93 @@ test('the create payload only carries the names that were actually given', () =>
   })), { template_id: 'tpl_1', department_id: 'dep_rd', bot_name: '小明', acceptance_role: 'acceptor' })
 })
 
+// --- the two kinds of template ----------------------------------------------
+
+test('a row without a kind reads as an agent template', () => {
+  assert.equal(templateKind({ id: 'tpl_1' }), 'agent')
+  assert.equal(templateKind({ id: 'tpl_1', kind: 'agent' }), 'agent')
+  assert.equal(templateKind({ id: 'tpl_1', kind: 'soul' }), 'soul')
+  assert.equal(templateKind(null), 'agent')
+})
+
+test('the list sentence is the first sentence, cut short when it runs long', () => {
+  assert.equal(firstSentence('把项目拆成任务。每天汇报一次进度。'), '把项目拆成任务。')
+  assert.equal(firstSentence('  写页面，保持键盘可用  '), '写页面，保持键盘可用')
+  assert.equal(firstSentence(''), '')
+  const long = firstSentence('这是一个很长很长的句子' + '啊'.repeat(60) + '。')
+  assert.equal(long.length, 42)
+  assert.ok(long.endsWith('…'))
+})
+
+test('the preview payload asks for the soul only when one was chosen', () => {
+  assert.deepEqual(plain(previewPayload({ templateId: 'tpl_1' })), { template_id: 'tpl_1' })
+  assert.deepEqual(plain(previewPayload({ templateId: 'tpl_1', soulTemplateId: 'tpl_soul', name: ' 小前 ' })),
+    { template_id: 'tpl_1', soul_template_id: 'tpl_soul', name: '小前' })
+})
+
+test('the create payload carries the soul template too', () => {
+  assert.deepEqual(plain(createBotPayload({
+    templateId: 'tpl_1', soulTemplateId: 'tpl_soul', departmentId: 'dep_rd', name: '小前', botName: '', acceptanceRole: 'executor',
+  })), { template_id: 'tpl_1', department_id: 'dep_rd', soul_template_id: 'tpl_soul', name: '小前', acceptance_role: 'executor' })
+})
+
+test('a soul template is labelled and offers no way to hire from it', () => {
+  const soul = builtin({ id: 'tpl_soul', kind: 'soul', name: '公司默认语气', role: null, instructions: '先做人，再做事。' })
+  const templates = sortedTemplates([soul, builtin()])
+  const tree = TemplatesPageView(props({ templates, template: soul }))
+  assert.match(text(byClass(tree, 'bc-tpl-kind')[0]), /Soul template/)
+  assert.equal(button(tree, 'Make a Bot'), undefined)
+  assert.ok(button(tree, 'Save a copy'))
+  assert.equal(byClass(tree, 'bc-tpl-skill').length, 0)
+  assert.match(text(tree), /voice only/)
+})
+
+test('an agent template says it is one', () => {
+  const templates = sortedTemplates([builtin()])
+  const tree = TemplatesPageView(props({ templates, template: templates[0] }))
+  assert.match(text(byClass(tree, 'bc-tpl-kind')[0]), /Agent template/)
+})
+
+test('the dialog picks the work template and then the voice, and previews the pair', () => {
+  const soul = builtin({ id: 'tpl_soul', kind: 'soul', name: '公司默认语气', instructions: '先做人。' })
+  const templates = sortedTemplates([builtin({ id: 'tpl_agent' }), soul])
+  const tree = TemplatesPageView(props({
+    templates, template: templates[0],
+    botDialog: { templateId: 'tpl_agent', soulTemplateId: 'tpl_soul', departmentId: 'dep_rd', name: '小前', botName: '', acceptanceRole: 'executor', error: '' },
+    botPreview: { loading: false, error: '', data: { soul: { name: '公司默认语气' }, agent: { name: '项目统筹' }, instructions: '先做人。\n\n把项目拆成任务，每天汇报一次进度。' } },
+  }))
+  const card = byClass(tree, 'bc-tpl-modal-card')[0]
+  const labels = collect(card, node => node.type === 'label').map(text)
+  assert.ok(labels.some(line => /Agent template/.test(line)))
+  assert.ok(labels.some(line => /Soul template/.test(line)))
+  assert.match(text(byClass(card, 'bc-tpl-preview-body')[0]), /先做人。\n\n把项目拆成任务/)
+  assert.match(text(byClass(card, 'bc-tpl-preview-sub')[0]), /公司默认语气 \+ 项目统筹/)
+  assert.equal(collect(card, node => node.type === 'select')[0].props.value, 'tpl_agent')
+  assert.equal(collect(card, node => node.type === 'select')[1].props.value, 'tpl_soul')
+})
+
+test('without a soul template the dialog says the Bot is hired from the work text alone', () => {
+  const tree = TemplatesPageView(props({
+    botDialog: { templateId: 'tpl_builtin', soulTemplateId: '', departmentId: 'dep_rd', name: '小前', botName: '', acceptanceRole: 'executor', error: '' },
+    botPreview: { loading: true, error: '', data: null },
+  }))
+  assert.match(text(tree), /no soul template yet/)
+  assert.match(text(tree), /Reading the preview/)
+})
+
+test('a failed preview keeps the reason next to the templates', () => {
+  const tree = TemplatesPageView(props({
+    botDialog: { templateId: 'tpl_builtin', soulTemplateId: '', departmentId: 'dep_rd', name: '小前', botName: '', acceptanceRole: 'executor', error: '' },
+    botPreview: { loading: false, error: 'The preview could not be read.', data: null },
+  }))
+  assert.match(text(byClass(tree, 'bc-exception')[0]), /could not be read/)
+})
+
+test('each kind refusal says which template to pick instead', () => {
+  assert.match(templateErrorText({ code: 'template/kind-mismatch', details: { field: 'template_id' } }), /soul template, not an agent template/)
+  assert.match(templateErrorText({ code: 'template/kind-mismatch', details: { field: 'soul_template_id' } }), /where a soul template was expected/)
+})
+
 test('a missing skill keeps the server list in the dialog', () => {
   const message = templateErrorText({ code: 'employee/capability-missing', details: { missing: ['browser', 'charts'] } })
   assert.match(message, /browser, charts/)
@@ -323,13 +414,13 @@ test('a missing skill keeps the server list in the dialog', () => {
 test('the fields report what was typed, and the close button gets out', () => {
   const seen = []
   const tree = TemplatesPageView(props({
-    botDialog: { departmentId: 'dep_rd', name: '小前', botName: '', acceptanceRole: 'executor', error: '' },
+    botDialog: { templateId: 'tpl_builtin', soulTemplateId: '', departmentId: 'dep_rd', name: '小前', botName: '', acceptanceRole: 'executor', error: '' },
     handlers: { onBotField: (key, value) => seen.push([key, value]), onBotCancel: () => seen.push(['cancel']) },
   }))
   const card = byClass(tree, 'bc-tpl-modal-card')[0]
   const inputs = collect(card, node => node.type === 'input')
   inputs[0].props.onChange({ target: { value: '小蓝' } })
-  collect(card, node => node.type === 'select')[0].props.onChange({ target: { value: 'dep_design' } })
+  collect(card, node => node.type === 'select')[1].props.onChange({ target: { value: 'dep_design' } })
   click(byClass(card, 'bc-co-pop-close')[0])
   assert.deepEqual(seen, [['name', '小蓝'], ['departmentId', 'dep_design'], ['cancel']])
 })

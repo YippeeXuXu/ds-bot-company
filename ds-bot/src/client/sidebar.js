@@ -15,6 +15,7 @@ import { showsDshRow } from './dsh-offer.js'
 import { frameLayout, dragColumn, RAIL_WIDTH, FALLBACK_SIDEBAR_WIDTH, userSidebarToggle } from './frame-layout.js'
 import { chatRoom, dshCollapsed } from './frame-watch.js'
 import { call } from './api.js'
+import { firstSentence, templateKind } from './templates-page.js'
 
 // -------------------------------------------------------------------------
 // Sidebar
@@ -708,19 +709,29 @@ export function TeamSidebar(props) {
   // The templates page keeps its list here, in the column that already names the
   // workspace: the page itself only shows the chosen template.
   const templateChosen = page?.kind === 'templates' ? page?.id ?? templates[0]?.id ?? null : null
+  const templateRow = item => h('button', {
+    key: item.id, type: 'button', className: 'bt-co-proj' + (templateChosen === item.id ? ' is-active' : ''),
+    'aria-current': templateChosen === item.id ? 'page' : undefined,
+    onClick: () => actions.openCompanyPage('templates', item.id),
+  },
+    h('span', { className: 'bt-co-proj-top' },
+      h('strong', null, item.name),
+      h('span', { className: 'bt-co-proj-stage' }, item.source === 'builtin' ? t('Builtin') : t('Copy'))),
+    h('span', { className: 'bt-co-proj-sub' }, firstSentence(item.instructions) || t('No instructions yet')))
+  // A soul template and an agent template say different things about a Bot, so the
+  // list keeps the two apart and counts each group.
+  const templateGroups = [
+    { key: 'agent', label: t('Agent templates'), items: templates.filter(item => templateKind(item) === 'agent') },
+    { key: 'soul', label: t('Soul templates'), items: templates.filter(item => templateKind(item) === 'soul') },
+  ]
   const templateSection = h('section', { className: 'bt-co-sec', 'aria-label': t('Templates') },
     h('header', { className: 'bt-co-sec-head' },
       h('span', null, t('Templates'), h('span', { className: 'bt-co-count' }, String(templates.length)))),
     templates.length === 0
       ? h('p', { className: 'bt-co-empty' }, t('No templates here yet'))
-      : h('div', { className: 'bt-co-plist' }, templates.map(item => h('button', {
-        key: item.id, type: 'button', className: 'bt-co-proj' + (templateChosen === item.id ? ' is-active' : ''),
-        'aria-current': templateChosen === item.id ? 'page' : undefined,
-        onClick: () => actions.openCompanyPage('templates', item.id),
-      },
-        h('span', { className: 'bt-co-proj-top' },
-          h('strong', null, item.name),
-          h('span', { className: 'bt-co-proj-stage' }, item.source === 'builtin' ? t('Builtin') : t('Copy')))))))
+      : templateGroups.filter(group => group.items.length > 0).map(group => h('div', { key: group.key, className: 'bt-co-tplgroup' },
+        h('div', { className: 'bt-co-group-label' }, group.label, h('span', { className: 'bt-co-count' }, String(group.items.length))),
+        h('div', { className: 'bt-co-plist' }, group.items.map(templateRow)))))
   // A bound project chat is still the Projects area: the column keeps the list
   // and adds the project's own overview links instead of the chat list.
   const projectChatSection = h('section', { className: 'bt-co-sec', 'aria-label': t('Projects') },
@@ -1269,6 +1280,8 @@ export const SIDEBAR_CSS = `
 .bt-co-proj:hover{background:var(--bt-hover)}
 .bt-co-proj.is-active{background:var(--bt-active)}
 .bt-co-proj-top{display:flex;align-items:center;gap:8px;min-width:0}
+.bt-co-tplgroup{margin:0 0 8px}
+.bt-co-tplgroup .bt-co-group-label{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .bt-co-proj-top strong{flex:1;min-width:0;font-size:12.5px;line-height:18px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-co-proj-stage{flex:none;font-size:10px;line-height:15px;color:var(--bt-ink-3)}
 .bt-co-proj-sub{font-size:10.5px;line-height:15px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
