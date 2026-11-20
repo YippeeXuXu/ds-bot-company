@@ -20,7 +20,13 @@
 // as it was. The run itself hangs off the same idle event the slicing uses — every
 // `rounds` turns of a Bot, or once a day, whichever comes first.
 //
+// Where the model is configured (4.5.1): <home>/memory-summary.json, the same file the
+// settings page writes, holding endpoint, base_url, model and timeout_ms. The file wins
+// over the plugin config, so a value saved on the page reaches the next run without a
+// restart; the plugin config is the default for a fresh home, not a second source of truth.
+//
 // Nothing here writes `state.json`, adds a company command, or calls a paid service.
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 // Two pieces of one subject usually sit this close; 0.86 keeps different subjects apart
@@ -36,6 +42,75 @@ export const SUMMARY_MAX = 800
 export const SUMMARY_ROUNDS = 20
 export const SUMMARY_INTERVAL_MS = 24 * 60 * 60 * 1000
 export const SUMMARY_TIMEOUT_MS = 15000
+// The file the settings page writes; the same endpoint shapes the embedding client knows.
+export const SETTINGS_FILE = 'memory-summary.json'
+export const SUMMARY_ENDPOINTS = ['ollama', 'openai']
+const MODEL_MAX = 80
+
+export const settingsPathOf = home => join(home, SETTINGS_FILE)
+
+// The saved settings, or nothing when the file is absent or unreadable. A broken file stays
+// on disk: the next save replaces it, and the warning says why it was ignored.
+export function readSavedSettings(home, warn) {
+  const file = settingsPathOf(home)
+  if (!existsSync(file)) return {}
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8'))
+    return parsed !== null && typeof parsed === 'object' ? parsed : {}
+  } catch (error) {
+    warn?.('ds-bot: %s cannot be read, the plugin config is used instead: %s', file, error?.message ?? String(error))
+    return {}
+  }
+}
+
+// Written through a temp file: a half-written JSON would be read as "no settings" on the
+// next start, and the model the user configured would look like it was never saved.
+export function writeSavedSettings(home, saved) {
+  mkdirSync(home, { recursive: true })
+  const file = settingsPathOf(home)
+  const temp = `${file}.tmp`
+  writeFileSync(temp, `${JSON.stringify(saved, null, 2)}\n`)
+  renameSync(temp, file)
+}
+
+// Only the keys the page owns, each checked alone so the page can point at one field.
+export function normalizeSettingsPatch(patch = {}) {
+  const next = {}
+  if ('endpoint' in patch) {
+    if (!SUMMARY_ENDPOINTS.includes(patch.endpoint)) return { ok: false, field: 'endpoint', message: `the service must be one of ${SUMMARY_ENDPOINTS.join(', ')}` }
+    next.endpoint = patch.endpoint
+  }
+  if ('base_url' in patch) {
+    const url = String(patch.base_url ?? '').trim().replace(/\/+$/, '')
+    if (url !== '' && !/^https?:\/\/\S+$/i.test(url)) return { ok: false, field: 'base_url', message: 'the address must start with http:// or https://' }
+    next.base_url = url
+  }
+  if ('model' in patch) {
+    const model = String(patch.model ?? '').trim()
+    if (model.length > MODEL_MAX) return { ok: false, field: 'model', message: `the model name is longer than ${MODEL_MAX} characters` }
+    next.model = model
+  }
+  if ('timeout_ms' in patch) {
+    if (!Number.isInteger(patch.timeout_ms) || patch.timeout_ms < 1_000 || patch.timeout_ms > 120_000) {
+      return { ok: false, field: 'timeout_ms', message: 'the timeout must be 1000–120000 ms' }
+    }
+    next.timeout_ms = patch.timeout_ms
+  }
+  return { ok: true, next }
+}
+
+// The settings actually in force: the saved file over the plugin config, each value
+// checked. `configured` is what the run asks before calling a model; `problem` names the
+// missing piece so the page can say it instead of showing an empty field.
+export function resolveSummarySettings(config = {}) {
+  const endpoint = SUMMARY_ENDPOINTS.includes(config.endpoint) ? config.endpoint : 'ollama'
+  const baseUrl = String(config.base_url ?? '').trim().replace(/\/+$/, '')
+  const model = String(config.model ?? '').trim()
+  const wanted = Number(config.timeout_ms)
+  const timeoutMs = Number.isInteger(wanted) && wanted >= 1_000 && wanted <= 120_000 ? wanted : SUMMARY_TIMEOUT_MS
+  const problem = baseUrl === '' ? 'base_url is not set' : model === '' ? 'model is not set' : null
+  return { endpoint, baseUrl, model, timeoutMs, configured: problem === null, problem }
+}
 
 const timeOf = (row) => {
   const parsed = Date.parse(row?.created_at)
@@ -144,7 +219,7 @@ export function summaryText(rows, { max = SUMMARY_MAX } = {}) {
 // Endpoint shapes shared with the embedding client (4.3): Ollama first, OpenAI-compatible
 // second. The summary call is a chat call either way.
 const chatUrl = (settings) => {
-  const base = String(settings?.base_url ?? '').trim().replace(/\/+$/, '')
+  const base = String(settings?.baseUrl ?? settings?.base_url ?? '').trim().replace(/\/+$/, '')
   if (base === '') return ''
   if (settings?.endpoint === 'openai') return base.endsWith('/v1') ? `${base}/chat/completions` : `${base}/v1/chat/completions`
   return `${base}/api/chat`
@@ -193,33 +268,29 @@ export async function askModel(settings, rows, { fetchImpl = fetch, timeoutMs = 
   return text
 }
 
-const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
-  const timer = setTimeout(() => reject(new Error(`no answer within ${Math.round(ms / 1000)} s`)), ms)
-  promise.then(
-    value => { clearTimeout(timer); resolve(value) },
-    error => { clearTimeout(timer); reject(error) },
-  )
-})
-
 const nowIso = () => new Date().toISOString()
 
 export function install(rt) {
   const { ctx } = rt
   const rounds = new Map()
   const state = { last_run_at: null, last_result: null, problem: null }
+  // The settings file wins over the plugin config: a value saved on the page is already in
+  // force for the next run, without a restart.
+  let saved = readSavedSettings(rt.home, rt.warn)
 
-  const settings = () => (rt.config?.memorySummary !== undefined && typeof rt.config.memorySummary === 'object' ? rt.config.memorySummary : {})
-  const canAsk = () => {
-    const options = settings()
-    return typeof options.model === 'string' && options.model !== '' && chatUrl(options) !== ''
-  }
+  const raw = () => ({ ...rt.config?.memorySummary, ...saved })
+  const settings = () => resolveSummarySettings(raw())
+  const canAsk = () => settings().configured
 
   // One group, one row. A model failure or an empty answer skips the group and writes
   // nothing; a merge that lost a source cancels itself inside the store.
   const mergeGroup = async (group) => {
     let text
     if (canAsk()) {
-      text = await withTimeout(askModel(settings(), group, { timeoutMs: Number(settings().timeout_ms) || SUMMARY_TIMEOUT_MS }), SUMMARY_TIMEOUT_MS)
+      const options = settings()
+      // `askModel` holds its own abort timer set to `timeout_ms`; a second, fixed cap on
+      // top of it would cut a slower model short and skip a group the user did configure.
+      text = await askModel(options, group, { timeoutMs: options.timeoutMs })
     } else {
       text = summaryText(group)
     }
@@ -298,7 +369,7 @@ export function install(rt) {
       if (botId === undefined) return
       const counted = (rounds.get(botId) ?? 0) + 1
       rounds.set(botId, counted)
-      const every = Number(settings().rounds) > 1 ? Number(settings().rounds) : SUMMARY_ROUNDS
+      const every = Number(raw().rounds) > 1 ? Number(raw().rounds) : SUMMARY_ROUNDS
       if (counted < every) return
       rounds.set(botId, 0)
       void run(botId)
@@ -310,6 +381,38 @@ export function install(rt) {
     }, 'ds-bot: memory summary timer')
   }
 
+  // The page's save: file first, then the running module, so the next run of this host
+  // already asks the model the page shows. A refusal names the field it is about.
+  const save = (patch) => {
+    const checked = normalizeSettingsPatch(patch)
+    if (!checked.ok) return { ok: false, field: checked.field, message: checked.message, state: stateOf() }
+    const next = { ...saved, ...checked.next }
+    try {
+      writeSavedSettings(rt.home, next)
+    } catch (error) {
+      return { ok: false, field: null, message: `the settings could not be written: ${error?.message ?? String(error)}`, state: stateOf() }
+    }
+    saved = next
+    return { ok: true, state: stateOf() }
+  }
+
+  const stateOf = () => {
+    const options = settings()
+    return {
+      ...state,
+      configured: options.configured,
+      problem: state.problem ?? options.problem,
+      endpoint: options.endpoint,
+      base_url: options.baseUrl,
+      model: options.model,
+      timeout_ms: options.timeoutMs,
+      saved: { ...saved },
+      settings_path: settingsPathOf(rt.home),
+      rounds: Object.fromEntries(rounds),
+      enabled: options.configured,
+    }
+  }
+
   Object.assign(rt, {
     memorySummary: {
       run,
@@ -317,7 +420,9 @@ export function install(rt) {
       text: summaryText,
       groups: groupSlices,
       threshold: MERGE_THRESHOLD,
-      state: () => ({ ...state, rounds: Object.fromEntries(rounds), enabled: canAsk() }),
+      settings,
+      save,
+      state: stateOf,
     },
   })
 }

@@ -1205,7 +1205,21 @@ var ZH = {
   "the model name is longer than 80 characters": "模型名超过 80 个字符",
   "the timeout must be 1000–120000 ms": "超时要在 1000–120000 毫秒之间",
   "the batch size must be 1–128": "批量大小要在 1–128 之间",
-  "{pending} waiting · {embedded} embedded · {failed} failed": "待处理 {pending} · 已向量化 {embedded} · 失败 {failed}"
+  "{pending} waiting · {embedded} embedded · {failed} failed": "待处理 {pending} · 已向量化 {embedded} · 失败 {failed}",
+  "Summary model": "摘要模型",
+  "Summary model is off: {problem}": "摘要模型未启用：{problem}",
+  "Without it, merged summaries join the original lines instead of rewriting them.": "没配也能合并，只是把原句拼起来，不会重写。",
+  "Summary model is on.": "摘要模型已启用。",
+  "The shape of the chat API the service answers.": "服务所使用的对话接口类型。",
+  "Summary service": "摘要服务",
+  "Where the chat model listens, such as http://127.0.0.1:11434": "对话模型监听的地址，例如 http://127.0.0.1:11434",
+  "Summary service address": "摘要服务地址",
+  "The chat model that writes summaries, such as qwen3:4b": "用来写摘要的对话模型，例如 qwen3:4b",
+  "Summary model name": "摘要模型名",
+  "Timeout (ms)": "超时（毫秒）",
+  "How long one summary may take. Between 1000 and 120000.": "一条摘要最多等多久，1000–120000 毫秒。",
+  "Summary timeout": "摘要超时",
+  "The summary model could not be saved.": "摘要模型设置没保存上。"
 };
 var HOST_ERRORS = [
   [/^Model (.+) is not available\. Available: (.*)$/, "模型 $1 不可用。可用的：$2"],
@@ -2493,6 +2507,7 @@ function teamActions({ call: call2, after, partFor, roster, ui: ui2, live, cards
     // tests it, and prunes the rows. A save answers with the state it left the host in.
     memorySettings: () => call2("memory-settings"),
     memorySettingsSave: (patch) => call2("memory-settings-save", { patch }),
+    memorySummarySave: (patch) => call2("memory-summary-save", { patch }),
     memoryTest: () => call2("memory-test"),
     memorySlices: (flags = {}) => call2("memory-slices", flags),
     memorySliceDelete: (id) => call2("memory-slice-delete", { id }),
@@ -24425,6 +24440,29 @@ var patchOf = (state, form) => {
   return Object.keys(patch).length === 0 ? null : patch;
 };
 var bareUrl = (url) => String(url ?? "").trim().replace(/\/+$/, "");
+var summaryFormOf = (state) => ({
+  endpoint: state?.endpoint ?? "ollama",
+  base_url: state?.base_url ?? "",
+  model: state?.model ?? "",
+  timeout_ms: String(state?.timeout_ms ?? 15e3)
+});
+var summaryPatchOf = (state, form) => {
+  if (!state) return null;
+  const patch = {};
+  if (form.endpoint !== (state.endpoint ?? "ollama")) patch.endpoint = form.endpoint;
+  if (bareUrl(form.base_url) !== bareUrl(state.base_url)) patch.base_url = form.base_url;
+  if (String(form.model ?? "").trim() !== (state.model ?? "")) patch.model = form.model;
+  const timeout = Number.parseInt(String(form.timeout_ms ?? "").trim(), 10);
+  if (timeout !== (state.timeout_ms ?? 15e3)) patch.timeout_ms = timeout;
+  return Object.keys(patch).length === 0 ? null : patch;
+};
+function summaryStatusOf(state) {
+  if (!state) return null;
+  if (!state.configured) {
+    return { tone: "warn", title: t("Summary model is off: {problem}", { problem: t(PROBLEMS[state.problem] ?? state.problem ?? "") }), hint: t("Without it, merged summaries join the original lines instead of rewriting them.") };
+  }
+  return { tone: "on", title: t("Summary model is on."), hint: t("{model} at {url}", { model: state.model, url: state.base_url }) };
+}
 function stampOf2(at) {
   if (!at) return "";
   const date = new Date(at);
@@ -24489,6 +24527,8 @@ function SliceRow({ row, name, remove }) {
 }
 function MemoryPageView(props) {
   const { state, summary, rows: rows2, form, bot, nameOf: nameOf3, notice, saved, saving, testing, test, clearing, Section, Row: Row3 } = props;
+  const { summaryState, summaryForm, summarySaving, summarySaved, summaryNotice } = props;
+  const summaryStatus = summaryStatusOf(summaryState);
   const shown = rows2?.rows ?? [];
   const status = statusOf(state);
   return [
@@ -24566,6 +24606,83 @@ function MemoryPageView(props) {
       ),
       state?.settings_path ? (0, import_react57.createElement)("div", { key: "path", className: "bt-mempage-path" }, t("Settings are kept in {path}", { path: state.settings_path })) : null
     ),
+    summaryState ? (0, import_react57.createElement)(
+      Section,
+      { key: "summary", title: t("Summary model"), className: "bt-mempage" },
+      summaryStatus ? (0, import_react57.createElement)(
+        "div",
+        { key: "state", className: "bt-mempage-state", "data-tone": summaryStatus.tone, role: "status" },
+        (0, import_react57.createElement)("span", { className: "bt-mempage-state-title" }, summaryStatus.title),
+        (0, import_react57.createElement)("span", { className: "bt-mempage-state-hint" }, summaryStatus.hint)
+      ) : null,
+      (0, import_react57.createElement)(
+        Row3,
+        { key: "endpoint", label: t("Service"), hint: t("The shape of the chat API the service answers.") },
+        (0, import_react57.createElement)("select", {
+          className: "bt-select",
+          "aria-label": t("Summary service"),
+          value: summaryForm.endpoint,
+          disabled: summarySaving,
+          onChange: (event) => props.onSummaryEdit({ endpoint: event.target.value })
+        }, ENDPOINTS.map(([id, label2]) => (0, import_react57.createElement)("option", { key: id, value: id }, label2)))
+      ),
+      (0, import_react57.createElement)(
+        Row3,
+        { key: "base", label: t("Service address"), hint: t("Where the chat model listens, such as http://127.0.0.1:11434") },
+        (0, import_react57.createElement)("input", {
+          className: "bt-input",
+          type: "text",
+          value: summaryForm.base_url,
+          disabled: summarySaving,
+          spellCheck: false,
+          placeholder: summaryForm.endpoint === "openai" ? "http://127.0.0.1:8080/v1" : "http://127.0.0.1:11434",
+          "aria-label": t("Summary service address"),
+          onChange: (event) => props.onSummaryEdit({ base_url: event.target.value })
+        })
+      ),
+      (0, import_react57.createElement)(
+        Row3,
+        { key: "model", label: t("Model name"), hint: t("The chat model that writes summaries, such as qwen3:4b") },
+        (0, import_react57.createElement)("input", {
+          className: "bt-input",
+          type: "text",
+          value: summaryForm.model,
+          disabled: summarySaving,
+          spellCheck: false,
+          placeholder: "qwen3:4b",
+          "aria-label": t("Summary model name"),
+          onChange: (event) => props.onSummaryEdit({ model: event.target.value })
+        })
+      ),
+      (0, import_react57.createElement)(
+        Row3,
+        { key: "timeout", label: t("Timeout (ms)"), hint: t("How long one summary may take. Between 1000 and 120000.") },
+        (0, import_react57.createElement)("input", {
+          className: "bt-input",
+          type: "number",
+          min: 1e3,
+          max: 12e4,
+          step: 1e3,
+          value: summaryForm.timeout_ms,
+          disabled: summarySaving,
+          "aria-label": t("Summary timeout"),
+          onChange: (event) => props.onSummaryEdit({ timeout_ms: event.target.value })
+        })
+      ),
+      (0, import_react57.createElement)(
+        "div",
+        { key: "actions", className: "bt-mempage-actions" },
+        (0, import_react57.createElement)("button", {
+          type: "button",
+          className: "bt-soft bt-soft-sm",
+          disabled: summaryState === null || summarySaving || summaryPatchOf(summaryState, summaryForm) === null,
+          onClick: () => props.onSaveSummary()
+        }, summarySaving ? t("Saving…") : t("Save")),
+        summarySaved ? (0, import_react57.createElement)("span", { key: "saved", className: "bt-mempage-saved" }, (0, import_react57.createElement)(CheckIcon), t("Saved.")) : null,
+        summaryNotice ? (0, import_react57.createElement)("span", { key: "notice", className: "bt-mempage-notice", role: "alert" }, summaryNotice) : null
+      ),
+      summaryState.settings_path ? (0, import_react57.createElement)("div", { key: "path", className: "bt-mempage-path" }, t("Settings are kept in {path}", { path: summaryState.settings_path })) : null
+    ) : null,
     (0, import_react57.createElement)(
       Section,
       { key: "slices", title: t("Memory slices · {count}", { count: summary.count ?? 0 }), className: "bt-mempage" },
@@ -24611,12 +24728,18 @@ function MemoryPage({ roster, actions, run: run2, Section, Row: Row3 }) {
   const [testing, setTesting] = (0, import_react57.useState)(false);
   const [test, setTest] = (0, import_react57.useState)(null);
   const [clearing, setClearing] = (0, import_react57.useState)(false);
+  const [summaryForm, setSummaryForm] = (0, import_react57.useState)(() => summaryFormOf(null));
+  const [summarySaving, setSummarySaving] = (0, import_react57.useState)(false);
+  const [summarySaved, setSummarySaved] = (0, import_react57.useState)(false);
+  const [summaryNotice, setSummaryNotice] = (0, import_react57.useState)("");
   const state = view?.state ?? null;
+  const summaryState = view?.summary ?? null;
   const summary = view?.slices ?? { count: 0, bots: [] };
   const sliceQuery = (botId = bot) => actions.memorySlices({ limit: SLICES_SHOWN, ...botId === "" ? {} : { bot_id: botId } });
   const load = () => translated2(Promise.all([actions.memorySettings(), sliceQuery("")])).then(([next, page]) => {
     setView(next);
     setForm(formOf(next?.state));
+    setSummaryForm(summaryFormOf(next?.summary));
     setRows(page);
   });
   (0, import_react57.useEffect)(() => {
@@ -24631,6 +24754,11 @@ function MemoryPage({ roster, actions, run: run2, Section, Row: Row3 }) {
     const timer = setTimeout(() => setSaved(false), 2500);
     return () => clearTimeout(timer);
   }, [saved]);
+  (0, import_react57.useEffect)(() => {
+    if (!summarySaved) return void 0;
+    const timer = setTimeout(() => setSummarySaved(false), 2500);
+    return () => clearTimeout(timer);
+  }, [summarySaved]);
   const save = (patch, then) => {
     if (patch === null) return Promise.resolve(true);
     setSaving(true);
@@ -24655,6 +24783,22 @@ function MemoryPage({ roster, actions, run: run2, Section, Row: Row3 }) {
     setForm((current) => ({ ...current, ...part }));
     setSaved(false);
     setNotice("");
+  };
+  const saveSummary = () => {
+    const patch = summaryPatchOf(summaryState, summaryForm);
+    if (patch === null) return Promise.resolve(true);
+    setSummarySaving(true);
+    setSummaryNotice("");
+    setSummarySaved(false);
+    return run2(translated2(Promise.resolve(actions.memorySummarySave(patch))).then((answer) => {
+      if (answer?.ok !== true) {
+        setSummaryNotice(answer?.message ? hostText(answer.message) : t("The summary model could not be saved."));
+        return;
+      }
+      setSummarySaved(true);
+      setView((current) => current === null ? current : { ...current, summary: answer.state });
+      setSummaryForm(summaryFormOf(answer.state));
+    })).finally(() => setSummarySaving(false));
   };
   const testNow = () => {
     const measure = () => {
@@ -24685,6 +24829,17 @@ function MemoryPage({ roster, actions, run: run2, Section, Row: Row3 }) {
     clearing,
     Section,
     Row: Row3,
+    summaryState,
+    summaryForm,
+    summarySaving,
+    summarySaved,
+    summaryNotice,
+    onSummaryEdit: (part) => {
+      setSummaryForm((current) => ({ ...current, ...part }));
+      setSummarySaved(false);
+      setSummaryNotice("");
+    },
+    onSaveSummary: () => void saveSummary(),
     onToggle: (on) => void save(patchOf(state, { ...form, enabled: on })),
     onEdit: edit,
     onSave: () => void save(patchOf(state, form)),

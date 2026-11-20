@@ -651,12 +651,20 @@ export function install(rt) {
         // manages the slices on the same window. A save reaches the running module at once,
         // so the next slice already uses the new service — no restart.
         case 'memory-settings':
-          return ok({ state: rt.memoryEmbedding?.state?.() ?? null, slices: sliceSummary() })
+          // `summary` is the chat model that writes merged summaries (M2 G4 4.5.1): its own
+          // settings file, read and saved on the same page.
+          return ok({ state: rt.memoryEmbedding?.state?.() ?? null, summary: rt.memorySummary?.state?.() ?? null, slices: sliceSummary() })
         case 'memory-settings-save': {
           if (rt.memoryEmbedding?.save === undefined) return fail('This build has no memory settings.', 'bot/not-found')
           const patch = body.patch ?? body
           if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) return fail('Nothing to save', 'bot/invalid')
           return ok(rt.memoryEmbedding.save(patch))
+        }
+        case 'memory-summary-save': {
+          if (rt.memorySummary?.save === undefined) return fail('This build has no summary model.', 'bot/not-found')
+          const patch = body.patch ?? body
+          if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) return fail('Nothing to save', 'bot/invalid')
+          return ok(rt.memorySummary.save(patch))
         }
         case 'memory-test':
           if (rt.memoryEmbedding?.test === undefined) return fail('This build has no memory service.', 'bot/not-found')
