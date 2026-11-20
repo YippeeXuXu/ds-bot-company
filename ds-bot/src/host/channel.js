@@ -37,7 +37,7 @@ export function install(rt) {
   const view = () => ({
     revision: state.revision,
     workspaceId: state.workspaceId ?? null,
-    // `mainBotId` is the first Main Bot, which the sidebar shows as its tile.
+    // `mainBotId` is the first Main Bot, which leads the sidebar list.
     mainBotId: state.mainBotIds[0] ?? null,
     mainBotIds: state.mainBotIds,
     // `sessionId` is the Bot's current own-chat part; `parts` its earlier ones.

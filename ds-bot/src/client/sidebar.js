@@ -66,7 +66,6 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
   const unread = useSessionStatus(map => map.get(part)?.completionUnread === true || map.get(part)?.pendingInteraction !== undefined) || (marked && !active)
   useMarkedUnread(id, active, marked, actions)
   const main = isMainOf(roster, id)
-  const tile = roster.mainBotId === id
   const approval = useApproval(useWork, entry => entry.botId === id)
   const alert = roster.questions?.[part] !== undefined || approval
   const doing = useActivity(map => map[id])
@@ -84,17 +83,8 @@ function BotRow({ bot, roster, actions, useSessions, useSessionStatus, useSessio
     event.preventDefault()
     actions.openMenu({ kind: 'bot', id, x: event.clientX, y: event.clientY })
   }
-  const pinned = bot.pinned === true && !tile
+  const pinned = bot.pinned === true
   const label = [bot.name, main ? t('Main Bot') : '', pinned ? t('Pinned') : '', running || away ? t('Working') : '', waitsFor, approval ? t('Waiting for your approval') : alert ? t('Waiting for your answer') : '', unread ? t('Unread activity') : ''].filter(Boolean).join(', ')
-  if (tile && wide) {
-    return h('div', { className: 'bt-tile-wrap' }, h('button', {
-      type: 'button', className: 'bt-tile', 'aria-label': label, 'aria-current': active ? 'page' : undefined,
-      'data-bot-id': id, title: preview || bot.name, onClick: () => actions.openSession(id), onContextMenu,
-    },
-    h(BotAvatar, { bot, size: 56, state, main: true }),
-    h('span', { className: 'bt-tile-name' }, bot.name),
-    bot.role ? h('span', { className: 'bt-chip' }, bot.role) : null))
-  }
   return h('button', {
     type: 'button', className: 'bt-row', 'aria-label': label, 'aria-current': active ? 'page' : undefined,
     'data-bot-id': id, title: wide ? undefined : bot.name, onMouseEnter: wide ? nameIfCut : undefined, onClick: () => actions.openSession(id), onContextMenu,

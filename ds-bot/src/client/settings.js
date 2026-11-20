@@ -146,7 +146,7 @@ function LocationsSection({ actions, run }) {
       data.fixed ? null : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: moving, onClick: () => { if (!busy.current) void run(app.moveData(team ?? undefined)) } }, t('Change…'))))
 }
 
-// The first Main Bot is the sidebar tile. Picking another Bot there hands it the role
+// The first Main Bot leads the sidebar list. Picking another Bot here hands it the role
 // in one step; more Main Bots can sit beside it.
 function MainBotsSection({ roster, actions, run }) {
   const mains = (roster.mainBotIds ?? []).map(id => roster.byId[id]).filter(Boolean)
