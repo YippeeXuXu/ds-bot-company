@@ -9955,9 +9955,10 @@ var projectText = (projects, employee) => {
   if (archived(project)) return t("Project: {name} (archived)", { name: project.name });
   return t("Project: {name}", { name: project.name });
 };
+var activeEmployees = (employees) => employees.filter((item) => item.status === "active");
 var companyLine = (departments, employees, projects) => t("{d} departments · {e} employees · {p} projects · {a} in progress", {
   d: departments.length,
-  e: employees.length,
+  e: activeEmployees(employees).length,
   p: projects.length,
   a: projects.filter((item) => item.status === "active").length
 });
@@ -10037,7 +10038,7 @@ function CompanyPageView(props) {
         }, department2.name),
         (0, import_react19.createElement)("span", { className: "bc-co-tag" + (bound2 ? " is-ok" : "") }, bound2 ? t("Group built") : t("Not built"))
       ),
-      (0, import_react19.createElement)("p", { className: "bc-co-dept-meta" }, lead ? t("Lead {name} · {count} people", { name: lead.name, count: staff.length }) : t("No lead yet · {count} people", { count: staff.length })),
+      (0, import_react19.createElement)("p", { className: "bc-co-dept-meta" }, lead ? t("Lead {name} · {count} people", { name: lead.name, count: activeEmployees(staff).length }) : t("No lead yet · {count} people", { count: activeEmployees(staff).length })),
       department2.description ? (0, import_react19.createElement)("p", { className: "bc-co-dept-desc" }, department2.description) : null,
       (0, import_react19.createElement)(
         "div",
@@ -10189,7 +10190,7 @@ function CompanyPageView(props) {
           onChange: (event) => props.onSetLead(department2, event.target.value)
         }, (0, import_react19.createElement)("option", { value: "" }, t("No lead assigned")), canLead.map((item) => (0, import_react19.createElement)("option", { key: item.id, value: item.id }, item.name))) : lead?.name ?? t("No lead assigned")),
         (0, import_react19.createElement)("dt", null, t("Members")),
-        (0, import_react19.createElement)("dd", null, t("{count} people", { count: staff.length })),
+        (0, import_react19.createElement)("dd", null, t("{count} people", { count: activeEmployees(staff).length })),
         (0, import_react19.createElement)("dt", null, t("Department group")),
         (0, import_react19.createElement)("dd", { className: bound2 ? void 0 : "bc-co-muted" }, bound2 ? t("Department group bound") : t("Department group not bound"))
       ),

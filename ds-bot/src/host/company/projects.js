@@ -235,6 +235,16 @@ export function projectHandlers({ groups = {} } = {}) {
     project.group_binding = { ...project.group_binding, status: 'bound', room_id: project.group_chat_ref, synced_at: now(), error: null }
   }
 
+  // The coordinator post is also the group admin: promoting or demoting a member moves it
+  // in the same breath, so the group never keeps an admin nobody holds. A host that cannot
+  // change a group leaves it alone and the caller falls back to a reconcile warning.
+  async function syncAdmin(project, state, now) {
+    if (typeof rooms.setAdmin !== 'function') return
+    const admin = coordinatorBot(state, project, expectedBots(state, project.id)) ?? null
+    await rooms.setAdmin(project.group_chat_ref, admin)
+    project.group_binding = { ...project.group_binding, status: 'bound', room_id: project.group_chat_ref, synced_at: now(), error: null }
+  }
+
   // The member change is already in the state when the group refuses it; the save is kept
   // and the drift is reported as a warning on the success envelope, so the screen can say
   // "saved, group needs reconciling" instead of losing the edit or failing silently.
@@ -552,13 +562,25 @@ export function projectHandlers({ groups = {} } = {}) {
           throw companyFail('project/invalid', 'The coordinator must come from one of the source departments.', { field: 'employee_id', department_id: employee.department_id, source_department_ids: project.source_department_ids })
         }
       }
+      const previousRole = member.role
       if (member.role === 'coordinator' && project.coordinator_assignment_id === member.id) project.coordinator_assignment_id = null
       member.role = role
       if (role === 'coordinator') project.coordinator_assignment_id = member.id
       if (localDiff !== undefined) member.local_diff = localDiff
       member.configuration_version = (member.configuration_version ?? 1) + 1
+      // A change of role is a change of the group: the member list stays the same, but the
+      // admin moves with the coordinator post. Only done when the role really changed.
+      let warning
+      if (role !== previousRole && roomMembers(project) !== undefined) {
+        try {
+          await syncGroup(project, expectedBots(state, project.id), now)
+          await syncAdmin(project, state, now)
+        } catch (error) {
+          warning = markPending(project, 'the role was saved', error, now)
+        }
+      }
       project.updated_at = now()
-      return { aggregate_id: project.id, body: { project, member }, events: [{ type: 'project.member.updated', data: { employee_id: employee.id, role, ...(localDiff === undefined ? {} : { local_diff: localDiff }) } }] }
+      return { aggregate_id: project.id, body: { project, member }, events: [{ type: 'project.member.updated', data: { employee_id: employee.id, role, ...(localDiff === undefined ? {} : { local_diff: localDiff }) } }], ...(warning === undefined ? {} : { warning }) }
     },
 
     'project.start': async ({ state, payload, now }) => {

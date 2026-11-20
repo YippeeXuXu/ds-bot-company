@@ -44,6 +44,14 @@ const groupAdapter = (rt) => ({
     if (typeof rt.roomOf === 'function' && rt.roomOf(roomId) === undefined) throw new Error(`No group chat ${roomId}.`)
     await rt.updateRoom(roomId, { members }, undefined, { allowSingle: true })
   },
+  // The coordinator is the group admin, so moving the post moves the admin with it. A
+  // host without `updateRoom` cannot do this; the caller keeps the edit and asks for a
+  // reconcile instead of pretending the group changed.
+  setAdmin: async (roomId, admin) => {
+    if (typeof rt.updateRoom !== 'function') throw new Error('The roster does not change groups here.')
+    if (typeof rt.roomOf === 'function' && rt.roomOf(roomId) === undefined) throw new Error(`No group chat ${roomId}.`)
+    await rt.updateRoom(roomId, { admin: admin ?? null })
+  },
 })
 
 // The roster side of hiring from a template (M1b-3.4). Three host calls make one employee:

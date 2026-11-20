@@ -61,9 +61,13 @@ const projectText = (projects, employee) => {
   return t('Project: {name}', { name: project.name })
 }
 
+// Only people who are here count: a dismissed employee keeps a row so the chart can
+// show them greyed out and offer to take them back, but the company does not employ them.
+const activeEmployees = employees => employees.filter(item => item.status === 'active')
+
 const companyLine = (departments, employees, projects) => t('{d} departments · {e} employees · {p} projects · {a} in progress', {
   d: departments.length,
-  e: employees.length,
+  e: activeEmployees(employees).length,
   p: projects.length,
   a: projects.filter(item => item.status === 'active').length,
 })
@@ -140,7 +144,7 @@ export function CompanyPageView(props) {
           onClick: event => { event.stopPropagation(); props.onOpenDept(department.id) },
         }, department.name),
         h('span', { className: 'bc-co-tag' + (bound ? ' is-ok' : '') }, bound ? t('Group built') : t('Not built'))),
-      h('p', { className: 'bc-co-dept-meta' }, lead ? t('Lead {name} · {count} people', { name: lead.name, count: staff.length }) : t('No lead yet · {count} people', { count: staff.length })),
+      h('p', { className: 'bc-co-dept-meta' }, lead ? t('Lead {name} · {count} people', { name: lead.name, count: activeEmployees(staff).length }) : t('No lead yet · {count} people', { count: activeEmployees(staff).length })),
       department.description ? h('p', { className: 'bc-co-dept-desc' }, department.description) : null,
       h('div', { className: 'bc-co-emps' },
         staff.length
@@ -264,7 +268,7 @@ export function CompanyPageView(props) {
           }, h('option', { value: '' }, t('No lead assigned')), canLead.map(item => h('option', { key: item.id, value: item.id }, item.name)))
           : lead?.name ?? t('No lead assigned')),
         h('dt', null, t('Members')),
-        h('dd', null, t('{count} people', { count: staff.length })),
+        h('dd', null, t('{count} people', { count: activeEmployees(staff).length })),
         h('dt', null, t('Department group')),
         h('dd', { className: bound ? undefined : 'bc-co-muted' }, bound ? t('Department group bound') : t('Department group not bound'))),
       leadError ? h('p', { className: 'bc-exception', role: 'alert' }, leadError) : null,
