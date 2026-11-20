@@ -157,6 +157,25 @@ export const templateErrorText = failure => {
   return text || t('The change could not be saved.')
 }
 
+// G1 (1.7): a soul template carries instructions only, and an agent template
+// needs a job title. The host names the field it refused, so the sentence can sit
+// beside that field instead of only at the bottom of the form.
+export const kindFieldHint = failure => {
+  if (failure?.code !== 'company/invalid') return null
+  switch (failure?.details?.field) {
+    case 'name':
+      return { field: 'name', text: t('A template needs a name, up to 40 characters.') }
+    case 'role':
+      return { field: 'role', text: t('An agent template needs a job title, so this cannot stay empty.') }
+    case 'skills':
+      return { field: 'skills', text: t('A soul template carries instructions only, so it takes no skills.') }
+    case 'model':
+    case 'effort':
+      return { field: '', text: t('A soul template carries instructions only, so model and thinking level stay empty.') }
+  }
+  return null
+}
+
 // The thinking levels of the model a template names. The catalog carries them for
 // the models Bots use; any other ref asks the host once and is remembered.
 const effortCache = new Map()
@@ -212,7 +231,7 @@ const skillNames = roster => new Set((roster?.capabilities ?? []).map(item => it
 export function TemplatesPageView(props) {
   const {
     templates = [], template = null, departments = [], roster = {}, loading = false,
-    error = '', failure = '', preview = false, flash = '', form = null,
+    error = '', failure = '', failureField = '', preview = false, flash = '', form = null,
     copyOpen = false, copyName = '', botDialog = null, botPreview = null, archiveArmed = false, busy = false,
     effortOptions = [], leavePrompt = false, handlers = {},
   } = props
@@ -263,30 +282,55 @@ export function TemplatesPageView(props) {
     },
       h('div', { className: 'bc-grid' },
         h('label', { className: 'bc-field' }, t('Template name'),
-          h('input', { value: form.name, maxLength: 40, required: true, onChange: event => handlers.onForm?.('name', event.target.value) })),
-        h('label', { className: 'bc-field' }, t('Job title'),
-          h('input', { value: form.role ?? '', maxLength: 24, onChange: event => handlers.onForm?.('role', event.target.value), placeholder: t('Optional, shown on the team list') }))),
-      h('label', { className: 'bc-field' }, t('Instructions'),
-        h('textarea', { value: form.instructions ?? '', maxLength: 8000, rows: 12, onChange: event => handlers.onForm?.('instructions', event.target.value), placeholder: t('What this job is responsible for, and how it works') })),
-      h('div', { className: 'bc-grid' },
-        h('label', { className: 'bc-field' }, t('Model'),
-          h('select', { value: form.model ?? '', onChange: event => handlers.onForm?.('model', event.target.value) },
-            h('option', { value: '' }, t('Model default')),
-            (roster.models ?? []).map(model => h('option', { key: model.ref, value: model.ref }, model.name ?? model.ref)),
-            form.model && !(roster.models ?? []).some(model => model.ref === form.model)
-              ? h('option', { key: form.model, value: form.model }, t('{ref} (not served now)', { ref: form.model }))
+          h('input', {
+            value: form.name, maxLength: 40, required: true,
+            'aria-invalid': failureField === 'name' ? 'true' : undefined,
+            onChange: event => handlers.onForm?.('name', event.target.value),
+          }),
+          failureField === 'name' && failure
+            ? h('p', { className: 'bc-field-error', role: 'alert' }, failure)
+            : null),
+        isSoul
+          ? null
+          : h('label', { className: 'bc-field' }, t('Job title'),
+            h('input', {
+              value: form.role ?? '', maxLength: 24, 'aria-required': 'true',
+              'aria-invalid': failureField === 'role' ? 'true' : undefined,
+              onChange: event => handlers.onForm?.('role', event.target.value),
+              placeholder: t('Shown on the team list'),
+            }),
+            failureField === 'role' && failure
+              ? h('p', { className: 'bc-field-error', role: 'alert' }, failure)
               : null)),
-        h('label', { className: 'bc-field' }, t('Thinking level'),
-          h('select', { value: form.effort ?? '', onChange: event => handlers.onForm?.('effort', event.target.value) },
-            effortOptions.map(option => h('option', { key: option.value || 'default', value: option.value }, option.label))))),
-      h('div', { className: 'bc-field' }, h('span', null, t('Skills')),
-        h('div', { className: 'bc-tpl-skills-edit' },
-          [...new Set([...(roster.capabilities ?? []).map(item => item.name), ...(form.skills ?? [])])].map(name => h('button', {
-            key: name, type: 'button', className: 'bc-chip', 'aria-pressed': (form.skills ?? []).includes(name),
-            onClick: () => handlers.onToggleSkill?.(name),
-          }, name))),
-        h('small', null, t('The host refuses a Bot whose skills this DSH does not have. Marked skills are missing here.'))),
-      failure ? h('p', { className: 'bc-exception', role: 'alert' }, failure) : null,
+      h('label', { className: 'bc-field' }, t('Instructions'),
+        h('textarea', {
+          value: form.instructions ?? '', maxLength: 8000, rows: 12,
+          onChange: event => handlers.onForm?.('instructions', event.target.value),
+          placeholder: isSoul ? t('How this company talks and behaves') : t('What this job is responsible for, and how it works'),
+        })),
+      isSoul
+        ? h('p', { className: 'bc-tpl-note' }, t('A soul template carries the voice only: no job title, no model, no skills.'))
+        : [
+          h('div', { key: 'model', className: 'bc-grid' },
+            h('label', { className: 'bc-field' }, t('Model'),
+              h('select', { value: form.model ?? '', onChange: event => handlers.onForm?.('model', event.target.value) },
+                h('option', { value: '' }, t('Model default')),
+                (roster.models ?? []).map(model => h('option', { key: model.ref, value: model.ref }, model.name ?? model.ref)),
+                form.model && !(roster.models ?? []).some(model => model.ref === form.model)
+                  ? h('option', { key: form.model, value: form.model }, t('{ref} (not served now)', { ref: form.model }))
+                  : null)),
+            h('label', { className: 'bc-field' }, t('Thinking level'),
+              h('select', { value: form.effort ?? '', onChange: event => handlers.onForm?.('effort', event.target.value) },
+                effortOptions.map(option => h('option', { key: option.value || 'default', value: option.value }, option.label))))),
+          h('div', { key: 'skills', className: 'bc-field' }, h('span', null, t('Skills')),
+            h('div', { className: 'bc-tpl-skills-edit' },
+              [...new Set([...(roster.capabilities ?? []).map(item => item.name), ...(form.skills ?? [])])].map(name => h('button', {
+                key: name, type: 'button', className: 'bc-chip', 'aria-pressed': (form.skills ?? []).includes(name),
+                onClick: () => handlers.onToggleSkill?.(name),
+              }, name))),
+            h('small', null, t('The host refuses a Bot whose skills this DSH does not have. Marked skills are missing here.'))),
+        ],
+      failure && !failureField ? h('p', { className: 'bc-exception', role: 'alert' }, failure) : null,
       h('div', { className: 'bc-actions' },
         h('button', { type: 'button', className: 'bc-button', onClick: () => handlers.onCancelEdit?.() }, t('Cancel')),
         h('button', { type: 'submit', className: 'bc-button bc-primary', disabled: busy || !String(form.name ?? '').trim() }, busy ? t('Saving…') : t('Save changes'))))
@@ -475,6 +519,7 @@ export function TemplatesPage(props) {
   const [archiveArmed, setArchiveArmed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState('')
+  const [failureField, setFailureField] = useState('')
   const [flash, setFlash] = useState('')
   const [leavePrompt, setLeavePrompt] = useState(null)
   const [formBase, setFormBase] = useState(null)
@@ -508,7 +553,7 @@ export function TemplatesPage(props) {
     proceed()
   }
 
-  const closeForm = () => { setForm(null); setFormBase(null); setFailure('') }
+  const closeForm = () => { setForm(null); setFormBase(null); setFailure(''); setFailureField('') }
   const cancelEdit = () => requestLeave(closeForm)
   const applySelect = id => {
     setSelectedId(id)
@@ -517,6 +562,7 @@ export function TemplatesPage(props) {
     setCopyOpen(false)
     setArchiveArmed(false)
     setFailure('')
+    setFailureField('')
     setFlash('')
   }
   const select = id => requestLeave(() => {
@@ -528,14 +574,20 @@ export function TemplatesPage(props) {
     if (!onCommand) return
     setBusy(true)
     setFailure('')
+    setFailureField('')
     try { await work(); done?.() }
-    catch (error) { setFailure(templateErrorText(error)) }
+    catch (error) {
+      const hint = kindFieldHint(error)
+      setFailureField(hint?.field ?? '')
+      setFailure(hint?.text ?? templateErrorText(error))
+    }
     finally { setBusy(false) }
   }
 
   const startEdit = () => {
     if (!template) return
     setFailure('')
+    setFailureField('')
     setCopyOpen(false)
     setArchiveArmed(false)
     const base = {
@@ -550,26 +602,42 @@ export function TemplatesPage(props) {
     setFormBase({ ...base, skills: [...base.skills] })
   }
 
-  const saveEdit = () => run(async () => {
-    if (!form) return
-    await onCommand('template.update', templateUpdatePayload({
+  // A soul template carries instructions only: the fields it does not show are
+  // sent empty, so an old row cannot fail its own edit. The host refuses the same
+  // shape, and its answer is shown beside the field that broke.
+  const editPayload = () => {
+    const isSoul = templateKind(template) === 'soul'
+    return templateUpdatePayload({
       templateId: template.id,
       name: form.name.trim(),
-      role: form.role,
+      role: isSoul ? '' : form.role,
       instructions: form.instructions,
-      model: form.model,
-      effort: form.effort,
-      skills: form.skills,
-    }))
-    setForm(null)
-    setFlash(t('The template was saved.'))
-  })
+      model: isSoul ? '' : form.model,
+      effort: isSoul ? '' : form.effort,
+      skills: isSoul ? [] : form.skills,
+    })
+  }
+
+  const saveEdit = () => {
+    if (!form) return
+    if (templateKind(template) !== 'soul' && !String(form.role ?? '').trim()) {
+      setFailureField('role')
+      setFailure(t('An agent template needs a job title, so this cannot stay empty.'))
+      return
+    }
+    return run(async () => {
+      await onCommand('template.update', editPayload())
+      setForm(null)
+      setFlash(t('The template was saved.'))
+    })
+  }
 
   const startCopy = () => {
     setCopyName('')
     setCopyOpen(true)
     setArchiveArmed(false)
     setFailure('')
+    setFailureField('')
   }
   const saveCopy = () => run(async () => {
     const result = await onCommand('template.create', templateCopyPayload(template, copyName))
@@ -661,16 +729,9 @@ export function TemplatesPage(props) {
     if (!prompt || !form || !onCommand) return
     setBusy(true)
     setFailure('')
+    setFailureField('')
     try {
-      await onCommand('template.update', templateUpdatePayload({
-        templateId: template.id,
-        name: form.name.trim(),
-        role: form.role,
-        instructions: form.instructions,
-        model: form.model,
-        effort: form.effort,
-        skills: form.skills,
-      }))
+      await onCommand('template.update', editPayload())
       setFlash(t('The template was saved.'))
       dirtyRef.current = false
       setForm(null)
@@ -679,7 +740,9 @@ export function TemplatesPage(props) {
       prompt.proceed()
     } catch (error) {
       setLeavePrompt(null)
-      setFailure(templateErrorText(error))
+      const hint = kindFieldHint(error)
+      setFailureField(hint?.field ?? '')
+      setFailure(hint?.text ?? templateErrorText(error))
     } finally { setBusy(false) }
   }
 
@@ -731,6 +794,7 @@ export function TemplatesPage(props) {
     loading: props.loading,
     error: props.error,
     failure,
+    failureField,
     preview,
     flash,
     form,
@@ -819,6 +883,7 @@ export const TEMPLATES_CSS = `
 .bc-tpl-copyrow .bc-actions{margin-top:0}
 .bc-tpl-foot{display:flex;align-items:center;gap:10px;margin-top:16px;padding-top:12px;border-top:1px solid var(--bt-line);min-height:32px}
 .bc-tpl-quiet{font-size:12px;line-height:17px;color:var(--bt-ink-3);border:0;background:none;padding:0}
+.bc-field-error{margin:0;font-size:12px;line-height:17px;font-weight:400;color:var(--bt-danger)}
 .bc-tpl-kind{display:inline-block;margin:6px 0 0;padding:1px 7px;border:1px solid var(--bt-line-2);border-radius:999px;font-size:11px;line-height:16px;color:var(--bt-ink-2)}
 .bc-tpl-preview{margin:12px 0 0;padding:10px 12px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-hover)}
 .bc-tpl-preview-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 6px;font-size:12px;line-height:17px;font-weight:600;color:var(--bt-ink-2)}
