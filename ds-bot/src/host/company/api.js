@@ -91,6 +91,15 @@ const STATUS = new Map([
   // dismissed employee anywhere else is a request that is understood and refused.
   ['employee/still-referenced', 409],
   ['employee/inactive', 422],
+  // People (v6): a named person who is not there, or who was disabled after being named.
+  ['actor/not-found', 404],
+  ['actor/inactive', 422],
+  ['actor/immutable-field', 422],
+  // People and grants (M2 G3 3.5 / v1.19): two people cannot answer to one name, a person
+  // holds one grant per scope, and a grant that is gone cannot be revoked again.
+  ['actor/name-taken', 409],
+  ['grant/not-found', 404],
+  ['grant/exists', 409],
   ['project/invalid', 422],
   // A coordinator whose profile has no Bot yet: understood, refused before any room is made.
   ['project/coordinator-without-bot', 422],

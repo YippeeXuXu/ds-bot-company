@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { PERMISSIONS, assertAccess, can, permissionsFor, permissionsOf } from '../src/host/company/access.js'
+import { actorHandlers } from '../src/host/company/actors.js'
 import { acceptanceHandlers } from '../src/host/company/acceptances.js'
 import { orgHandlers } from '../src/host/company/org.js'
 import { projectHandlers } from '../src/host/company/projects.js'
@@ -15,6 +16,7 @@ import { templateHandlers } from '../src/host/company/templates.js'
 // that wiring, so the map test below fails before the command can be used unmapped.
 const registered = () => Object.keys({
   ...orgHandlers(),
+  ...actorHandlers(),
   ...projectHandlers(),
   ...acceptanceHandlers(),
   ...taskHandlers(),
@@ -31,7 +33,7 @@ const grantsOf = (...rows) => Object.fromEntries(rows.map(row => [row.id, row]))
 
 test('every registered company command is mapped, and the map claims nothing else', () => {
   const commands = registered()
-  assert.ok(commands.length >= 41, `expected the full registry, got ${commands.length}`)
+  assert.ok(commands.length >= 46, `expected the full registry, got ${commands.length}`)
   for (const command of commands) {
     assert.notEqual(permissionsFor(command), undefined, `${command} is registered but not mapped in access.js`)
   }

@@ -33,6 +33,9 @@ const ACCESS = {
   'task.list': ['view'],
   'template.export': ['view'],
   'template.list': ['view'],
+  // People and their grants (3.5): reading who is in the company is part of the read
+  // surface; inviting, disabling and granting is the membership permission.
+  'actor.list': ['view'],
 
   // The board: making a card, moving it, handing it over, and the dispatch side of a run.
   'task.create': ['dispatch'],
@@ -71,6 +74,10 @@ const ACCESS = {
   'employee.create': ['configure', 'members'],
   'employee.create-from-template': ['configure', 'members'],
   'employee.update': ['configure'],
+  'actor.invite': ['members'],
+  'actor.update': ['members'],
+  'grant.create': ['members'],
+  'grant.revoke': ['members'],
 
   // The company itself: only the owner, and only when there is no company yet.
   'company.init': [],
@@ -78,6 +85,15 @@ const ACCESS = {
 
 // The owner is the local user; the grants table never carries a row for them.
 const owner = actor => actor?.kind === 'owner'
+
+// The owner row, read from the file rather than compared as a string: `'user'` is the id the
+// company has carried since v1 and stays, but a check that reads the row keeps working when
+// the row is named differently in a later version.
+export const actorKindOf = (state, id) => {
+  if (typeof id !== 'string' || id === '') return undefined
+  return state?.actors?.[id]?.kind
+}
+export const isOwnerActor = (state, id) => actorKindOf(state, id) === 'owner'
 
 // The permissions an actor holds for one project: the company-wide read surface, plus every
 // grant that either covers the whole company or this exact project. A grant for another

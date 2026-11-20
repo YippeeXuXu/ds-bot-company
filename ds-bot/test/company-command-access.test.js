@@ -17,6 +17,8 @@ const handlers = {
     body: { dispatched: payload.task_id },
     events: [{ type: 'task.dispatched', data: { task_id: payload.task_id }, at: now() }],
   }),
+  'run.fail': ({ payload }) => ({ mutates: true, body: { failed: payload.run_id }, events: [] }),
+  'acceptance.decide': ({ payload }) => ({ mutates: true, body: { decided: payload.acceptance_id }, events: [] }),
 }
 
 const human = extra => ({ id: 'hum_1', kind: 'human', status: 'active', name: '小周', ...extra })
@@ -97,6 +99,47 @@ test('a stopped person is refused even the read surface', async t => {
     () => host.run('task.list', {}, { actor: human({ status: 'stopped' }) }),
     error => error.code === 'company/forbidden',
   )
+})
+
+// 3.5's acceptance asks for "a grant on project A does not open project B", and most task
+// commands name only a task. The fence resolves the project from the row it is about, so a
+// person does not have to remember to send project_id, and naming a project she may act in
+// does not open a task that lives in another one.
+test('a task carries its own project into the fence, and a borrowed project_id does not open it', async t => {
+  const host = await open()
+  t.after(() => host.close())
+  host.store.state.tasks = {
+    tsk_a: { id: 'tsk_a', project_id: 'prj_a' },
+    tsk_b: { id: 'tsk_b', project_id: 'prj_b' },
+  }
+  await host.grants({ id: 'g1', actor_id: 'hum_1', scope_type: 'project', scope_id: 'prj_a', permissions: ['dispatch'] })
+
+  const inside = await host.run('task.dispatch', { task_id: 'tsk_a' }, { actor: human() })
+  assert.equal(inside.status, 'committed')
+
+  await assert.rejects(
+    () => host.run('task.dispatch', { task_id: 'tsk_b' }, { actor: human() }),
+    error => error.code === 'company/forbidden' && error.details.missing.includes('dispatch'),
+  )
+  // The payload names the project she may act in, but the task lives elsewhere.
+  await assert.rejects(
+    () => host.run('task.dispatch', { task_id: 'tsk_b', project_id: 'prj_a' }, { actor: human() }),
+    error => error.code === 'company/forbidden',
+  )
+})
+
+test('runs and acceptances carry their project into the fence too', async t => {
+  const host = await open()
+  t.after(() => host.close())
+  host.store.state.runs = { run_a: { id: 'run_a', project_id: 'prj_a' }, run_b: { id: 'run_b', project_id: 'prj_b' } }
+  host.store.state.acceptances = { acc_a: { id: 'acc_a', project_id: 'prj_a', task_id: null }, acc_b: { id: 'acc_b', project_id: 'prj_b', task_id: null } }
+  await host.grants({ id: 'g1', actor_id: 'hum_1', scope_type: 'project', scope_id: 'prj_a', permissions: ['dispatch', 'accept'] })
+
+  assert.equal((await host.run('run.fail', { run_id: 'run_a' }, { actor: human() })).status, 'committed')
+  assert.equal((await host.run('acceptance.decide', { acceptance_id: 'acc_a' }, { actor: human() })).status, 'committed')
+  for (const [command, payload] of [['run.fail', { run_id: 'run_b' }], ['acceptance.decide', { acceptance_id: 'acc_b' }]]) {
+    await assert.rejects(() => host.run(command, payload, { actor: human() }), error => error.code === 'company/forbidden')
+  }
 })
 
 test('the HTTP route answers 403 for a person and 200 for the default owner', async t => {
