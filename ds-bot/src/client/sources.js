@@ -17,7 +17,7 @@ export function createSource(initial) {
 }
 
 export const EMPTY_ROSTER = { revision: -1, mainBotId: null, mainBotIds: [], bots: [], rooms: [], agents: [], exchangeTurns: {}, questions: {}, btwCards: {}, sideChats: {}, learning: {}, secrets: [], capabilities: [], capabilityStatuses: {}, secretRequests: {}, models: [], defaultModel: null, modelsKey: null, prefs: {}, byId: {}, roomsById: {}, agentsById: {}, agentOf: {}, ready: false }
-// Any Main Bot holds the Main Bot powers; `mainBotId`, the first one, is the sidebar tile.
+// Any Main Bot holds the Main Bot powers; `mainBotId`, the first one, leads the sidebar list.
 export const isMainOf = (roster, id) => id !== undefined && (roster.mainBotIds ?? []).includes(id)
 
 // A Bot's chat is a chain of Sessions ("parts"): the Bot id is its first part's id

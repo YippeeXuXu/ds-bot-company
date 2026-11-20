@@ -619,7 +619,7 @@ export function install(rt) {
     if (failed !== undefined) throw failed
   }
 
-  // The first Main Bot is the sidebar tile. `replace` gives a Main Bot's place to
+  // The first Main Bot leads the sidebar list. `replace` gives a Main Bot's place to
   // another Bot in one step, so the team never has none; `primary` moves a Bot to the
   // front and keeps the others.
   async function setMain(id, main, { primary = false, replace } = {}) {

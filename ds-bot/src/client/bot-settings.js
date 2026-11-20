@@ -244,7 +244,8 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
           disabled: bot.private === true,
           onChange: on => run(actions.setMain(bot.id, on)),
         })),
-    // The Main Bot tile is always first and always shown, like in the context menu.
+    // The first Main Bot always leads the list and is always shown, so it has no Pin
+    // or Hide card here, same as its context menu.
     isTile ? null : h(Card, { title: t('Sidebar') },
       h(SwitchRow, { label: t('Pin'), hint: t('Kept above the other chats.'), on: bot.pinned === true, onChange: pinned => run(actions.setFlags(bot.id, { pinned })) }),
       isMainBot ? null : h(SwitchRow, { label: t('Hide from sidebar'), hint: t('Search still finds it.'), on: bot.hidden === true, onChange: hidden => run(actions.setFlags(bot.id, { hidden })) })),
