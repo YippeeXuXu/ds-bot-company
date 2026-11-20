@@ -82,6 +82,7 @@ test('apply registers listeners and effects in a fixed order', (t) => {
     'effect ds-bot: memory review',
     'on agent/status',
     'effect ds-bot: memory slices',
+    'effect ds-bot: memory embeddings',
     'effect ds-bot: Bot compaction',
     'on agent/created',
     'on agent/pre-step (prepend)',
