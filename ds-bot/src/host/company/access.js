@@ -33,6 +33,9 @@ const ACCESS = {
   'task.list': ['view'],
   'template.export': ['view'],
   'template.list': ['view'],
+  // What the Bots spent is part of the read surface (3.6): the same people who read the
+  // board may see the numbers it cost.
+  'usage.summary': ['view'],
   // People and their grants (3.5): reading who is in the company is part of the read
   // surface; inviting, disabling and granting is the membership permission.
   'actor.list': ['view'],

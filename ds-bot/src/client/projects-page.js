@@ -443,6 +443,10 @@ export function CompanySurface({ page, actions, roster }) {
               onOpenProjects: () => actions.openCompanyPage('list'),
               onOpenProject: id => actions.openCompanyPage('detail', id),
               onCommand: mutate,
+              // Usage is a read: it must not touch the surface revision or reload the model,
+              // so it goes straight to the command endpoint and returns just the body. Every
+              // command still carries a fresh operation key; preview has no server to ask.
+              onRead: preview ? undefined : async (command, fields) => (await call('company-command', { command, payload: { ...fields, operation_key: `usage-${freshKey()}` } })).body,
               roster,
             })
               : onTodos ? h(TodoPage, {

@@ -614,6 +614,34 @@ export function install(rt) {
     }
   }
 
+  // Calls per Session and quarter hour, with the Session's owner, for a caller that
+  // attributes them itself. The company reads this to credit a Bot's work to the person and
+  // the project a Run names: the ledger knows how much a Session spent, and only the caller
+  // knows who the Session was working for.
+  async function usageCalls() {
+    const job = scan().catch(error => rt.warn('ds-bot: usage scan failed: %s', error))
+    let timer
+    await Promise.race([job, new Promise((resolve) => { timer = setTimeout(resolve, VIEW_WAIT_MS) })])
+    clearTimeout(timer)
+    const ledger = await openLedger()
+    const stored = ledger.owners()
+    const live = liveOwners(listed, stored)
+    return ledger.groups().map(group => {
+      const found = live.get(group.session) ?? stored.get(group.session)
+      return {
+        session: group.session,
+        owner: found?.owner ?? 'other',
+        // The slot's start, so a caller can cut by time without knowing SLOT_MS.
+        time: group.slot * SLOT_MS,
+        input: group.input,
+        cacheRead: group.cacheRead,
+        cacheWrite: group.cacheWrite,
+        output: group.output,
+        calls: group.calls,
+      }
+    })
+  }
+
   // DS Bot tags the requests it makes outside a Session with the Session they serve.
   const tags = new WeakMap()
   const tagUsage = (messages, tag) => {
@@ -694,5 +722,5 @@ export function install(rt) {
     })()
   })
 
-  Object.assign(rt, { usageView, tagUsage, carryUsageTag, ownRequest })
+  Object.assign(rt, { usageView, usageCalls, tagUsage, carryUsageTag, ownRequest })
 }

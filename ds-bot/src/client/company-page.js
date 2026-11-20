@@ -1,5 +1,6 @@
 import { createElement as h, useRef, useState } from 'react'
 import { t } from './i18n.js'
+import { COMPANY_USAGE_CSS, UsagePanel } from './company-usage.js'
 
 // P12: the company page inside the project surface, laid out like the 01 screen of the
 // virtual prototype: one page, no tabs. A header carries the company name, the counts and
@@ -409,15 +410,19 @@ export function CompanyPageView(props) {
       h('div', { className: 'bc-co-grow' },
         h('h1', null, t('Company')),
         h('p', null, data.company ? companyLine(departments, employees, projects) : t('No company information yet'))),
-      data.company && props.canCreate ? h('div', { className: 'bc-co-actions' },
-        h('button', { type: 'button', className: 'bc-button', onClick: () => props.onCreateOpen('department') }, `＋ ${t('New department')}`),
-        h('button', { type: 'button', className: 'bc-button', onClick: () => props.onCreateOpen('employee') }, `＋ ${t('New employee')}`)) : null),
+      (props.canReadUsage || (data.company && props.canCreate)) ? h('div', { className: 'bc-co-actions' },
+        props.canReadUsage ? h('button', { type: 'button', className: 'bc-button', onClick: props.onUsageOpen }, t('Usage')) : null,
+        data.company && props.canCreate ? h('button', { type: 'button', className: 'bc-button', onClick: () => props.onCreateOpen('department') }, `＋ ${t('New department')}`) : null,
+        data.company && props.canCreate ? h('button', { type: 'button', className: 'bc-button', onClick: () => props.onCreateOpen('employee') }, `＋ ${t('New employee')}`) : null) : null),
     props.chatHint ? h('div', { className: 'bc-co-hintbar', role: 'status' },
       h('span', null, props.chatHint),
       h('button', { type: 'button', className: 'bc-co-hintbar-close', 'aria-label': t('Close'), onClick: () => props.onChatHint?.('') }, '×')) : null,
     h('div', { className: 'bc-co-stage' }, body,
       editingEmployee ? editPanel() : department ? overview(department) : null,
-      createPanel()))
+      createPanel(),
+      // Usage reads the host ledger, so it opens over the canvas rather than as a tab:
+      // the company screen keeps one page and one place to look.
+      props.usageOpen ? h(UsagePanel, { onClose: props.onUsageClose, onRead: props.onRead }) : null))
 }
 
 export function CompanyPage(props) {
@@ -446,6 +451,7 @@ export function CompanyPage(props) {
   const [renameName, setRenameName] = useState('')
   const [renameBusy, setRenameBusy] = useState(false)
   const [renameError, setRenameError] = useState('')
+  const [usageOpen, setUsageOpen] = useState(false)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
   const canvasRef = useRef(null)
@@ -479,6 +485,7 @@ export function CompanyPage(props) {
   // one level each so the first Escape closes them instead of the page.
   if (escapeGuard) {
     escapeGuard.current = () => {
+      if (usageOpen) { setUsageOpen(false); return true }
       if (renaming) { closeRename(); return true }
       if (editing !== null) { closeEdit(); return true }
       if (creating) { closeDraft(); return true }
@@ -651,6 +658,10 @@ export function CompanyPage(props) {
     onPanStart,
     onPanMove,
     onPanEnd,
+    canReadUsage: Boolean(props.onRead),
+    usageOpen,
+    onUsageOpen: () => setUsageOpen(true),
+    onUsageClose: () => setUsageOpen(false),
   })
 }
 
@@ -771,4 +782,4 @@ export const COMPANY_PAGE_CSS = `
 .bc-co-setup-row .bc-field{flex:1;min-width:0}
 .bc-co-setup-row .bc-button{flex:none}
 .bc-co-loading{display:flex;flex-direction:column;gap:8px;padding:20px 32px}
-`
+` + COMPANY_USAGE_CSS

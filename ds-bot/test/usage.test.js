@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { apply } from '../index.js'
+import { createRuntime } from '../index.js'
 import { foldCalls } from '../src/host/usage.js'
 import { fakeContext } from './fake-ctx.js'
 
@@ -125,7 +125,10 @@ function start(home, { listedExtra, logsExtra, subagentsExtra } = {}) {
   }
   let route
   ctx.connection.fetch.register = (options) => { route = options; return () => {} }
-  apply(ctx, { home })
+  // Keep the runtime: the company reads the ledger through rt.usageCalls, and a test of
+  // that read is worth having next to the view it must agree with. `apply` is only a thin
+  // wrapper over this, so building the runtime here changes nothing else.
+  const rt = createRuntime(ctx, { home })
   const call = async (endpoint, payload) => {
     const response = await route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))
     return response.json()
@@ -135,7 +138,7 @@ function start(home, { listedExtra, logsExtra, subagentsExtra } = {}) {
     await ctx.dispose()
     rmSync(home, { recursive: true, force: true, maxRetries: 5 })
   }
-  return { call, ctx, home, meter, pages, stop, warnings }
+  return { call, ctx, home, meter, pages, rt, stop, warnings }
 }
 
 // Total tokens per owner name and use.
@@ -397,4 +400,33 @@ test('a projection hint without a sequence space is not used as a page cursor', 
   t.after(stop)
   const view = (await call('usage', { timeZone: 'Asia/Shanghai' })).value
   assert.equal(totals(view)['other/chat'], 44)
+})
+
+test('the company read keeps the Session, so a call can be attributed to a person or a room', async (t) => {
+  const { call, rt, stop } = start()
+  t.after(stop)
+  const view = (await call('usage', { timeZone: 'Asia/Shanghai' })).value
+  const calls = await rt.usageCalls()
+  const sum = rows => rows.reduce((total, row) => ({
+    tokens: total.tokens + row.input + row.cacheRead + row.cacheWrite + row.output,
+    calls: total.calls + row.calls,
+  }), { tokens: 0, calls: 0 })
+  const fromView = sum(view.rows.map(([, , , , input, cacheRead, cacheWrite, output, count]) => ({ input, cacheRead, cacheWrite, output, calls: count })))
+
+  // The company attributes a call by its Session and its time, so both travel on the row.
+  assert.ok(calls.length > 0)
+  for (const row of calls) {
+    assert.equal(typeof row.session, 'string')
+    assert.equal(typeof row.owner, 'string')
+    assert.ok(row.time % (15 * 60_000) === 0)
+    assert.ok(row.calls > 0)
+  }
+  // Same ledger, same window: the two reads must agree, or the company screen would show
+  // numbers the host Usage page contradicts.
+  assert.deepEqual(sum(calls), fromView)
+  // A group room's Session names the room, and a Bot's own Session names the Bot.
+  // The owner travels with the row too: an Agent's Session names the agent, and a Bot's
+  // Session (even one it holds inside a group room) names the Bot.
+  assert.equal(calls.find(row => row.session === 's-a1').owner, 'agent:a1')
+  assert.equal(calls.find(row => row.session === 's-g1').owner, 'b1')
 })
