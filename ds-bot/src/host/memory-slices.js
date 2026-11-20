@@ -190,14 +190,23 @@ export function chunkTurn(text, { target = SLICE_TARGET, max = SLICE_MAX } = {})
   return pieces
 }
 
-// The text of a turn as the user and the Bot said it, with what must not be kept taken
-// out: every saved secret first (`rt.redactSecrets`), then every key-shaped run, so a
-// fake key pasted into a message never lands in a slice.
+// A key pasted into Chinese prose has no space around it: the whole sentence is one
+// word, and replacing the word would take the sentence with it. So inside a word, cut out
+// only the runs that read as a key; the rest of the sentence stays.
+const KEY_RUN = /[A-Za-z0-9+/=_.-]{12,}/g
+
+function scrubWord(word) {
+  if (!looksLikeKey(word)) return word
+  const kept = word.replace(KEY_RUN, run => (looksLikeKey(run) ? '[secret]' : run))
+  // Something that still reads as a key but is not one run (a header, say) goes whole.
+  return looksLikeKey(kept) ? '[secret]' : kept
+}
+
 export function cleanTurnText(rt, text) {
   const redacted = typeof rt.redactSecrets === 'function' ? rt.redactSecrets(text) : text
   return redacted
     .split('\n')
-    .map(line => (looksLikeKey(line) ? line.replace(/\S+/g, word => (looksLikeKey(word) ? '[secret]' : word)) : line))
+    .map(line => (looksLikeKey(line) ? line.replace(/\S+/g, scrubWord) : line))
     .join('\n')
 }
 

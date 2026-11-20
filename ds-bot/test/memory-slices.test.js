@@ -167,6 +167,23 @@ test('4.2: a saved secret and a key-shaped string never reach a slice', async ()
   assert.match(slice.text, /\[secret\]/)
 })
 
+test('4.2: a key pasted into Chinese prose takes only itself, not the sentence', async () => {
+  const home = openHome()
+  const fakeKey = ['sk', 'live', 'abcdefghijklmnopqrstuvwx'].join('-')
+  const said = `临时 key 是${fakeKey}，口令是 hunter2，别外传。`
+  const lines = [
+    { seq: 1, who: 'user', text: `User: ${said}`, time: 1000 },
+    { seq: 2, who: 'bot', text: 'You: 记下了。', time: 1001 },
+  ]
+  const rt = runtimeFor({ home, lines })
+  install(rt)
+  await rt.memorySlices.capture('s_1')
+  const [slice] = rt.memorySlices.list()
+  assert.equal(slice.text.includes(fakeKey), false)
+  // The words on both sides of the key are still there: only the key itself goes.
+  assert.match(slice.text, /临时 key 是\[secret\]，口令是 hunter2，别外传。/)
+})
+
 test('4.2: a group round is sliced under the group, from its log', async () => {
   const home = openHome()
   const rt = runtimeFor({
