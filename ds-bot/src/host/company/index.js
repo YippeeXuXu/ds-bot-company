@@ -11,6 +11,7 @@ import { ROW_REVISION_COMMANDS, acceptanceHandlers, submitWithAcceptance } from 
 import { createCompanyApi } from './api.js'
 import { seedBuiltinTemplates } from './builtin-templates.js'
 import { createCommands } from './commands.js'
+import { ACTOR_ROW_REVISION_COMMANDS, actorHandlers } from './actors.js'
 import { orgHandlers } from './org.js'
 import { projectHandlers } from './projects.js'
 import { pathRedactor } from './selfreview/features.js'
@@ -112,9 +113,10 @@ export function install(rt) {
     // `acceptance.decide` is answered with the revision of the acceptance itself (the to-do
     // row carries it, contract A12), and every task command that writes is answered with the
     // task's own revision, so the envelope leaves those comparisons to their handlers.
-    rowRevisionCommands: new Set([...ROW_REVISION_COMMANDS, ...TASK_ROW_REVISION_COMMANDS, ...RUN_ROW_REVISION_COMMANDS]),
+    rowRevisionCommands: new Set([...ROW_REVISION_COMMANDS, ...TASK_ROW_REVISION_COMMANDS, ...RUN_ROW_REVISION_COMMANDS, ...ACTOR_ROW_REVISION_COMMANDS]),
     handlers: {
       ...org,
+      ...actorHandlers(),
       // A new company is born with the nine builtin templates: they ride in the same commit
       // as the company, so no screen ever shows a company without them. A company that is
       // missing one (a file written before 3.6b that was read-only at startup) is topped up

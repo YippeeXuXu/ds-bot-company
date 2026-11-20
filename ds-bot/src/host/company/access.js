@@ -33,6 +33,9 @@ const ACCESS = {
   'task.list': ['view'],
   'template.export': ['view'],
   'template.list': ['view'],
+  // People and their grants (3.5): reading who is in the company is part of the read
+  // surface; inviting, disabling and granting is the membership permission.
+  'actor.list': ['view'],
 
   // The board: making a card, moving it, handing it over, and the dispatch side of a run.
   'task.create': ['dispatch'],
@@ -71,6 +74,10 @@ const ACCESS = {
   'employee.create': ['configure', 'members'],
   'employee.create-from-template': ['configure', 'members'],
   'employee.update': ['configure'],
+  'actor.invite': ['members'],
+  'actor.update': ['members'],
+  'grant.create': ['members'],
+  'grant.revoke': ['members'],
 
   // The company itself: only the owner, and only when there is no company yet.
   'company.init': [],

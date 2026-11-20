@@ -53,6 +53,21 @@ export function createCommands({ store, handlers = {}, now = Date.now, logKept =
   // that actor in, and the settings screen will do so once a second person can sign in.
   const actorOfState = () => store.state.actors?.[OWNER_ACTOR_ID] ?? { id: OWNER_ACTOR_ID, kind: 'owner', status: 'active' }
 
+  // Which project a command is about decides which project grants apply (v1.19). The row
+  // wins over the payload: most task commands name only a task, and a caller must not be
+  // able to borrow one project's permission by sending another project's id alongside a
+  // task that lives somewhere else.
+  const projectScopeOf = payload => {
+    const state = store.state
+    const taskProject = typeof payload.task_id === 'string' ? state.tasks?.[payload.task_id]?.project_id : undefined
+    if (taskProject !== undefined) return taskProject
+    const runProject = typeof payload.run_id === 'string' ? state.runs?.[payload.run_id]?.project_id : undefined
+    if (runProject !== undefined) return runProject
+    const acceptanceProject = typeof payload.acceptance_id === 'string' ? state.acceptances?.[payload.acceptance_id]?.project_id : undefined
+    if (acceptanceProject !== undefined) return acceptanceProject
+    return undefined
+  }
+
   const execute = async (command, payload = {}, context = {}) => {
     const handler = handlers[command]
     if (typeof handler !== 'function') throw companyFail('company/unknown-command', `No company command named ${command}.`, { command })
@@ -68,7 +83,7 @@ export function createCommands({ store, handlers = {}, now = Date.now, logKept =
     // decision is logged, never the payload.
     const actor = context.actor ?? actorOfState()
     try {
-      assertAccess(command, { actor, grants: store.state.grants ?? {}, payload: body })
+      assertAccess(command, { actor, grants: store.state.grants ?? {}, payload: body, projectId: projectScopeOf(body) })
     } catch (error) {
       warn('ds-bot: company command %s was refused for %s', command, actor?.id ?? 'someone')
       throw error
