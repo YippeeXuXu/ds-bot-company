@@ -144,7 +144,7 @@ export function DepartmentChatDrawer({ department, members, lead, projects, acti
 
 // The surface a department room gets instead of the project overlay: the host pill
 // stays mounted (hidden) for visit tracking and new-message pills, as with a project.
-export function DepartmentChatSurface({ data, open, onOpenDetails, onClose, onOpenConfig }) {
+export function DepartmentChatSurface({ data, open, onOpenDetails, onClose, onOpenConfig, island }) {
   return h(
     'div',
     { className: 'dc-frame' },
@@ -156,12 +156,14 @@ export function DepartmentChatSurface({ data, open, onOpenDetails, onClose, onOp
       onOpenDetails,
       onOpenConfig,
     }),
+    island ? h('div', { className: 'dc-goal' }, island) : null,
     open ? h(DepartmentChatDrawer, { department: data.department, members: data.employees, lead: data.lead, projects: data.projects, activity: data.activity, onClose, onOpenConfig }) : null
   )
 }
 
 export const DEPARTMENT_CHAT_CSS = `
 .dc-frame{position:relative;display:flex;flex-direction:column;width:100%;pointer-events:none}
+.dc-goal{display:flex;justify-content:center;padding:2px 0 0;pointer-events:none}
 .dc-head{display:flex;flex-direction:column;pointer-events:none}
 .dc-headbar{position:relative;display:flex;justify-content:center;align-items:flex-start;padding:10px 0 0;pointer-events:none}
 .dc-pill{position:relative;pointer-events:auto;display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:7px 13px 7px 7px;border-radius:999px;border:.5px solid var(--bt-line-2);background:var(--bt-main);color:var(--bt-ink);font:500 15px/22px var(--bt-font);box-shadow:0 2px 8px -1px color-mix(in srgb,var(--bt-ink) 6%,transparent),0 1px 2px color-mix(in srgb,var(--bt-ink) 4%,transparent);cursor:pointer;max-width:70%}
