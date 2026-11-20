@@ -69,7 +69,6 @@ const button = (tree, label) => buttons(tree).find(item => text(item) === label)
 // Values built inside the vm carry that realm's prototypes, so compare plain copies.
 const plain = value => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)))
 const click = node => node.props.onClick?.({ preventDefault() {}, stopPropagation() {} })
-const input = (tree, type) => collect(tree, node => node.type === 'input' && node.props.type === type)
 
 // The stand-in above never updates state. A test that needs a component to
 // start somewhere else queues the first values its useState calls return.
