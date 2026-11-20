@@ -176,13 +176,13 @@ test('the templates table is saved in the company file at the current version (M
 
   const saved = JSON.parse(readFileSync(join(home, 'company', 'state.json'), 'utf8'))
   assert.equal(saved.version, COMPANY_VERSION)
-  assert.equal(saved.version, 5)
+  assert.equal(saved.version, 6)
   const rows = Object.values(saved.templates)
   assert.equal(rows.length, 1)
   const stored = rows[0]
   assert.equal(stored.name, '产品')
   assert.equal(stored.source, 'custom')
-  assert.equal(store.state.version, 5)
+  assert.equal(store.state.version, 6)
   rmSync(home, { recursive: true, force: true })
 })
 

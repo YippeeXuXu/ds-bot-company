@@ -14,16 +14,41 @@ import { join } from 'node:path'
 import { replaceFile } from '../files.js'
 import { homeLock } from '../home-lock.js'
 
-export const COMPANY_VERSION = 5
+export const COMPANY_VERSION = 6
 // v1 files carry the same six tables; v2 adds the two to-do tables; v3 adds the employee
-// templates; v4 adds the project task table. An older file is read as the current version
-// in memory (revision untouched) and saved back as v4 on the next commit; `migration`
-// reports that upgrade once, so the caller can record one `company/migrated` event.
-const READABLE_VERSIONS = [1, 2, 3, 4, 5]
+// templates; v4 adds the project task table; v5 adds dispatch runs; v6 adds the human
+// actors and their grants. An older file is read as the current version in memory
+// (revision untouched) and saved back as the current version on the next commit;
+// `migration` reports that upgrade once, so the caller can record one `company/migrated`
+// event. A v6 reader always finds the owner actor, whether the file was written by v6 or
+// upgraded on the way in, so the local user keeps the identity the older fields recorded
+// as the plain string `'user'`.
+const READABLE_VERSIONS = [1, 2, 3, 4, 5, 6]
+// The owner never appears in a grant: full rights are inherent to the row itself. The id
+// stays `'user'` so every field written before v6 (acceptance_actor, assigned_by, …) still
+// names the same person.
+export const OWNER_ACTOR_ID = 'user'
+export const ACTOR_KINDS = ['owner', 'human']
 
 // Error codes follow the plugin's `area/kind` shape, so the HTTP layer (M1a-5) can turn
 // them into status codes without matching on message text.
 export const companyFail = (code, message, details) => Object.assign(new Error(message), { code, details })
+
+// The owner is a real row, not a special case hidden in code: the settings screen lists
+// people from this table, and every historical `'user'` field resolves through it. It is
+// seeded on load rather than in `emptyCompanyState()` because a row needs a timestamp.
+const ensureOwnerActor = (state, now) => {
+  if (state.actors[OWNER_ACTOR_ID] !== undefined) return
+  const at = now()
+  state.actors[OWNER_ACTOR_ID] = {
+    id: OWNER_ACTOR_ID,
+    kind: 'owner',
+    name: '老板',
+    status: 'active',
+    created_at: at,
+    updated_at: at,
+  }
+}
 
 export const emptyCompanyState = () => ({
   version: COMPANY_VERSION,
@@ -44,11 +69,17 @@ export const emptyCompanyState = () => ({
   templates: {},
   // v4: project tasks (M1b-3.3), one row per card on a project's board.
   tasks: {},
+  // v5: dispatch runs, one row per card handed to an employee.
   runs: {},
+  // v6: the people behind the commands (owner + invited humans) and the grants that give
+  // a non-owner a slice of them. Both fill in on load, so an upgraded file and a new one
+  // both carry the owner actor.
+  actors: {},
+  grants: {},
 })
 
 const isTable = value => value !== null && typeof value === 'object' && !Array.isArray(value)
-const TABLES = ['companies', 'departments', 'employees', 'projects', 'members', 'operation_log', 'acceptances', 'todo_log', 'templates', 'tasks', 'runs']
+const TABLES = ['companies', 'departments', 'employees', 'projects', 'members', 'operation_log', 'acceptances', 'todo_log', 'templates', 'tasks', 'runs', 'actors', 'grants']
 
 // A file written by a newer plugin is not a file this version can edit: its tables may
 // mean something else, so it counts as corrupt rather than being rewritten in the old
@@ -112,7 +143,10 @@ export function createCompanyStore({ dir, now = Date.now, warn = () => {}, useLo
     try {
       text = readFileSync(statePath, 'utf8')
     } catch (error) {
-      if (error?.code === 'ENOENT') return state
+      if (error?.code === 'ENOENT') {
+        ensureOwnerActor(state, now)
+        return state
+      }
       stuck = error?.code ?? error?.message ?? String(error)
       warn('ds-bot: unreadable company %s: %s', statePath, error)
       return state
@@ -136,6 +170,7 @@ export function createCompanyStore({ dir, now = Date.now, warn = () => {}, useLo
       migration = { from: parsed.version, to: COMPANY_VERSION }
       parsed.version = COMPANY_VERSION
     }
+    ensureOwnerActor(parsed, now)
     state = parsed
     byBotId = rebuildIndex()
     if (stuck !== undefined) warn('ds-bot: company %s is unusable: %s', statePath, stuck)
