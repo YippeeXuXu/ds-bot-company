@@ -124,7 +124,7 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
   const roomWorkKey = useWork?.(work => (room ? JSON.stringify(work.rooms?.[sessionId] ?? []) : '')) ?? '[]'
   const roomWork = room ? JSON.parse(roomWorkKey || '[]') : []
   const view = goal ? goalView(goal, { roster, roomWork }) : null
-  const goalShown = room !== undefined && !away && goal !== undefined
+  const goalShown = room !== undefined && !away && goal !== undefined && goal !== null
   const detailsOpen = useUi(state => state.details === sessionId)
   const name = bot?.name ?? room?.name ?? ''
   const employee = useEmployeeOfBot(bot?.id)
@@ -152,7 +152,7 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
     return () => { delete document.body.dataset.btRoom }
   }, [Boolean(room)])
   const memoryNotice = !away && notice && changed !== null && roster.memory !== false
-  const showGoal = room !== undefined && !away && (goal !== undefined || goalCompose)
+  const showGoal = room !== undefined && !away && (goal !== undefined && goal !== null || goalCompose)
   // The goal island pads the transcript so its pod does not cover the first message.
   useEffect(() => {
     if (showGoal) document.body.dataset.btGoal = ''
@@ -181,6 +181,26 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
     h('span', { className: 'bt-sr', role: 'status' }, memoryNotice ? t('Memory updated') : ''),
     h(NewMessagePills, { key: sessionId, sessionId, useSessions, useUi, useTurnClock }),
     h(ActivityIndicator, { key: `activity:${sessionId}`, sessionId, useRoster, useSessionStatus, useSession, useLive, useWork, actions }))
+}
+
+// The goal surface for a room whose header the company overlay draws instead of
+// HeaderPill (a department or project group): the same island, without the pill,
+// mounted under that header so the goal stays reachable there too.
+export function GoalStrip({ sessionId, useRoster, useUi, useWork, actions }) {
+  // The company overlay always hands the host's hooks in; older mounts and the client
+  // tests may leave some out, so each one falls back to a plain reader.
+  const readRoster = useRoster ?? (() => ({}))
+  const readUi = useUi ?? (() => undefined)
+  const roster = readRoster(value => value) ?? {}
+  const room = roster.roomsById?.[sessionId]
+  const goal = room?.goal
+  const composing = readUi(state => state.goalCompose === sessionId) === true
+  const open = readUi(state => state.goalOpen === sessionId) === true
+  const roomWorkKey = useWork?.(work => (room ? JSON.stringify(work.rooms?.[sessionId] ?? []) : '')) ?? '[]'
+  const roomWork = room ? JSON.parse(roomWorkKey || '[]') : []
+  const view = goal ? goalView(goal, { roster, roomWork }) : null
+  if (room === undefined || ((goal === undefined || goal === null) && !composing)) return null
+  return h(GoalIsland, { room, goal, view, open, composing, roomWork, roster, actions, pill: null })
 }
 
 // New-message pills. "N new messages ↓" takes Back to bottom's place when

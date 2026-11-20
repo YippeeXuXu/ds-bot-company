@@ -17,7 +17,7 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>')
 
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { ProjectChatSurface, ProjectChatDrawer, ProjectChatHeaderSlot, drawerPendingRows } from './src/client/project-chat-overlay.js'\nexport { HeaderPill } from './src/client/header.js'\nexport { installLocale } from './src/client/i18n.js'",
+    contents: "export { ProjectChatSurface, ProjectChatDrawer, ProjectChatHeaderSlot, drawerPendingRows } from './src/client/project-chat-overlay.js'\nexport { GoalStrip, HeaderPill } from './src/client/header.js'\nexport { installLocale } from './src/client/i18n.js'",
     resolveDir: PLUGIN,
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -112,7 +112,7 @@ const sandbox = {
   Date,
 }
 runInNewContext(outputFiles[0].text, sandbox)
-const { ProjectChatSurface, ProjectChatDrawer, ProjectChatHeaderSlot, drawerPendingRows, HeaderPill } = module.exports
+const { ProjectChatSurface, ProjectChatDrawer, ProjectChatHeaderSlot, drawerPendingRows, GoalStrip, HeaderPill } = module.exports
 
 // The interface runs in Chinese; the bundle carries its own copy of i18n, so install the
 // dictionary through the bundled `installLocale` — the copy the user actually sees.
@@ -482,4 +482,35 @@ test('a waiting row opens the to-do page and closes the drawer', async () => {
   await slot.settle()
   assert.deepEqual(opened, ['todos'])
   assert.equal(collect(slot.tree(), node => hasClass(node, 'pc-drawer')).length, 0, 'the drawer closes behind the page')
+})
+
+// The company overlay draws a department or project header itself, so the header pill —
+// and with it the goal island — is deliberately hidden there. The slot under the visible
+// header is what keeps the goal reachable in those rooms (找到 3211 上的真机问题).
+const goalRoom = {
+  ...room,
+  goal: {
+    id: 'goal-1', status: 'active', title: '上线新首页', objective: '让新首页上线', acceptance: '首页可用',
+    stages: [
+      { title: '面板能开', acceptance: '面板出现', status: 'passed', tasks: [] },
+      { title: '阶段带证据通过', acceptance: '有证据', status: 'running', tasks: [] },
+    ],
+    current: 1, revision: 3, events: [],
+  },
+}
+
+test('the project header carries the goal island inside its own header', () => {
+  const island = react.createElement(GoalStrip, { sessionId: 'room-1', useRoster: selector({ ...roster, roomsById: { 'room-1': goalRoom } }), useUi: selector({}) })
+  const tree = resolve(ProjectChatSurface({ props, project, members, pendingCount: 0, open: false, onOpenDetails() {}, onClose() {}, onOpenConfig() {}, island }))
+  const strip = collect(tree, node => node.props?.className === 'pc-goalstrip')
+  assert.equal(strip.length, 1, 'the project header has a slot for the goal island')
+  const islands = collect(strip[0], node => hasClass(node, 'bt-island'))
+  assert.equal(islands.length, 1, 'the island renders inside that slot')
+  assert.equal(islands[0].props['data-solo'], '', 'the island carries no header pill of its own')
+  assert.match(text(strip[0]), /阶段带证据通过|面板能开/)
+})
+
+test('the goal slot renders nothing for a room without a goal', () => {
+  const island = react.createElement(GoalStrip, { sessionId: 'room-1', useRoster: selector(roster), useUi: selector({}) })
+  assert.equal(resolve(island), null)
 })

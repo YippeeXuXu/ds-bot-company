@@ -280,7 +280,7 @@ export function GoalIsland({ room, goal, view, open, composing, roomWork, roster
   return h('div', {
     ref: island, className: 'bt-island',
     'data-goal': view?.status ?? (composing ? 'compose' : undefined),
-    'data-idle': view?.idle || undefined, 'data-open': open || undefined,
+    'data-idle': view?.idle || undefined, 'data-open': open || undefined, 'data-solo': pill ? undefined : '',
   },
   open || composing ? h(GoalOutside, { island, close }) : null,
   pill,
@@ -295,6 +295,8 @@ export function GoalIsland({ room, goal, view, open, composing, roomWork, roster
 export const GOAL_CSS = `
 /* One surface: the pill's own background, border and shadow. The pill row is
    40px, the pod bar 30px; the surface reshapes on SPRING_SHAPE. */
+.bt-island[data-solo]{align-self:center}
+.bt-island[data-solo] .bt-goal-bar{border-radius:20px}
 .bt-island{position:relative;z-index:6;align-self:flex-start;display:flex;flex-direction:column;pointer-events:auto;width:min(380px,calc(100% - 120px));background:var(--bt-main);border:.5px solid var(--bt-line-2);border-radius:20px;box-shadow:var(--bt-float);color:var(--bt-ink);font-family:inherit;font-size:14px;line-height:20px;box-sizing:border-box;transition:${spring(SPRING_SHAPE, 'width', 'border-radius')}}
 .bt-island[data-open]{width:min(560px,calc(100% - 48px));border-radius:18px}
 .bt-island[data-morph]{overflow:hidden}

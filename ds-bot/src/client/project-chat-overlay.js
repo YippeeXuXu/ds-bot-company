@@ -3,7 +3,7 @@ import { t } from './i18n.js'
 import { SPRING_SHAPE, SPRING_TAP } from './motion.js'
 import { statusLabel } from './projects-page.js'
 import { call } from './api.js'
-import { HeaderPill } from './header.js'
+import { GoalStrip, HeaderPill } from './header.js'
 import { activityLines, pendingRows, pinnedRows, waitingTotal } from './project-activity.js'
 import { DepartmentChatSurface, departmentActivityLines, departmentOfRoom } from './department-chat.js'
 
@@ -298,6 +298,7 @@ body.bc-project-archived [data-composer-card] button{pointer-events:none}
 .pc-badge-n{font-weight:700}
 .pc-more{width:28px;height:28px;border:0;border-radius:999px;background:transparent;color:var(--bt-ink-2);font:500 16px/1 var(--bt-font);cursor:pointer}
 .pc-titles{display:grid;min-width:0;text-align:left}
+.pc-goalstrip{display:flex;justify-content:center;padding:2px 0 0;pointer-events:none}
 .pc-goal{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-3);font:400 11px/15px var(--bt-font);max-width:360px}
 .pc-headbar{position:relative;display:flex;justify-content:center;align-items:flex-start;padding:10px 0 0;pointer-events:none}
 .pc-back{position:absolute;left:12px;top:10px;pointer-events:auto;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:999px;background:transparent;color:var(--bt-ink-2);font-size:18px;line-height:1;cursor:pointer}
@@ -437,7 +438,7 @@ const loadProjectEvents = async projectId => {
   }
 }
 
-export function ProjectChatSurface({ props, project, members, pendingCount, pinned, pending, activity, open, onOpenDetails, onClose, onOpenConfig }) {
+export function ProjectChatSurface({ props, project, members, pendingCount, pinned, pending, activity, open, onOpenDetails, onClose, onOpenConfig, island }) {
   const archived = project?.status === 'archived'
   useEffect(() => {
     // The host has no room-level write lock, so an archived room is held by the client:
@@ -488,6 +489,7 @@ export function ProjectChatSurface({ props, project, members, pendingCount, pinn
         onOpenConfig,
         expanded: open,
       }),
+      island ? h('div', { className: 'pc-goalstrip' }, island) : null,
       archived ? h('div', { className: 'pc-archived', role: 'status' }, t('Project archived. The group history stays available to read.')) : null,
       Number(pendingCount) > 0
         ? h('div', { className: 'pc-pin-layer' }, h(ProjectChatPinned, { count: pendingCount, items: Array.isArray(pinned) ? pinned : [] }))
@@ -614,6 +616,7 @@ export function ProjectChatHeaderSlot(props) {
         onOpenDetails: event => { opener.current = event?.currentTarget ?? null; setOpen(true) },
         onClose: closeDepartment,
         onOpenConfig: () => { props.actions.openCompanyPage('list'); closeDepartment() },
+        island: h(GoalStrip, props),
       }))
   }
   const project = data.project
@@ -661,6 +664,7 @@ export function ProjectChatHeaderSlot(props) {
     onOpenDetails: event => { opener.current = event?.currentTarget ?? null; setOpen(true) },
     onClose: close,
     onOpenConfig: () => { props.actions.openCompanyPage('detail', project.id); close() },
+    island: h(GoalStrip, props),
     }),
     emptyPanel)
 }

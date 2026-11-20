@@ -4936,7 +4936,8 @@ function GoalIsland({ room: room2, goal, view, open, composing, roomWork, roster
       className: "bt-island",
       "data-goal": view?.status ?? (composing ? "compose" : void 0),
       "data-idle": view?.idle || void 0,
-      "data-open": open || void 0
+      "data-open": open || void 0,
+      "data-solo": pill ? void 0 : ""
     },
     open || composing ? (0, import_react5.createElement)(GoalOutside, { island, close }) : null,
     pill,
@@ -4955,6 +4956,8 @@ function GoalIsland({ room: room2, goal, view, open, composing, roomWork, roster
 var GOAL_CSS = `
 /* One surface: the pill's own background, border and shadow. The pill row is
    40px, the pod bar 30px; the surface reshapes on SPRING_SHAPE. */
+.bt-island[data-solo]{align-self:center}
+.bt-island[data-solo] .bt-goal-bar{border-radius:20px}
 .bt-island{position:relative;z-index:6;align-self:flex-start;display:flex;flex-direction:column;pointer-events:auto;width:min(380px,calc(100% - 120px));background:var(--bt-main);border:.5px solid var(--bt-line-2);border-radius:20px;box-shadow:var(--bt-float);color:var(--bt-ink);font-family:inherit;font-size:14px;line-height:20px;box-sizing:border-box;transition:${spring(SPRING_SHAPE, "width", "border-radius")}}
 .bt-island[data-open]{width:min(560px,calc(100% - 48px));border-radius:18px}
 .bt-island[data-morph]{overflow:hidden}
@@ -16136,7 +16139,7 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
   const roomWorkKey = useWork?.((work) => room2 ? JSON.stringify(work.rooms?.[sessionId] ?? []) : "") ?? "[]";
   const roomWork = room2 ? JSON.parse(roomWorkKey || "[]") : [];
   const view = goal ? goalView(goal, { roster, roomWork }) : null;
-  const goalShown = room2 !== void 0 && !away && goal !== void 0;
+  const goalShown = room2 !== void 0 && !away && goal !== void 0 && goal !== null;
   const detailsOpen = useUi((state) => state.details === sessionId);
   const name = bot?.name ?? room2?.name ?? "";
   const employee = useEmployeeOfBot(bot?.id);
@@ -16162,7 +16165,7 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
     };
   }, [Boolean(room2)]);
   const memoryNotice = !away && notice && changed !== null && roster.memory !== false;
-  const showGoal = room2 !== void 0 && !away && (goal !== void 0 || goalCompose);
+  const showGoal = room2 !== void 0 && !away && (goal !== void 0 && goal !== null || goalCompose);
   (0, import_react29.useEffect)(() => {
     if (showGoal) document.body.dataset.btGoal = "";
     else delete document.body.dataset.btGoal;
@@ -16201,6 +16204,20 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
     (0, import_react29.createElement)(NewMessagePills, { key: sessionId, sessionId, useSessions, useUi, useTurnClock }),
     (0, import_react29.createElement)(ActivityIndicator, { key: `activity:${sessionId}`, sessionId, useRoster, useSessionStatus, useSession, useLive, useWork, actions })
   );
+}
+function GoalStrip({ sessionId, useRoster, useUi, useWork, actions }) {
+  const readRoster2 = useRoster ?? (() => ({}));
+  const readUi = useUi ?? (() => void 0);
+  const roster = readRoster2((value) => value) ?? {};
+  const room2 = roster.roomsById?.[sessionId];
+  const goal = room2?.goal;
+  const composing = readUi((state) => state.goalCompose === sessionId) === true;
+  const open = readUi((state) => state.goalOpen === sessionId) === true;
+  const roomWorkKey = useWork?.((work) => room2 ? JSON.stringify(work.rooms?.[sessionId] ?? []) : "") ?? "[]";
+  const roomWork = room2 ? JSON.parse(roomWorkKey || "[]") : [];
+  const view = goal ? goalView(goal, { roster, roomWork }) : null;
+  if (room2 === void 0 || (goal === void 0 || goal === null) && !composing) return null;
+  return (0, import_react29.createElement)(GoalIsland, { room: room2, goal, view, open, composing, roomWork, roster, actions, pill: null });
 }
 function useTranscriptView() {
   const [view, setView] = (0, import_react29.useState)(null);
@@ -16549,7 +16566,7 @@ function DepartmentChatDrawer({ department, members, lead, projects, activity, o
     (0, import_react30.createElement)("div", { className: "dc-drawer-foot" }, (0, import_react30.createElement)("button", { type: "button", className: "dc-btn", onClick: onOpenConfig }, t("Open department settings")))
   );
 }
-function DepartmentChatSurface({ data, open, onOpenDetails, onClose, onOpenConfig }) {
+function DepartmentChatSurface({ data, open, onOpenDetails, onClose, onOpenConfig, island }) {
   return (0, import_react30.createElement)(
     "div",
     { className: "dc-frame" },
@@ -16561,11 +16578,13 @@ function DepartmentChatSurface({ data, open, onOpenDetails, onClose, onOpenConfi
       onOpenDetails,
       onOpenConfig
     }),
+    island ? (0, import_react30.createElement)("div", { className: "dc-goal" }, island) : null,
     open ? (0, import_react30.createElement)(DepartmentChatDrawer, { department: data.department, members: data.employees, lead: data.lead, projects: data.projects, activity: data.activity, onClose, onOpenConfig }) : null
   );
 }
 var DEPARTMENT_CHAT_CSS = `
 .dc-frame{position:relative;display:flex;flex-direction:column;width:100%;pointer-events:none}
+.dc-goal{display:flex;justify-content:center;padding:2px 0 0;pointer-events:none}
 .dc-head{display:flex;flex-direction:column;pointer-events:none}
 .dc-headbar{position:relative;display:flex;justify-content:center;align-items:flex-start;padding:10px 0 0;pointer-events:none}
 .dc-pill{position:relative;pointer-events:auto;display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:7px 13px 7px 7px;border-radius:999px;border:.5px solid var(--bt-line-2);background:var(--bt-main);color:var(--bt-ink);font:500 15px/22px var(--bt-font);box-shadow:0 2px 8px -1px color-mix(in srgb,var(--bt-ink) 6%,transparent),0 1px 2px color-mix(in srgb,var(--bt-ink) 4%,transparent);cursor:pointer;max-width:70%}
@@ -16892,6 +16911,7 @@ body.bc-project-archived [data-composer-card] button{pointer-events:none}
 .pc-badge-n{font-weight:700}
 .pc-more{width:28px;height:28px;border:0;border-radius:999px;background:transparent;color:var(--bt-ink-2);font:500 16px/1 var(--bt-font);cursor:pointer}
 .pc-titles{display:grid;min-width:0;text-align:left}
+.pc-goalstrip{display:flex;justify-content:center;padding:2px 0 0;pointer-events:none}
 .pc-goal{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-3);font:400 11px/15px var(--bt-font);max-width:360px}
 .pc-headbar{position:relative;display:flex;justify-content:center;align-items:flex-start;padding:10px 0 0;pointer-events:none}
 .pc-back{position:absolute;left:12px;top:10px;pointer-events:auto;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:999px;background:transparent;color:var(--bt-ink-2);font-size:18px;line-height:1;cursor:pointer}
@@ -17010,7 +17030,7 @@ var loadProjectEvents = async (projectId) => {
     return null;
   }
 };
-function ProjectChatSurface({ props, project, members, pendingCount, pinned, pending, activity, open, onOpenDetails, onClose, onOpenConfig }) {
+function ProjectChatSurface({ props, project, members, pendingCount, pinned, pending, activity, open, onOpenDetails, onClose, onOpenConfig, island }) {
   const archived3 = project?.status === "archived";
   (0, import_react31.useEffect)(() => {
     if (!archived3) return void 0;
@@ -17063,6 +17083,7 @@ function ProjectChatSurface({ props, project, members, pendingCount, pinned, pen
         onOpenConfig,
         expanded: open
       }),
+      island ? (0, import_react31.createElement)("div", { className: "pc-goalstrip" }, island) : null,
       archived3 ? (0, import_react31.createElement)("div", { className: "pc-archived", role: "status" }, t("Project archived. The group history stays available to read.")) : null,
       Number(pendingCount) > 0 ? (0, import_react31.createElement)("div", { className: "pc-pin-layer" }, (0, import_react31.createElement)(ProjectChatPinned, { count: pendingCount, items: Array.isArray(pinned) ? pinned : [] })) : null,
       open ? (0, import_react31.createElement)(ProjectChatDrawer, {
@@ -17209,7 +17230,8 @@ function ProjectChatHeaderSlot(props) {
         onOpenConfig: () => {
           props.actions.openCompanyPage("list");
           closeDepartment();
-        }
+        },
+        island: (0, import_react31.createElement)(GoalStrip, props)
       })
     );
   }
@@ -17267,7 +17289,8 @@ function ProjectChatHeaderSlot(props) {
       onOpenConfig: () => {
         props.actions.openCompanyPage("detail", project.id);
         close();
-      }
+      },
+      island: (0, import_react31.createElement)(GoalStrip, props)
     }),
     emptyPanel
   );
