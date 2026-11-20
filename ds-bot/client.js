@@ -1606,6 +1606,13 @@ Object.assign(ZH, HOST_ZH, {
   "Version": "版本",
   "No instructions written yet.": "还没写职责指令。",
   "Optional, shown on the team list": "可选，显示在团队列表里",
+  "Shown on the team list": "会显示在成员列表里",
+  "How this company talks and behaves": "这家公司怎么说话、怎么做事",
+  "A soul template carries the voice only: no job title, no model, no skills.": "灵魂模板只管语气：没有岗位、模型和技能。",
+  "An agent template needs a job title, so this cannot stay empty.": "能力模板要填岗位，这一栏不能空。",
+  "A template needs a name, up to 40 characters.": "模板名称不能空，最多 40 个字。",
+  "A soul template carries instructions only, so it takes no skills.": "灵魂模板只带指令，不带技能。",
+  "A soul template carries instructions only, so model and thinking level stay empty.": "灵魂模板只带指令，模型和思考强度要留空。",
   "What this job is responsible for, and how it works": "这个岗位负责什么、怎么工作",
   "{ref} (not served now)": "{ref}（当前未提供）",
   "{id} (not in this model)": "{id}（该模型没有这一档）",
@@ -10954,6 +10961,21 @@ var templateErrorText = (failure) => {
   const text = companyErrorText(failure);
   return text || t("The change could not be saved.");
 };
+var kindFieldHint = (failure) => {
+  if (failure?.code !== "company/invalid") return null;
+  switch (failure?.details?.field) {
+    case "name":
+      return { field: "name", text: t("A template needs a name, up to 40 characters.") };
+    case "role":
+      return { field: "role", text: t("An agent template needs a job title, so this cannot stay empty.") };
+    case "skills":
+      return { field: "skills", text: t("A soul template carries instructions only, so it takes no skills.") };
+    case "model":
+    case "effort":
+      return { field: "", text: t("A soul template carries instructions only, so model and thinking level stay empty.") };
+  }
+  return null;
+};
 var effortCache = /* @__PURE__ */ new Map();
 function useEffortOptions(roster, ref, actions) {
   const served = (roster?.models ?? []).find((model) => model.ref === ref);
@@ -11010,6 +11032,7 @@ function TemplatesPageView(props) {
     loading = false,
     error = "",
     failure = "",
+    failureField = "",
     preview = false,
     flash = "",
     form = null,
@@ -11075,65 +11098,88 @@ function TemplatesPageView(props) {
           "label",
           { className: "bc-field" },
           t("Template name"),
-          (0, import_react20.createElement)("input", { value: form.name, maxLength: 40, required: true, onChange: (event) => handlers.onForm?.("name", event.target.value) })
+          (0, import_react20.createElement)("input", {
+            value: form.name,
+            maxLength: 40,
+            required: true,
+            "aria-invalid": failureField === "name" ? "true" : void 0,
+            onChange: (event) => handlers.onForm?.("name", event.target.value)
+          }),
+          failureField === "name" && failure ? (0, import_react20.createElement)("p", { className: "bc-field-error", role: "alert" }, failure) : null
         ),
-        (0, import_react20.createElement)(
+        isSoul ? null : (0, import_react20.createElement)(
           "label",
           { className: "bc-field" },
           t("Job title"),
-          (0, import_react20.createElement)("input", { value: form.role ?? "", maxLength: 24, onChange: (event) => handlers.onForm?.("role", event.target.value), placeholder: t("Optional, shown on the team list") })
+          (0, import_react20.createElement)("input", {
+            value: form.role ?? "",
+            maxLength: 24,
+            "aria-required": "true",
+            "aria-invalid": failureField === "role" ? "true" : void 0,
+            onChange: (event) => handlers.onForm?.("role", event.target.value),
+            placeholder: t("Shown on the team list")
+          }),
+          failureField === "role" && failure ? (0, import_react20.createElement)("p", { className: "bc-field-error", role: "alert" }, failure) : null
         )
       ),
       (0, import_react20.createElement)(
         "label",
         { className: "bc-field" },
         t("Instructions"),
-        (0, import_react20.createElement)("textarea", { value: form.instructions ?? "", maxLength: 8e3, rows: 12, onChange: (event) => handlers.onForm?.("instructions", event.target.value), placeholder: t("What this job is responsible for, and how it works") })
+        (0, import_react20.createElement)("textarea", {
+          value: form.instructions ?? "",
+          maxLength: 8e3,
+          rows: 12,
+          onChange: (event) => handlers.onForm?.("instructions", event.target.value),
+          placeholder: isSoul ? t("How this company talks and behaves") : t("What this job is responsible for, and how it works")
+        })
       ),
-      (0, import_react20.createElement)(
-        "div",
-        { className: "bc-grid" },
-        (0, import_react20.createElement)(
-          "label",
-          { className: "bc-field" },
-          t("Model"),
-          (0, import_react20.createElement)(
-            "select",
-            { value: form.model ?? "", onChange: (event) => handlers.onForm?.("model", event.target.value) },
-            (0, import_react20.createElement)("option", { value: "" }, t("Model default")),
-            (roster.models ?? []).map((model) => (0, import_react20.createElement)("option", { key: model.ref, value: model.ref }, model.name ?? model.ref)),
-            form.model && !(roster.models ?? []).some((model) => model.ref === form.model) ? (0, import_react20.createElement)("option", { key: form.model, value: form.model }, t("{ref} (not served now)", { ref: form.model })) : null
-          )
-        ),
-        (0, import_react20.createElement)(
-          "label",
-          { className: "bc-field" },
-          t("Thinking level"),
-          (0, import_react20.createElement)(
-            "select",
-            { value: form.effort ?? "", onChange: (event) => handlers.onForm?.("effort", event.target.value) },
-            effortOptions.map((option) => (0, import_react20.createElement)("option", { key: option.value || "default", value: option.value }, option.label))
-          )
-        )
-      ),
-      (0, import_react20.createElement)(
-        "div",
-        { className: "bc-field" },
-        (0, import_react20.createElement)("span", null, t("Skills")),
+      isSoul ? (0, import_react20.createElement)("p", { className: "bc-tpl-note" }, t("A soul template carries the voice only: no job title, no model, no skills.")) : [
         (0, import_react20.createElement)(
           "div",
-          { className: "bc-tpl-skills-edit" },
-          [.../* @__PURE__ */ new Set([...(roster.capabilities ?? []).map((item) => item.name), ...form.skills ?? []])].map((name) => (0, import_react20.createElement)("button", {
-            key: name,
-            type: "button",
-            className: "bc-chip",
-            "aria-pressed": (form.skills ?? []).includes(name),
-            onClick: () => handlers.onToggleSkill?.(name)
-          }, name))
+          { key: "model", className: "bc-grid" },
+          (0, import_react20.createElement)(
+            "label",
+            { className: "bc-field" },
+            t("Model"),
+            (0, import_react20.createElement)(
+              "select",
+              { value: form.model ?? "", onChange: (event) => handlers.onForm?.("model", event.target.value) },
+              (0, import_react20.createElement)("option", { value: "" }, t("Model default")),
+              (roster.models ?? []).map((model) => (0, import_react20.createElement)("option", { key: model.ref, value: model.ref }, model.name ?? model.ref)),
+              form.model && !(roster.models ?? []).some((model) => model.ref === form.model) ? (0, import_react20.createElement)("option", { key: form.model, value: form.model }, t("{ref} (not served now)", { ref: form.model })) : null
+            )
+          ),
+          (0, import_react20.createElement)(
+            "label",
+            { className: "bc-field" },
+            t("Thinking level"),
+            (0, import_react20.createElement)(
+              "select",
+              { value: form.effort ?? "", onChange: (event) => handlers.onForm?.("effort", event.target.value) },
+              effortOptions.map((option) => (0, import_react20.createElement)("option", { key: option.value || "default", value: option.value }, option.label))
+            )
+          )
         ),
-        (0, import_react20.createElement)("small", null, t("The host refuses a Bot whose skills this DSH does not have. Marked skills are missing here."))
-      ),
-      failure ? (0, import_react20.createElement)("p", { className: "bc-exception", role: "alert" }, failure) : null,
+        (0, import_react20.createElement)(
+          "div",
+          { key: "skills", className: "bc-field" },
+          (0, import_react20.createElement)("span", null, t("Skills")),
+          (0, import_react20.createElement)(
+            "div",
+            { className: "bc-tpl-skills-edit" },
+            [.../* @__PURE__ */ new Set([...(roster.capabilities ?? []).map((item) => item.name), ...form.skills ?? []])].map((name) => (0, import_react20.createElement)("button", {
+              key: name,
+              type: "button",
+              className: "bc-chip",
+              "aria-pressed": (form.skills ?? []).includes(name),
+              onClick: () => handlers.onToggleSkill?.(name)
+            }, name))
+          ),
+          (0, import_react20.createElement)("small", null, t("The host refuses a Bot whose skills this DSH does not have. Marked skills are missing here."))
+        )
+      ],
+      failure && !failureField ? (0, import_react20.createElement)("p", { className: "bc-exception", role: "alert" }, failure) : null,
       (0, import_react20.createElement)(
         "div",
         { className: "bc-actions" },
@@ -11420,6 +11466,7 @@ function TemplatesPage(props) {
   const [archiveArmed, setArchiveArmed] = (0, import_react20.useState)(false);
   const [busy, setBusy] = (0, import_react20.useState)(false);
   const [failure, setFailure] = (0, import_react20.useState)("");
+  const [failureField, setFailureField] = (0, import_react20.useState)("");
   const [flash, setFlash] = (0, import_react20.useState)("");
   const [leavePrompt, setLeavePrompt] = (0, import_react20.useState)(null);
   const [formBase, setFormBase] = (0, import_react20.useState)(null);
@@ -11453,6 +11500,7 @@ function TemplatesPage(props) {
     setForm(null);
     setFormBase(null);
     setFailure("");
+    setFailureField("");
   };
   const cancelEdit = () => requestLeave(closeForm);
   const applySelect = (id) => {
@@ -11462,6 +11510,7 @@ function TemplatesPage(props) {
     setCopyOpen(false);
     setArchiveArmed(false);
     setFailure("");
+    setFailureField("");
     setFlash("");
   };
   const select = (id) => requestLeave(() => {
@@ -11472,11 +11521,14 @@ function TemplatesPage(props) {
     if (!onCommand) return;
     setBusy(true);
     setFailure("");
+    setFailureField("");
     try {
       await work();
       done?.();
     } catch (error) {
-      setFailure(templateErrorText(error));
+      const hint = kindFieldHint(error);
+      setFailureField(hint?.field ?? "");
+      setFailure(hint?.text ?? templateErrorText(error));
     } finally {
       setBusy(false);
     }
@@ -11484,6 +11536,7 @@ function TemplatesPage(props) {
   const startEdit = () => {
     if (!template) return;
     setFailure("");
+    setFailureField("");
     setCopyOpen(false);
     setArchiveArmed(false);
     const base = {
@@ -11497,25 +11550,37 @@ function TemplatesPage(props) {
     setForm(base);
     setFormBase({ ...base, skills: [...base.skills] });
   };
-  const saveEdit = () => run2(async () => {
-    if (!form) return;
-    await onCommand("template.update", templateUpdatePayload({
+  const editPayload = () => {
+    const isSoul = templateKind(template) === "soul";
+    return templateUpdatePayload({
       templateId: template.id,
       name: form.name.trim(),
-      role: form.role,
+      role: isSoul ? "" : form.role,
       instructions: form.instructions,
-      model: form.model,
-      effort: form.effort,
-      skills: form.skills
-    }));
-    setForm(null);
-    setFlash(t("The template was saved."));
-  });
+      model: isSoul ? "" : form.model,
+      effort: isSoul ? "" : form.effort,
+      skills: isSoul ? [] : form.skills
+    });
+  };
+  const saveEdit = () => {
+    if (!form) return;
+    if (templateKind(template) !== "soul" && !String(form.role ?? "").trim()) {
+      setFailureField("role");
+      setFailure(t("An agent template needs a job title, so this cannot stay empty."));
+      return;
+    }
+    return run2(async () => {
+      await onCommand("template.update", editPayload());
+      setForm(null);
+      setFlash(t("The template was saved."));
+    });
+  };
   const startCopy = () => {
     setCopyName("");
     setCopyOpen(true);
     setArchiveArmed(false);
     setFailure("");
+    setFailureField("");
   };
   const saveCopy = () => run2(async () => {
     const result = await onCommand("template.create", templateCopyPayload(template, copyName));
@@ -11601,16 +11666,9 @@ function TemplatesPage(props) {
     if (!prompt || !form || !onCommand) return;
     setBusy(true);
     setFailure("");
+    setFailureField("");
     try {
-      await onCommand("template.update", templateUpdatePayload({
-        templateId: template.id,
-        name: form.name.trim(),
-        role: form.role,
-        instructions: form.instructions,
-        model: form.model,
-        effort: form.effort,
-        skills: form.skills
-      }));
+      await onCommand("template.update", editPayload());
       setFlash(t("The template was saved."));
       dirtyRef.current = false;
       setForm(null);
@@ -11619,7 +11677,9 @@ function TemplatesPage(props) {
       prompt.proceed();
     } catch (error) {
       setLeavePrompt(null);
-      setFailure(templateErrorText(error));
+      const hint = kindFieldHint(error);
+      setFailureField(hint?.field ?? "");
+      setFailure(hint?.text ?? templateErrorText(error));
     } finally {
       setBusy(false);
     }
@@ -11680,6 +11740,7 @@ function TemplatesPage(props) {
     loading: props.loading,
     error: props.error,
     failure,
+    failureField,
     preview,
     flash,
     form,
@@ -11772,6 +11833,7 @@ var TEMPLATES_CSS = `
 .bc-tpl-copyrow .bc-actions{margin-top:0}
 .bc-tpl-foot{display:flex;align-items:center;gap:10px;margin-top:16px;padding-top:12px;border-top:1px solid var(--bt-line);min-height:32px}
 .bc-tpl-quiet{font-size:12px;line-height:17px;color:var(--bt-ink-3);border:0;background:none;padding:0}
+.bc-field-error{margin:0;font-size:12px;line-height:17px;font-weight:400;color:var(--bt-danger)}
 .bc-tpl-kind{display:inline-block;margin:6px 0 0;padding:1px 7px;border:1px solid var(--bt-line-2);border-radius:999px;font-size:11px;line-height:16px;color:var(--bt-ink-2)}
 .bc-tpl-preview{margin:12px 0 0;padding:10px 12px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-hover)}
 .bc-tpl-preview-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 6px;font-size:12px;line-height:17px;font-weight:600;color:var(--bt-ink-2)}

@@ -10,7 +10,7 @@ import { build } from 'esbuild'
 const PLUGIN = dirname(dirname(fileURLToPath(import.meta.url)))
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { TemplatesPage, TemplatesPageView, TEMPLATES_CSS, sortedTemplates, overrideText, formDirty, templateUpdatePayload, templateCopyPayload, createBotPayload, templateErrorText, templateKind, firstSentence, previewPayload } from './src/client/templates-page.js'\nexport { askLeave } from './src/client/leave-guard.js'",
+    contents: "export { TemplatesPage, TemplatesPageView, TEMPLATES_CSS, sortedTemplates, overrideText, formDirty, templateUpdatePayload, templateCopyPayload, createBotPayload, templateErrorText, templateKind, firstSentence, previewPayload, kindFieldHint } from './src/client/templates-page.js'\nexport { askLeave } from './src/client/leave-guard.js'",
     resolveDir: PLUGIN,
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -29,7 +29,7 @@ runInNewContext(outputFiles[0].text, sandbox)
 const {
   TemplatesPageView, TEMPLATES_CSS, sortedTemplates,
   templateUpdatePayload, templateCopyPayload, createBotPayload, templateErrorText,
-  templateKind, firstSentence, previewPayload,
+  templateKind, firstSentence, previewPayload, kindFieldHint,
 } = module.exports
 
 const text = node => {
@@ -64,6 +64,11 @@ const copy = (patch = {}) => ({
   role: '前端工程师', instructions: '写页面，保持键盘可用。', model: 'deepseek/deepseek-v4', effort: 'medium',
   skills: ['browser', 'docs'], version: 3, status: 'active', created_at: 2,
   local_overrides: { effort: 'medium', skills: ['browser', 'docs'] }, ...patch,
+})
+const soul = (patch = {}) => ({
+  id: 'tpl_soul', company_id: 'co_1', name: '公司默认语气', kind: 'soul', source: 'builtin', origin_template_id: null,
+  role: null, instructions: '你说话像一位靠得住的同事。', model: null, effort: null,
+  skills: [], version: 1, status: 'active', created_at: 0, local_overrides: {}, ...patch,
 })
 const roster = {
   ready: true,
@@ -557,4 +562,89 @@ test('a clean editor leaves without a question', () => {
   view.tree.props.handlers.onCancelEdit()
   assert.equal(view.tree.props.leavePrompt, false)
   assert.equal(view.tree.props.form, null)
+})
+
+// --- 1.7: the editor only offers what a kind can carry -----------------------
+
+test('a soul template is edited with name and instructions only', () => {
+  const soulForm = { name: '公司默认语气', role: '', instructions: '你说话像一位靠得住的同事。', model: 'deepseek/deepseek-v4', effort: 'medium', skills: ['browser'] }
+  const templates = sortedTemplates([soul(), builtin(), copy()])
+  const tree = TemplatesPageView(props({ templates, template: templates[0], form: soulForm }))
+  const labels = collect(tree, node => node.type === 'label').map(text)
+  assert.match(labels.join('|'), /Template name/)
+  assert.match(labels.join('|'), /Instructions/)
+  assert.doesNotMatch(labels.join('|'), /Job title/, 'a soul has no job title')
+  assert.doesNotMatch(labels.join('|'), /Model/, 'a soul names no model')
+  assert.doesNotMatch(labels.join('|'), /Thinking level/, 'a soul names no thinking level')
+  assert.doesNotMatch(labels.join('|'), /Skills/, 'a soul carries no skills')
+  assert.ok(button(tree, 'Save changes'))
+})
+
+test('an agent template keeps a required job title', () => {
+  const form = { name: '项目统筹', role: '', instructions: '拆任务。', model: '', effort: '', skills: [] }
+  const tree = TemplatesPageView(props({ form }))
+  const role = fields(tree).find(node => node.type === 'input' && node.props.maxLength === 24)
+  assert.ok(role, 'the job title input is there')
+  assert.equal(role.props['aria-required'], 'true')
+  assert.ok(collect(tree, node => node.type === 'label').some(node => text(node).includes('Job title')))
+})
+
+test('a refused save puts the sentence beside the field it is about', () => {
+  const form = { name: '项目统筹', role: '  ', instructions: '', model: '', effort: '', skills: [] }
+  const tree = TemplatesPageView(props({ form, failure: 'An agent template needs a job title, so this cannot stay empty.', failureField: 'role' }))
+  const errors = byClass(tree, 'bc-field-error')
+  assert.equal(errors.length, 1)
+  assert.match(text(errors[0]), /job title/)
+  assert.equal(byClass(tree, 'bc-exception').length, 0, 'the message is not repeated at the bottom')
+  assert.equal(fields(tree).find(node => node.props.maxLength === 24).props['aria-invalid'], 'true')
+})
+
+test('a kind refusal is read from the field the host names', () => {
+  assert.equal(plain(kindFieldHint({ code: 'company/invalid', details: { field: 'role' } })).field, 'role')
+  assert.equal(plain(kindFieldHint({ code: 'company/invalid', details: { field: 'skills' } })).field, 'skills')
+  assert.equal(plain(kindFieldHint({ code: 'company/invalid', details: { field: 'model' } })).field, '', 'a hidden field is reported at the bottom')
+  assert.equal(kindFieldHint({ code: 'template/name-taken' }), null)
+  assert.equal(kindFieldHint({ code: 'company/invalid', details: {} }), null)
+})
+
+test('an agent template without a job title never reaches the host', async () => {
+  const commands = []
+  const view = containerRenderer(boardProps({ onCommand: async (command, fields) => { commands.push([command, fields]); return { body: {} } } }))
+  view.tree.props.handlers.onStartEdit()
+  view.tree.props.handlers.onForm('role', '   ')
+  view.tree.props.handlers.onSave()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(commands, [], 'the host is not asked')
+  assert.equal(view.tree.props.failureField, 'role')
+  assert.match(view.tree.props.failure, /job title/)
+})
+
+test('saving a soul template sends the fields it cannot carry empty', async () => {
+  const commands = []
+  const view = containerRenderer(boardProps({
+    data: { templates: [soul(), builtin(), copy()] },
+    onCommand: async (command, fields) => { commands.push([command, fields]); return { body: {} } },
+  }))
+  view.tree.props.handlers.onStartEdit()
+  view.tree.props.handlers.onForm('role', '填了也不该发出去')
+  view.tree.props.handlers.onSave()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(commands[0][0], 'template.update')
+  assert.deepEqual(plain(commands[0][1]), {
+    template_id: 'tpl_soul', name: '公司默认语气', role: null,
+    instructions: '你说话像一位靠得住的同事。', model: null, effort: null, skills: [],
+  })
+})
+
+test('a refused soul save shows the reason without closing the editor', async () => {
+  const view = containerRenderer(boardProps({
+    data: { templates: [soul(), builtin(), copy()] },
+    onCommand: async () => { throw Object.assign(new Error('company/invalid'), { code: 'company/invalid', details: { field: 'skills' } }) },
+  }))
+  view.tree.props.handlers.onStartEdit()
+  view.tree.props.handlers.onSave()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.ok(view.tree.props.form, 'the draft stays')
+  assert.equal(view.tree.props.failureField, 'skills')
+  assert.match(view.tree.props.failure, /instructions only/)
 })
