@@ -9,12 +9,13 @@ import { CheckIcon, TrashIcon } from './icons.js'
 import { Switch } from './bot-settings.js'
 import { dateLocale, hostText, t } from './i18n.js'
 
-const ENDPOINTS = [['ollama', 'Ollama'], ['openai', 'OpenAI-compatible']]
+const ENDPOINTS = [['ollama', 'Ollama'], ['openai', 'OpenAI-compatible'], ['local', 'This computer']]
 const SLICES_SHOWN = 20
 // The host names the value it lacks; the page says what that value is.
 const PROBLEMS = {
   'base_url is not set': 'The service address is not set.',
   'model is not set': 'The model name is not set.',
+  'model_dir is not set': 'The model directory is not set.',
 }
 
 // A failure in the interface language; the dialog's error line shows it.
@@ -28,6 +29,10 @@ export const formOf = state => ({
   endpoint: state?.endpoint ?? 'ollama',
   base_url: state?.base_url ?? '',
   model: state?.model ?? '',
+  // Only the local endpoint uses these two: a service has an address, a model in this
+  // process has a directory.
+  model_dir: state?.model_dir ?? '',
+  runtime_dir: state?.runtime_dir ?? '',
 })
 
 // The fields that differ from what the host has. One save carries every one of them, so
@@ -39,6 +44,8 @@ export const patchOf = (state, form) => {
   if (form.endpoint !== (state.endpoint ?? 'ollama')) patch.endpoint = form.endpoint
   if (bareUrl(form.base_url) !== bareUrl(state.base_url)) patch.base_url = form.base_url
   if (String(form.model ?? '').trim() !== (state.model ?? '')) patch.model = form.model
+  if (String(form.model_dir ?? '').trim() !== (state.model_dir ?? '')) patch.model_dir = form.model_dir
+  if (String(form.runtime_dir ?? '').trim() !== (state.runtime_dir ?? '')) patch.runtime_dir = form.runtime_dir
   return Object.keys(patch).length === 0 ? null : patch
 }
 
@@ -92,7 +99,8 @@ export function statusOf(state) {
   if (state.problem) {
     return { tone: 'warn', title: t('Local memory is off: {problem}', { problem: t(PROBLEMS[state.problem] ?? state.problem) }), hint: t('Fill it in below and save.'), counts }
   }
-  return { tone: 'on', title: t('Local memory is on.'), hint: t('{model} at {url}', { model: state.model, url: state.base_url }), counts, error: state.last_error ?? '' }
+  const where = state.endpoint === 'local' ? state.model_dir : state.base_url
+  return { tone: 'on', title: t('Local memory is on.'), hint: t('{model} at {url}', { model: state.model, url: where }), counts, error: state.last_error ?? '' }
 }
 
 function StatusBanner({ status }) {
@@ -140,24 +148,41 @@ export function MemoryPageView(props) {
       h(Row, {
         key: 'switch',
         label: t('Local memory'),
-        hint: t('Slices are sent to a service you run on this computer. Turning this off never deletes them.'),
+        hint: form.endpoint === 'local'
+          ? t('Slices are turned into vectors by a model inside this app. Turning this off never deletes them.')
+          : t('Slices are sent to a service you run on this computer. Turning this off never deletes them.'),
       }, h(Switch, { label: t('Local memory'), on: form.enabled, disabled: state === null || saving, onChange: props.onToggle })),
       h(Row, { key: 'endpoint', label: t('Service'), hint: t('The shape of the API the service answers.') },
         h('select', {
           className: 'bt-select', 'aria-label': t('Service'), value: form.endpoint, disabled: saving,
           onChange: event => props.onEdit({ endpoint: event.target.value }),
         }, ENDPOINTS.map(([id, label]) => h('option', { key: id, value: id }, label)))),
-      h(Row, { key: 'base', label: t('Service address'), hint: t('Where the service listens, such as http://127.0.0.1:11434') },
+      form.endpoint === 'local' ? null : h(Row, { key: 'base', label: t('Service address'), hint: t('Where the service listens, such as http://127.0.0.1:11434') },
         h('input', {
           className: 'bt-input', type: 'text', value: form.base_url, disabled: saving, spellCheck: false,
           placeholder: form.endpoint === 'openai' ? 'http://127.0.0.1:8080/v1' : 'http://127.0.0.1:11434',
           'aria-label': t('Service address'),
           onChange: event => props.onEdit({ base_url: event.target.value }),
         })),
-      h(Row, { key: 'model', label: t('Model name'), hint: t('The embedding model the service runs, such as bge-m3') },
+      form.endpoint === 'local' ? h(Row, { key: 'model_dir', label: t('Model directory'), hint: t('The folder holding the model files, such as ~/models') },
+        h('input', {
+          className: 'bt-input', type: 'text', value: form.model_dir, disabled: saving, spellCheck: false,
+          placeholder: '~/models', 'aria-label': t('Model directory'),
+          onChange: event => props.onEdit({ model_dir: event.target.value }),
+        })) : null,
+      form.endpoint === 'local' ? h(Row, { key: 'runtime_dir', label: t('Runtime directory'), hint: t('Optional: the folder with the ONNX runtime. Empty uses the ones this app ships with.') },
+        h('input', {
+          className: 'bt-input', type: 'text', value: form.runtime_dir, disabled: saving, spellCheck: false,
+          placeholder: '', 'aria-label': t('Runtime directory'),
+          onChange: event => props.onEdit({ runtime_dir: event.target.value }),
+        })) : null,
+      h(Row, { key: 'model', label: t('Model name'), hint: form.endpoint === 'local'
+        ? t('The model that runs inside this app, such as Xenova/paraphrase-multilingual-MiniLM-L12-v2')
+        : t('The embedding model the service runs, such as bge-m3') },
         h('input', {
           className: 'bt-input', type: 'text', value: form.model, disabled: saving, spellCheck: false,
-          placeholder: 'bge-m3', 'aria-label': t('Model name'),
+          placeholder: form.endpoint === 'local' ? 'Xenova/paraphrase-multilingual-MiniLM-L12-v2' : 'bge-m3',
+          'aria-label': t('Model name'),
           onChange: event => props.onEdit({ model: event.target.value }),
         })),
       h('div', { key: 'actions', className: 'bt-mempage-actions' },
@@ -218,6 +243,8 @@ export function MemoryPageView(props) {
           }, summarySaving ? t('Saving…') : t('Save')),
           summarySaved ? h('span', { key: 'saved', className: 'bt-mempage-saved' }, h(CheckIcon), t('Saved.')) : null,
           summaryNotice ? h('span', { key: 'notice', className: 'bt-mempage-notice', role: 'alert' }, summaryNotice) : null),
+        h(Row, { key: 'threshold', label: t('Merge threshold'), hint: t('Calibrated on real vectors of {model}; two slices closer than this become one summary.', { model: summaryState.last_result?.model ?? summaryState.model ?? t('the embedding model') }) },
+          h('span', { className: 'bt-mempage-threshold', 'data-model': summaryState.last_result?.model ?? '' }, String(summaryState.merge_threshold ?? 0.86))),
         summaryState.settings_path ? h('div', { key: 'path', className: 'bt-mempage-path' }, t('Settings are kept in {path}', { path: summaryState.settings_path })) : null)
       : null,
 

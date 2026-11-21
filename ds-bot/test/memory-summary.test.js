@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { createSliceStore } from '../src/host/memory-slices.js'
-import { MERGE_MAX, MERGE_THRESHOLD, cosine, groupSlices, install, normalizeSettingsPatch, resolveSummarySettings, summaryText } from '../src/host/memory-summary.js'
+import { MERGE_MAX, MERGE_THRESHOLD, THRESHOLD_MAX, THRESHOLD_MIN, cosine, dominantModel, groupSlices, install, normalizeSettingsPatch, resolveSummarySettings, summaryText, thresholdFor } from '../src/host/memory-summary.js'
 
 const openDir = () => mkdtempSync(join(tmpdir(), 'ds-bot-summary-'))
 
@@ -281,4 +281,67 @@ test('a saved settings file wins over the plugin config, and save reaches the ne
   const refused = loaded.rt.memorySummary.save({ timeout_ms: 5 })
   assert.equal(refused.ok, false)
   assert.equal(refused.field, 'timeout_ms')
+})
+
+// A 384-dimensional embedding model puts two phrasings of one subject near 0.80 — under the
+// 0.86 the contract started with, over a value calibrated on real vectors. The threshold is
+// therefore looked up by the model named on the rows, not assumed once.
+const MINI = 'Xenova/paraphrase-multilingual-MiniLM-L12-v2'
+const miniSlice = (id, text, embedding) => ({ ...slice(id, text, { embedding }), embedding_model: MINI })
+
+test('the threshold names a model: per-model first, then global, then 0.86', () => {
+  assert.equal(thresholdFor('', {}), MERGE_THRESHOLD)
+  assert.equal(thresholdFor(MINI, { merge_threshold: 0.8 }), 0.8)
+  assert.equal(thresholdFor(MINI, { merge_threshold: 0.9, merge_thresholds: { [MINI]: 0.74 } }), 0.74)
+  assert.equal(thresholdFor('other', { merge_threshold: 0.9, merge_thresholds: { [MINI]: 0.74 } }), 0.9)
+  // A hand-edited file with a number outside the range is not a calibration.
+  assert.equal(thresholdFor(MINI, { merge_thresholds: { [MINI]: 1.4 } }), MERGE_THRESHOLD)
+  assert.equal(thresholdFor(MINI, { merge_threshold: 0.1 }), MERGE_THRESHOLD)
+  assert.equal(THRESHOLD_MIN, 0.5)
+  assert.equal(THRESHOLD_MAX, 0.95)
+})
+
+test('the dominant model is the one most vectors came from, new rows included', () => {
+  assert.equal(dominantModel([]), '')
+  assert.equal(dominantModel([miniSlice('d1', '甲', [1, 0]), slice('d2', '乙', { embedding: [1, 0] })]), MINI, 'the mock model name on the plain slice ties; the first seen wins at equal counts')
+  const rows = [miniSlice('d3', '丙', [1, 0]), miniSlice('d4', '丁', [1, 0]), { ...slice('d5', '戊', { embedding: [1, 0] }), embedding_model: 'bge-m3' }, slice('d6', '己', { embedding: null })]
+  assert.equal(dominantModel(rows), MINI, 'rows without a vector do not vote')
+})
+
+test('two slices at 0.80 merge only after the model has a calibrated threshold', async () => {
+  const dir = openDir()
+  const { rt, store } = runtimeFor({ dir })
+  await store.append([
+    miniSlice('th_a', '蓝色方案的季度预算表先压差旅。', [1, 0, 0]),
+    miniSlice('th_b', '蓝色方案季度预算差旅压到 8 万。', [0.8, 0.6, 0]),
+  ])
+  const first = await rt.memorySummary.run('b1')
+  assert.equal(first.groups, 0, '0.86 refuses a pair that sits at 0.80')
+  assert.equal(first.threshold, MERGE_THRESHOLD)
+  assert.equal(rt.memorySummary.state().merge_threshold, MERGE_THRESHOLD)
+
+  const saved = rt.memorySummary.save({ merge_thresholds: { [MINI]: 0.74 } })
+  assert.equal(saved.ok, true)
+  assert.equal(rt.memorySummary.state().merge_threshold, 0.74, 'the page shows what the next run will use')
+
+  const second = await rt.memorySummary.run('b1')
+  assert.equal(second.merged, 2)
+  assert.equal(second.threshold, 0.74)
+  const summary = store.read().find(row => Array.isArray(row.summary_of))
+  assert.deepEqual(summary.summary_of.sort(), ['th_a', 'th_b'])
+  assert.equal(rt.memorySummary.state().merge_threshold, 0.74, 'a run that left no vectors behind keeps the calibration on show')
+})
+
+test('the settings patch checks a threshold the way it checks an address', () => {
+  assert.deepEqual(normalizeSettingsPatch({ merge_threshold: 0.74 }), { ok: true, next: { merge_threshold: 0.74 } })
+  assert.deepEqual(normalizeSettingsPatch({ merge_thresholds: { [MINI]: 0.7401 } }), { ok: true, next: { merge_thresholds: { [MINI]: 0.74 } } })
+  const low = normalizeSettingsPatch({ merge_threshold: 0.4 })
+  assert.equal(low.ok, false)
+  assert.equal(low.field, 'merge_threshold')
+  const map = normalizeSettingsPatch({ merge_thresholds: { [MINI]: 'close' } })
+  assert.equal(map.ok, false)
+  assert.equal(map.field, 'merge_thresholds')
+  const list = normalizeSettingsPatch({ merge_thresholds: [0.7] })
+  assert.equal(list.ok, false)
+  assert.equal(list.field, 'merge_thresholds')
 })
