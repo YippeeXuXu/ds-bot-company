@@ -42,7 +42,9 @@ export const RECALL_QUERY_MAX = 2000
 // should not outrank one the Bot keeps reaching for (4.5).
 export const DECAY_DAYS = 90
 export const DECAY_FACTOR = 0.5
-// The last few answers, so a retry or a second render in one turn costs no read.
+// The last few answers, so a retry or a second render in one turn costs no read. A new
+// message empties the Session's entries (see `forgetSession`): the next turn must see the
+// slices as they are now, or its write-back would restore the count it read last turn.
 const CACHE_SIZE = 64
 const CJK_RUN = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]+/g
 const CJK_STOP = new Set(['的', '了', '是', '在', '吗', '呢', '吧', '啊', '嘛', '呀', '哦', '着', '过', '得', '地', '和', '与', '就', '都', '也', '很', '这', '那', '些', '么', '什', '怎', '不', '有', '要', '会', '能', '可', '还', '又', '再', '才', '只', '把', '被', '让', '给', '个', '我', '你', '他', '她', '它', '们'])
@@ -153,13 +155,23 @@ export function install(rt) {
   // the turn's timer. A Bot's own handoff and kickoff messages are not the user's words.
   const lastMessageOf = new Map()
 
+  // A claim is a new turn, so what the last turn recalled is no longer an answer for this
+  // one: a slice may have been merged, removed, or used since, and a cached row still
+  // carries the `uses` it had when read, so writing that back would freeze the count. The
+  // cache lives one turn, not one store version; two renders inside a turn still share it.
+  const forgetSession = (id) => {
+    const prefix = `${id}\u0000`
+    for (const key of cache.keys()) if (key.startsWith(prefix)) cache.delete(key)
+  }
+
   const rememberMessage = (payload) => {
+    const id = payload?.agent?.session?.id
+    if (typeof id === 'string' && id !== '') forgetSession(id)
     const message = payload?.message
     const source = message?.source
     const kind = source?.kind
     if (kind !== 'user' && kind !== SOURCE_KIND) return
     if (kind === SOURCE_KIND && (source?.handoff === true || source?.role === 'kickoff' || source?.role === 'goal')) return
-    const id = payload?.agent?.session?.id
     if (typeof id !== 'string' || id === '') return
     const content = message?.content
     const text = (typeof content === 'string' ? content.trim() : textOf(content)).trim()

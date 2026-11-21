@@ -30,6 +30,10 @@ function harness({ rows = [], hang = false, broken = false } = {}) {
   const listeners = new Map()
   const sections = []
   const patches = []
+  let lists = 0
+  // The store holds its own copy: a write replaces the row, so a cached object keeps the
+  // `uses` it had when it was read, exactly as a file read followed by a write would.
+  let stored = rows
   const on = (name, fn) => {
     const list = listeners.get(name) ?? []
     list.push(fn)
@@ -51,18 +55,21 @@ function harness({ rows = [], hang = false, broken = false } = {}) {
     pastOwners: new Map([['g2', { botId: 'b1', roomId: 'r0' }]]),
     memorySlices: {
       list: () => {
+        lists += 1
         if (broken) throw new Error('the slice file is unreadable')
-        return hang ? new Promise(() => {}) : rows
+        return hang ? new Promise(() => {}) : stored
       },
       patch: updates => {
         patches.push(updates)
-        return Promise.resolve(updates.length)
+        const byId = new Map((updates ?? []).map(update => [update.id, update]))
+        stored = stored.map(entry => (byId.has(entry.id) ? { ...entry, ...byId.get(entry.id) } : entry))
+        return Promise.resolve((updates ?? []).length)
       },
     },
     warn: () => {},
   }
   install(rt)
-  return { listeners, sections, rt, patches }
+  return { listeners, sections, rt, patches, lists: () => lists }
 }
 
 // A step claims the user's message from the inbox just before it assembles the prompt, and
@@ -295,4 +302,31 @@ test('a recalled slice has its use and time written back', async () => {
   assert.equal(update.id, 'sl_a')
   assert.equal(update.uses, 1)
   assert.match(update.last_used_at, /^\d{4}-\d{2}-\d{2}T/)
+})
+
+test('the same question in a new turn is recalled again and keeps counting', async () => {
+  const h = harness({ rows: [row('sl_a', '蓝色方案的预算表在共享盘 finance/2026Q1.xlsx')] })
+  say(h, '蓝色方案的预算表放哪了')
+  await assemble(h)
+  assert.equal(h.lists(), 1)
+  assert.equal(h.patches.length, 1)
+  assert.equal(h.patches[0][0].uses, 1)
+  // The same sentence again in one Session is a new turn: the store may have changed since
+  // (a merge, a removal, a use), so it is read again and the count moves from what it holds.
+  say(h, '蓝色方案的预算表放哪了')
+  const second = await assemble(h)
+  assert.match(sectionOf(second, 'bot-recall').text, /蓝色方案/)
+  assert.equal(h.lists(), 2, 'a new turn reads the slice store again')
+  assert.equal(h.patches.length, 2)
+  assert.equal(h.patches[1][0].uses, 2, 'the count is the store\'s, not the cached one')
+})
+
+test('two renders of one turn share one read', async () => {
+  const h = harness({ rows: [row('sl_a', '蓝色方案的预算表在共享盘 finance/2026Q1.xlsx')] })
+  say(h, '蓝色方案的预算表放哪了')
+  await assemble(h)
+  await assemble(h)
+  assert.equal(h.lists(), 1, 'a retry or a second render in the same turn costs no read')
+  assert.equal(h.patches.length, 2)
+  assert.equal(h.patches[1][0].uses, 1, 'a retry in one turn does not count as a second use')
 })
