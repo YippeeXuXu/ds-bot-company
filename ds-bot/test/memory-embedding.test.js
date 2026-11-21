@@ -14,6 +14,7 @@ import {
   embedTexts,
   embeddingsUrl,
   install,
+  normalizeSettingsPatch,
   resolveEmbeddingConfig,
 } from '../src/host/memory-embedding.js'
 
@@ -196,13 +197,61 @@ test('scan picks up slices that never got a vector, and leaves the embedded ones
   try {
     const { rt, patched } = runtimeFor({ home, config: { memoryEmbedding: settingsFor(service.base) } })
     assert.deepEqual(rt.memoryEmbedding.settings.endpoint, 'ollama')
-    assert.deepEqual(EMBEDDING_ENDPOINTS, ['ollama', 'openai'])
+    assert.deepEqual(EMBEDDING_ENDPOINTS, ['ollama', 'openai', 'local'])
     assert.equal(await rt.memoryEmbedding.flush().then(answer => answer.embedded), 1)
     assert.deepEqual(patched[0].map(update => update.id), ['sl_new'])
     assert.equal(rt.memoryEmbedding.pending(), 0)
   } finally {
     await service.close()
   }
+})
+
+test('the local endpoint is configured by a model and a directory, not an address', () => {
+  const home = openHome()
+  const settings = resolveEmbeddingConfig({ home, memoryEmbedding: { enabled: true, endpoint: 'local' } })
+  assert.equal(settings.endpoint, 'local')
+  assert.equal(settings.enabled, true)
+  assert.equal(settings.model, 'Xenova/paraphrase-multilingual-MiniLM-L12-v2', 'the shipped model is the default')
+  assert.equal(settings.modelDir, join(home, 'models'), 'the default directory is under the plugin home')
+  assert.equal(settings.baseUrl, '')
+  assert.equal(embeddingsUrl(settings), '', 'a model in this process has no address to call')
+  const named = resolveEmbeddingConfig({
+    home,
+    memoryEmbedding: { enabled: true, endpoint: 'local', model: 'Xenova/other', model_dir: '/models/x', runtime_dir: '/runtime' },
+  })
+  assert.equal(named.modelDir, '/models/x')
+  assert.equal(named.runtimeDir, '/runtime')
+  const noDir = resolveEmbeddingConfig({ memoryEmbedding: { enabled: true, endpoint: 'local' } })
+  assert.equal(noDir.enabled, false)
+  assert.equal(noDir.problem, 'model_dir is not set', 'without a home there is no directory to fall back to')
+})
+
+test('the settings patch carries the two local directories and refuses an absurd one', () => {
+  assert.deepEqual(normalizeSettingsPatch({ endpoint: 'local', model_dir: '/models', runtime_dir: '' }), { ok: true, next: { endpoint: 'local', model_dir: '/models', runtime_dir: '' } })
+  const long = normalizeSettingsPatch({ model_dir: 'x'.repeat(401) })
+  assert.equal(long.ok, false)
+  assert.equal(long.field, 'model_dir')
+  const bad = normalizeSettingsPatch({ endpoint: 'nope' })
+  assert.equal(bad.ok, false)
+  assert.equal(bad.field, 'endpoint')
+})
+
+test('a local round without model files fails loudly and keeps the slice queued', async () => {
+  const home = openHome()
+  const missing = join(home, 'nowhere')
+  const { rt, patched, warnings } = runtimeFor({ home, config: { memoryEmbedding: { enabled: true, endpoint: 'local', model_dir: missing } } })
+  assert.equal(rt.memoryEmbedding.state().model_dir, missing)
+  rt.memoryEmbedding.queue(sliceRows()[0])
+  const answer = await rt.memoryEmbedding.flush()
+  assert.equal(answer.failed, 1)
+  assert.match(answer.error, /model_dir has no/)
+  assert.equal(rt.memoryEmbedding.pending(), 1, 'a failure must not drop the slice')
+  assert.equal(patched.length, 0)
+  assert.ok(warnings.length >= 1)
+  const test = await rt.memoryEmbedding.test()
+  assert.equal(test.ok, false)
+  assert.equal(test.url, null, 'a local test has no address to show')
+  assert.match(test.error, /model_dir has no/)
 })
 
 test('the url keeps a base that already ends in the part the service names', () => {

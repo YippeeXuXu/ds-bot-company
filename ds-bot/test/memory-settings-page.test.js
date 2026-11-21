@@ -87,10 +87,28 @@ const view = (patch = {}) => render(MemoryPageView({
 }))
 
 test('formOf follows what was asked, not whether the service could start', () => {
-  assert.deepEqual(plain(formOf(off)), { enabled: false, endpoint: 'ollama', base_url: '', model: '' })
-  assert.deepEqual(plain(formOf(missing)), { enabled: true, endpoint: 'ollama', base_url: '', model: '' })
-  assert.deepEqual(plain(formOf(ready)), { enabled: true, endpoint: 'ollama', base_url: 'http://127.0.0.1:11434', model: 'bge-m3' })
-  assert.deepEqual(plain(formOf(null)), { enabled: false, endpoint: 'ollama', base_url: '', model: '' })
+  const empty = { enabled: false, endpoint: 'ollama', base_url: '', model: '', model_dir: '', runtime_dir: '' }
+  assert.deepEqual(plain(formOf(off)), empty)
+  assert.deepEqual(plain(formOf(missing)), { ...empty, enabled: true })
+  assert.deepEqual(plain(formOf(ready)), { ...empty, enabled: true, base_url: 'http://127.0.0.1:11434', model: 'bge-m3' })
+  assert.deepEqual(plain(formOf(null)), empty)
+})
+
+test('the local endpoint asks for a directory instead of an address', () => {
+  const localState = { ...ready, endpoint: 'local', base_url: '', model: 'Xenova/paraphrase-multilingual-MiniLM-L12-v2', model_dir: '/tmp/models', runtime_dir: '' }
+  const tree = view({ state: localState, form: formOf(localState) })
+  const labels = collect(tree, node => node.type === 'row').map(node => node.props.label)
+  assert.ok(labels.includes('Model directory'), 'a model in this process lives in a directory')
+  assert.ok(labels.includes('Runtime directory'))
+  assert.equal(labels.filter(label => label === 'Service address').length, 1, 'only the summary model still has an address to type')
+
+  const localTrace = { enabled: true, wanted: true, problem: null, endpoint: 'local', base_url: '', model: 'Xenova/paraphrase-multilingual-MiniLM-L12-v2', model_dir: '/tmp/models', runtime_dir: '', timeout_ms: 15000, batch: 16, pending: 0, embedded: 0, failed: 0, rounds: 0, last_error: null, last_ok_at: null, last_test: null, retry_at: null, saved: null, settings_path: '/tmp/home/memory-embedding.json' }
+  const status = statusOf(localTrace)
+  assert.equal(status.tone, 'on')
+  assert.equal(status.hint, 'Xenova/paraphrase-multilingual-MiniLM-L12-v2 at /tmp/models', 'the on line names the directory, not an empty address')
+
+  const patch = patchOf(localState, { ...formOf(localState), model_dir: '/models/other', runtime_dir: '/runtime' })
+  assert.deepEqual(plain(patch), { model_dir: '/models/other', runtime_dir: '/runtime' })
 })
 
 test('patchOf carries only the fields that changed, all in one save', () => {

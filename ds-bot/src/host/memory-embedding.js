@@ -2,9 +2,11 @@
 // as a local embedding service is configured. Until one is, nothing is called and the two
 // embedding fields stay null — the model choice is the user's, not this module's.
 //
-// Two service shapes are accepted, because the choice is still open:
+// Three shapes are accepted:
 //   ollama   POST <base>/api/embeddings  {model, prompt}    -> {embedding: [...]}
 //   openai   POST <base>/v1/embeddings   {model, input: []} -> {data: [{index, embedding}]}
+//   local    no service at all: a quantized ONNX model runs in this process (see
+//            embedding-local.js). It needs `model` and `model_dir`, not an address.
 //
 // A conversation never waits for this. A slice is written first, its id is queued, and a
 // later round fills the vector in; a round that fails leaves the row as it was, keeps the
@@ -18,8 +20,9 @@
 // already uses the new service.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { LOCAL_MODEL, embedLocalTexts } from './embedding-local.js'
 
-export const EMBEDDING_ENDPOINTS = ['ollama', 'openai']
+export const EMBEDDING_ENDPOINTS = ['ollama', 'openai', 'local']
 export const SETTINGS_FILE = 'memory-embedding.json'
 export const DEFAULT_TIMEOUT_MS = 15_000
 export const DEFAULT_BATCH = 16
@@ -39,17 +42,28 @@ export function resolveEmbeddingConfig(config = {}) {
   const raw = config.memoryEmbedding ?? {}
   const endpoint = EMBEDDING_ENDPOINTS.includes(raw.endpoint) ? raw.endpoint : 'ollama'
   const baseUrl = stripSlash(trimmed(raw.base_url))
-  const model = trimmed(raw.model)
+  const local = endpoint === 'local'
+  // The local model runs in this process, so it has no address: "configured" means a model
+  // name and a directory with its weights. The name defaults to the model we ship against,
+  // and the directory to `<home>/models`, which is where a shipped build looks first.
+  const home = trimmed(config.home)
+  const model = local ? trimmed(raw.model) || LOCAL_MODEL : trimmed(raw.model)
+  const modelDir = trimmed(raw.model_dir) !== '' ? trimmed(raw.model_dir) : local && home !== '' ? join(home, 'models') : ''
+  const runtimeDir = trimmed(raw.runtime_dir)
   const timeoutMs = Number.isFinite(raw.timeout_ms) && raw.timeout_ms > 0 ? Math.round(raw.timeout_ms) : DEFAULT_TIMEOUT_MS
   const batch = Number.isInteger(raw.batch) && raw.batch > 0 ? raw.batch : DEFAULT_BATCH
   // Off unless asked for: a module that is wired in but never configured must not call out.
   const wanted = raw.enabled === true
-  const problem = !wanted ? null : baseUrl === '' ? 'base_url is not set' : model === '' ? 'model is not set' : null
-  return { endpoint, baseUrl, model, timeoutMs, batch, wanted, enabled: wanted && problem === null, problem }
+  const problem = !wanted ? null
+    : local ? modelDir === '' ? 'model_dir is not set' : model === '' ? 'model is not set' : null
+      : baseUrl === '' ? 'base_url is not set' : model === '' ? 'model is not set' : null
+  return { endpoint, baseUrl, model, modelDir, runtimeDir, timeoutMs, batch, wanted, enabled: wanted && problem === null, problem }
 }
 
 // Where the call goes, tolerating a base that already ends in the part the service names.
 export const embeddingsUrl = settings => {
+  // The local model has no address to call; the page shows the model and its directory instead.
+  if (settings.endpoint === 'local') return ''
   if (settings.endpoint === 'openai') {
     return settings.baseUrl.endsWith('/v1') ? `${settings.baseUrl}/embeddings` : `${settings.baseUrl}/v1/embeddings`
   }
@@ -89,6 +103,11 @@ const postJson = async (url, body, timeoutMs) => {
 export async function embedTexts(settings, texts) {
   const wanted = texts.length
   if (wanted === 0) return []
+  if (settings.endpoint === 'local') {
+    const vectors = await embedLocalTexts(settings, texts)
+    for (const vector of vectors) if (!isVector(vector)) throw new Error('an embedding came back empty')
+    return vectors
+  }
   if (settings.endpoint === 'openai') {
     const body = await postJson(embeddingsUrl(settings), { model: settings.model, input: texts }, settings.timeoutMs)
     const data = Array.isArray(body?.data) ? body.data : []
@@ -176,6 +195,16 @@ export function normalizeSettingsPatch(patch = {}) {
     if (model.length > 80) return { ok: false, field: 'model', message: 'the model name is longer than 80 characters' }
     next.model = model
   }
+  if ('model_dir' in patch) {
+    const dir = trimmed(patch.model_dir)
+    if (dir.length > 400) return { ok: false, field: 'model_dir', message: 'the model directory is longer than 400 characters' }
+    next.model_dir = dir
+  }
+  if ('runtime_dir' in patch) {
+    const dir = trimmed(patch.runtime_dir)
+    if (dir.length > 400) return { ok: false, field: 'runtime_dir', message: 'the runtime directory is longer than 400 characters' }
+    next.runtime_dir = dir
+  }
   if ('timeout_ms' in patch) {
     if (!Number.isInteger(patch.timeout_ms) || patch.timeout_ms < 1_000 || patch.timeout_ms > 120_000) {
       return { ok: false, field: 'timeout_ms', message: 'the timeout must be 1000–120000 ms' }
@@ -191,7 +220,7 @@ export function normalizeSettingsPatch(patch = {}) {
 
 export function install(rt) {
   let saved = readSavedSettings(rt.home, rt.warn)
-  const merged = () => resolveEmbeddingConfig({ memoryEmbedding: { ...rt.config?.memoryEmbedding, ...saved } })
+  const merged = () => resolveEmbeddingConfig({ memoryEmbedding: { ...rt.config?.memoryEmbedding, ...saved }, home: rt.home })
   const settings = merged()
   const pending = new Map()
   const counts = { embedded: 0, failed: 0, rounds: 0 }
@@ -209,6 +238,8 @@ export function install(rt) {
     endpoint: settings.endpoint,
     base_url: settings.baseUrl,
     model: settings.model,
+    model_dir: settings.modelDir,
+    runtime_dir: settings.runtimeDir,
     timeout_ms: settings.timeoutMs,
     batch: settings.batch,
     pending: pending.size,
@@ -263,7 +294,8 @@ export function install(rt) {
   }
 
   const round = async () => {
-    const batch = settings.endpoint === 'openai' ? settings.batch : 1
+    // Only ollama's prompt shape is one text per call; openai and local take a batch.
+    const batch = settings.endpoint === 'ollama' ? 1 : settings.batch
     const wanted = take(batch)
     counts.rounds += 1
     try {
@@ -312,11 +344,12 @@ export function install(rt) {
       return lastTest
     }
     const started = Date.now()
+    const url = settings.endpoint === 'local' ? null : embeddingsUrl(settings)
     try {
       const vectors = await embedTexts({ ...settings, timeoutMs: Math.min(settings.timeoutMs, TEST_TIMEOUT_MS) }, [TEST_TEXT])
-      lastTest = { ok: true, url: embeddingsUrl(settings), model: settings.model, latency_ms: Date.now() - started, dimensions: vectors[0].length, at: Date.now() }
+      lastTest = { ok: true, url, model: settings.model, latency_ms: Date.now() - started, dimensions: vectors[0].length, at: Date.now() }
     } catch (error) {
-      lastTest = { ok: false, url: embeddingsUrl(settings), model: settings.model, latency_ms: Date.now() - started, error: error?.message ?? String(error), at: Date.now() }
+      lastTest = { ok: false, url, model: settings.model, latency_ms: Date.now() - started, error: error?.message ?? String(error), at: Date.now() }
     }
     return lastTest
   }

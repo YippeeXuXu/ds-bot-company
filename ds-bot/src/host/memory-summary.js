@@ -9,7 +9,10 @@
 //
 // What counts as one subject: the same Bot, the same scene (chat or group), and either the
 // same words (duplicates are dropped even when neither row has a vector) or a cosine
-// similarity of at least 0.86 between their vectors. A summary never becomes a source of
+// similarity of at least `threshold` between their vectors. The threshold is calibrated per
+// embedding model rather than assumed: 1024-dimensional bge-m3 and 384-dimensional MiniLM
+// put unrelated text at very different distances, so the settings file remembers one value
+// per `embedding_model` (see `thresholdFor`). A summary never becomes a source of
 // another summary — that would grow without a bound; a Bot's memory is rebuilt from plain
 // slices only.
 //
@@ -30,8 +33,12 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path'
 
 // Two pieces of one subject usually sit this close; 0.86 keeps different subjects apart
-// without splitting one that was said twice in different words.
+// without splitting one that was said twice in different words. This is only the fallback:
+// a file calibrated on real vectors of a given model overrides it.
 export const MERGE_THRESHOLD = 0.86
+// Anything outside this range is not a similarity between normalised vectors.
+export const THRESHOLD_MIN = 0.5
+export const THRESHOLD_MAX = 0.95
 // One duplicate is already worth merging; a single row is not a summary.
 export const MERGE_MIN = 2
 // A summary names at most this many sources, so one long run cannot swallow the memory.
@@ -48,6 +55,44 @@ export const SUMMARY_ENDPOINTS = ['ollama', 'openai']
 const MODEL_MAX = 80
 
 export const settingsPathOf = home => join(home, SETTINGS_FILE)
+
+// Which threshold this memory uses. A model that was measured on real vectors wins over the
+// global value, and the global value over the built-in fallback; `model` is the
+// `embedding_model` written on the slices, so switching embedding models does not silently
+// apply the old model's calibration.
+export function thresholdFor(model, saved = {}) {
+  const name = typeof model === 'string' ? model.trim() : ''
+  const byModel = saved?.merge_thresholds
+  if (name !== '' && byModel !== null && typeof byModel === 'object') {
+    const value = Number(byModel[name])
+    if (Number.isFinite(value) && value >= THRESHOLD_MIN && value <= THRESHOLD_MAX) return value
+  }
+  const global = Number(saved?.merge_threshold)
+  if (Number.isFinite(global) && global >= THRESHOLD_MIN && global <= THRESHOLD_MAX) return global
+  return MERGE_THRESHOLD
+}
+
+// The model most of a memory's vectors came from: one Bot can hold rows embedded by two
+// models after a switch, and the threshold must follow the majority, not the newest row.
+export function dominantModel(rows = []) {
+  const counts = new Map()
+  for (const row of rows) {
+    if (row === null || typeof row !== 'object') continue
+    if (!Array.isArray(row.embedding) || row.embedding.length === 0) continue
+    const name = typeof row.embedding_model === 'string' ? row.embedding_model.trim() : ''
+    if (name === '') continue
+    counts.set(name, (counts.get(name) ?? 0) + 1)
+  }
+  let best = ''
+  let most = 0
+  for (const [name, count] of counts) {
+    if (count > most) {
+      best = name
+      most = count
+    }
+  }
+  return best
+}
 
 // The saved settings, or nothing when the file is absent or unreadable. A broken file stays
 // on disk: the next save replaces it, and the warning says why it was ignored.
@@ -84,6 +129,28 @@ export function normalizeSettingsPatch(patch = {}) {
     const url = String(patch.base_url ?? '').trim().replace(/\/+$/, '')
     if (url !== '' && !/^https?:\/\/\S+$/i.test(url)) return { ok: false, field: 'base_url', message: 'the address must start with http:// or https://' }
     next.base_url = url
+  }
+  if ('merge_threshold' in patch) {
+    const value = Number(patch.merge_threshold)
+    if (!Number.isFinite(value) || value < THRESHOLD_MIN || value > THRESHOLD_MAX) {
+      return { ok: false, field: 'merge_threshold', message: `the merge threshold must be ${THRESHOLD_MIN}–${THRESHOLD_MAX}` }
+    }
+    next.merge_threshold = Math.round(value * 1000) / 1000
+  }
+  if ('merge_thresholds' in patch) {
+    const map = patch.merge_thresholds
+    if (map === null || typeof map !== 'object' || Array.isArray(map)) return { ok: false, field: 'merge_thresholds', message: 'the per-model thresholds must be an object' }
+    const cleaned = {}
+    for (const [model, raw] of Object.entries(map)) {
+      const name = String(model).trim()
+      if (name === '' || name.length > MODEL_MAX) return { ok: false, field: 'merge_thresholds', message: `a model name must be 1–${MODEL_MAX} characters` }
+      const value = Number(raw)
+      if (!Number.isFinite(value) || value < THRESHOLD_MIN || value > THRESHOLD_MAX) {
+        return { ok: false, field: 'merge_thresholds', message: `the threshold for ${name} must be ${THRESHOLD_MIN}–${THRESHOLD_MAX}` }
+      }
+      cleaned[name] = Math.round(value * 1000) / 1000
+    }
+    next.merge_thresholds = cleaned
   }
   if ('model' in patch) {
     const model = String(patch.model ?? '').trim()
@@ -279,6 +346,19 @@ export function install(rt) {
   let saved = readSavedSettings(rt.home, rt.warn)
 
   const raw = () => ({ ...rt.config?.memorySummary, ...saved })
+  // Which model's calibration the page should show before the first run: the last run's
+  // model when there is one, else the embedding model currently configured.
+  // The last model that actually had vectors is what the page should show; a run that
+  // merged everything leaves no vectorised rows behind and must not flip the display back
+  // to the built-in fallback.
+  let lastModel = ''
+  const currentModel = () => {
+    const fromRun = state.last_result?.model
+    if (typeof fromRun === 'string' && fromRun !== '') return fromRun
+    if (lastModel !== '') return lastModel
+    const configured = rt.memoryEmbedding?.settings?.model
+    return typeof configured === 'string' ? configured : ''
+  }
   const settings = () => resolveSummarySettings(raw())
   const canAsk = () => settings().configured
 
@@ -321,7 +401,12 @@ export function install(rt) {
   const run = async (botId) => {
     const rows = await rt.memorySlices?.list?.()
     const mine = (rows ?? []).filter(row => botId === undefined || row.bot_id === botId)
-    const groups = groupSlices(mine)
+    // Calibration is per embedding model: the same two sentences sit at 0.7 under MiniLM and
+    // at 0.9 under bge-m3, so one fixed number cannot serve both.
+    const model = dominantModel(mine)
+    if (model !== '') lastModel = model
+    const threshold = thresholdFor(model === '' ? lastModel : model, saved)
+    const groups = groupSlices(mine, { threshold })
     let merged = 0
     let skipped = 0
     for (const group of groups) {
@@ -336,7 +421,7 @@ export function install(rt) {
       }
     }
     state.last_run_at = nowIso()
-    state.last_result = { bot_id: botId ?? null, groups: groups.length, merged, skipped }
+    state.last_result = { bot_id: botId ?? null, groups: groups.length, merged, skipped, threshold, model: model === '' ? null : model }
     return state.last_result
   }
 
@@ -408,6 +493,9 @@ export function install(rt) {
       base_url: options.baseUrl,
       model: options.model,
       timeout_ms: options.timeoutMs,
+      // What the next run will use, and where that number came from.
+      merge_threshold: thresholdFor(currentModel(), saved),
+      merge_thresholds: { ...saved.merge_thresholds },
       saved: { ...saved },
       settings_path: settingsPathOf(rt.home),
       rounds: Object.fromEntries(rounds),
@@ -422,6 +510,8 @@ export function install(rt) {
       text: summaryText,
       groups: groupSlices,
       threshold: MERGE_THRESHOLD,
+      threshold_for: model => thresholdFor(model, saved),
+      dominant_model: dominantModel,
       settings,
       save,
       state: stateOf,
