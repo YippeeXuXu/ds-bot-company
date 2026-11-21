@@ -65,6 +65,7 @@ test('an answer with the wrong shape is a failure, not a quietly shifted vector'
 
 test('a directory that is not there is named before any import is attempted', async () => {
   await assert.rejects(loadExtractor({ modelDir: '', model: 'x', runtimeDir: '' }), /model_dir is not set/)
-  await assert.rejects(loadExtractor({ modelDir: '/tmp/ds-bot-no-model-dir', model: 'Xenova/none', runtimeDir: '' }), /model_dir has no Xenova\/none\/onnx/)
+  // Windows joins the model name with backslashes, so the assertion keeps to the words.
+  await assert.rejects(loadExtractor({ modelDir: '/tmp/ds-bot-no-model-dir', model: 'Xenova/none', runtimeDir: '' }), /model_dir has no [\s\S]*onnx/)
   await assert.rejects(loadExtractor({ modelDir: '/tmp', model: 'x', runtimeDir: '/tmp/ds-bot-no-runtime' }), /runtime_dir has no @huggingface\/transformers/)
 })
