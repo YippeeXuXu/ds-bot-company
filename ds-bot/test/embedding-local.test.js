@@ -2,7 +2,7 @@
 // this process. A real run loads 113 MB, so the unit tests exercise the parts that decide
 // what the rest of the plugin sees: the directory handling and the flat answer split.
 import assert from 'node:assert/strict'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import test from 'node:test'
 import {
   LOCAL_DTYPE,
@@ -65,7 +65,8 @@ test('an answer with the wrong shape is a failure, not a quietly shifted vector'
 
 test('a directory that is not there is named before any import is attempted', async () => {
   await assert.rejects(loadExtractor({ modelDir: '', model: 'x', runtimeDir: '' }), /model_dir is not set/)
-  // Windows joins the model name with backslashes, so the assertion keeps to the words.
-  await assert.rejects(loadExtractor({ modelDir: '/tmp/ds-bot-no-model-dir', model: 'Xenova/none', runtimeDir: '' }), /model_dir has no [\s\S]*onnx/)
-  await assert.rejects(loadExtractor({ modelDir: '/tmp', model: 'x', runtimeDir: '/tmp/ds-bot-no-runtime' }), /runtime_dir has no @huggingface\/transformers/)
+  // Windows joins the model name with backslashes and has no '/tmp', so the directories are
+  // made absolute for this platform and the assertions keep to the words.
+  await assert.rejects(loadExtractor({ modelDir: resolve('ds-bot-no-model-dir'), model: 'Xenova/none', runtimeDir: '' }), /model_dir has no [\s\S]*onnx/)
+  await assert.rejects(loadExtractor({ modelDir: resolve('ds-bot-no-model-dir'), model: 'x', runtimeDir: resolve('ds-bot-no-runtime') }), /runtime_dir has no [\s\S]*transformers/)
 })

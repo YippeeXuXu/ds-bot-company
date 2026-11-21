@@ -12,7 +12,7 @@
 // does. The tokenizer truncates at the model's 512 tokens, which in practice never bites:
 // one Chinese character is about 0.56 token, so 512 tokens is roughly 900 characters.
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 
 export const LOCAL_MODEL = 'Xenova/paraphrase-multilingual-MiniLM-L12-v2'
 // The quantized file is 113 MB against 226 MB for the fp32 one, and the difference in
@@ -44,7 +44,7 @@ export async function loadExtractor(settings) {
   if (modelDir === '') throw new Error('model_dir is not set')
   const key = `${entry}\u0000${modelDir}\u0000${model}`
   if (cached !== null && cached.key === key) return cached.extractor
-  if (entry.startsWith('/') && !existsSync(entry)) {
+  if (isAbsolute(entry) && !existsSync(entry)) {
     throw new Error(`runtime_dir has no @huggingface/transformers underneath it: ${entry}`)
   }
   if (!existsSync(join(modelDir, model, 'onnx'))) {
